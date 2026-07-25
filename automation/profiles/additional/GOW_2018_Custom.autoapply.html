@@ -14,6 +14,9 @@
   .dot { width:10px; height:10px; border-radius:50%; background:var(--red); flex-shrink:0; }
   .dot.on { background:var(--green); }
   .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .subdiv { margin:16px 0 8px; padding-top:12px; border-top:2px solid var(--sub,#888);
+            font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+            color:var(--fg,#eee); }
   .tpair { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 22px; align-items:start; }
   .tcolhead { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub);
               padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid var(--line,#333); }
@@ -43,10 +46,10 @@
 </style>
 </head>
 <body>
-<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.16.3</span></h1>
+<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.1</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot on"></div>
-      <span style="flex:1">Connected — DualSense Edge · FW v1.16.1 · config v18</span>
+      <span style="flex:1">Connected — DualSense Edge · FW v1.17.1 · config v18</span>
       <button class="btn btn-outline" onclick="disconnect()">Disconnect</button>
     </div><div class="tabbar"><button class="tab " onclick="setTab('device')">Device</button><button class="tab " onclick="setTab('haptics')">Haptics</button><button class="tab active" onclick="setTab('triggers')">Triggers</button><button class="tab " onclick="setTab('gyro')">Gyro</button><button class="tab " onclick="setTab('slots')">Slots</button></div><div class="card"><div class="card-title">Rumble → Trigger</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['r2t_mode']=+this.value;(window._dirty=window._dirty||{})['r2t_mode']=1"><option value="0">Off</option><option value="1" selected="">Left trigger only</option><option value="2">Right trigger only</option><option value="3">Both triggers</option></select></div></div><div class="row"><div><div class="label">Only vibrate when trigger pressed</div></div><div><select onchange="config['r2t_on_press']=+this.value;(window._dirty=window._dirty||{})['r2t_on_press']=1">
       <option value="0">No</option>
@@ -115,7 +118,7 @@
     </div></div>
   
   </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast">Saved</div>
 <script>
 const SONY_VID = 0x054C, DS5_PID = 0x0CE6, DSE_PID = 0x0DF2;
 // The dongle can expose EXTRA HID interfaces with the same VID/PID: enabling
@@ -172,7 +175,7 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
 // kind: 'number' | 'select' | 'bool' ; type: 'u8' | 'u16' | 'f32'
 const SECTIONS = [
-  { title: 'Auto-Haptics', fields: [
+  { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
     [0x13,'auto_haptics_gain','u8','Intensity (%)','number',[0,200]],
     [0x1a,'auto_haptics_smooth','u8','Smoothness','number',[0,100]],
@@ -197,7 +200,7 @@ const SECTIONS = [
     [0x56,'effect_leak_max_burst','u8','Max Burst (x5 ms, 0 = unlimited) - caps sustained sounds to one short accent','number',[0,100]],
     [0x41,'effect_leak_hold','u8','Effect Leak Gate Hold (x5 ms) - stops flutter/chop','number',[0,100]],
   ]},
-  { title: 'Haptics & Audio', fields: [
+  { title: 'General Haptics & Audio', fields: [
     [0x01,'haptics_gain','f32','Native Haptics Gain','number',[1.0,2.0]],
     [0x02,'speaker_volume','u8','Speaker Volume','number',[0,127]],
     [0x03,'headset_volume','u8','Headset Volume','number',[0,127]],
@@ -216,7 +219,7 @@ const SECTIONS = [
     [0x08,'disable_pico_led','u8','Disable Pico LED','bool'],
     [0x11,'enable_wake','u8','Wake PC on PS Button','bool'],
   ]},
-  { title: 'Native Haptics', fields: [
+  { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
   ]},
   { title: 'Rumble → Trigger', fields: [
@@ -433,6 +436,10 @@ async function slotActivate(idx){
   }
   return null;
 }
+// Must match the firmware's SLOT_COUNT. A mismatch degrades gracefully both ways:
+// an older dongle simply reports the extra indices as empty, and an older portal
+// just shows fewer slots than exist.
+const UI_SLOT_COUNT = 24;
 let slotsBusy = false, slotsRerun = false;
 let _slotHealTries = 0;
 async function _refreshSlotsOnce(){
@@ -447,7 +454,7 @@ async function _refreshSlotsOnce(){
     return;
   }
   let rows = '';
-  for (let i = 0; i < 16; i++){ // fw >= 1.9.0: 16 slots (older fw reports 9+ as empty)
+  for (let i = 0; i < UI_SLOT_COUNT; i++){ // older fw reports out-of-range indices as empty
     let info = await hidLocked(() => slotInfo(i));
     if (info === null){
       // Freshly re-enumerated devices can miss the first queries; retry
@@ -666,7 +673,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.16.3) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.1) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -779,7 +786,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.16.3): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.17.1): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -1174,8 +1181,8 @@ async function backupAllSlots(){
   const dump = { format: 'ds5dongle-slots', version: 2, savedAt: new Date().toISOString(), slots: [] };
   try {
     await hidLocked(async () => {
-      for (let i = 0; i < 16; i++){
-        setS(`Reading slot ${i+1}/16…`);
+      for (let i = 0; i < UI_SLOT_COUNT; i++){
+        setS(`Reading slot ${i+1}/${UI_SLOT_COUNT}…`);
         const info = await slotInfo(i);
         if (!info || !info.valid){ dump.slots.push({ index: i, valid: false }); continue; }
         const fields = {};
@@ -1600,9 +1607,9 @@ const SECTION_TAB = {
   'Adaptive Triggers — R2 (right trigger)':'triggers',
   'Adaptive Triggers — L2 (left trigger)':'triggers',
   'Rumble → Trigger':'triggers',
-  'Auto-Haptics':'haptics',
-  'Haptics & Audio':'haptics',
-  'Native Haptics':'haptics',
+  'Auto-Haptics & Speaker Effect Leak':'haptics',
+  'General Haptics & Audio':'haptics',
+  'Native Haptics Filter':'haptics',
   'Gyro Aiming':'gyro',
   'Device & Connection':'device',
   'Advanced — BT Latency (experimental)':'device',
@@ -1677,11 +1684,20 @@ function ceGateWarning(key){
   return '';
 }
 
+// Sub-dividers inside a section: a bold labelled rule emitted BEFORE the named
+// field, to visually split a long card into its distinct halves. Keyed by field
+// so it survives fields being reordered around it.
+const SUB_DIVIDERS = {
+  'effect_leak_volume': 'Speaker Effect Leak',
+};
+
 // One settings row. Extracted from render() so the side-by-side trigger view can
 // place identical markup into grid cells without duplicating any of it.
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
-  let html = `<div class="row"><div><div class="label">${label}</div></div><div>`;
+  let html = '';
+  if (SUB_DIVIDERS[key]) html += `<div class="subdiv">${SUB_DIVIDERS[key]}</div>`;
+  html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
   if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
       <option value="0" ${config[key]==0?'selected':''}>No</option>
@@ -1752,7 +1768,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.16.3</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.1</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1839,7 +1855,12 @@ function render(){
     <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>` : '') + `
   `;
   app.innerHTML=html;
-  refreshSlots();
+  // Only sweep the slots when their list is actually on screen. render() runs on
+  // every tab switch and on some dropdown changes, and the sweep costs one HID
+  // round-trip per slot (~60 ms each), so refreshing it from a tab that doesn't
+  // show it was over a second of pointless traffic per re-render. Explicit
+  // callers (save, activate, delete) still refresh directly.
+  if ((window._tab || 'triggers') === 'slots') refreshSlots();
   // render() rebuilds the whole page, so the dynamic panels revert to their
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
@@ -1862,7 +1883,7 @@ portalSelfCheck();
 // make-autoapply-html.py), the profile JSON is stamped in here and auto-applies
 // the moment the page opens — no URL parameters needed, just open the file.
 // Left null in the master portal (which behaves normally / uses URL params).
-const EMBEDDED_PROFILE = {"name":"DS5 Profile","version":2,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":0,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":15,"effect_leak_sensitivity":50,"effect_leak_decay":80,"effect_leak_attack":50,"effect_leak_output_hp_hz":500,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":3500,"effect_leak_max_burst":0,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":1,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":1,"at_strength":50,"at_threshold":255,"at_start_pos":0,"at_shape":1,"at_strength_b":100,"at_detent_pos":5,"at_deadzone":5,"at_pushback":0,"at_kick_style":0,"at_pushback_freq":10,"at_pushback_src":2,"ce_r2_enable":1,"ce_r2_condition":0,"ce_r2_thresh":0,"ce_r2_rate":40,"ce_r2_state_count":2,"ce_r2_yield":1,"at_l2_mode":0,"at_l2_strength":70,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":0,"at_l2_strength_b":70,"at_l2_detent_pos":5,"at_l2_deadzone":0,"at_l2_pushback":0,"at_l2_kick_style":0,"at_l2_pushback_freq":35,"ce_l2_enable":0,"ce_l2_condition":0,"ce_l2_thresh":0,"ce_l2_rate":40,"ce_l2_state_count":0,"ce_l2_yield":1,"gyro_mode":1,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0},"effects":{"r2":[{"bytes":[33,12,0,192,15,0,0,0,0,0,0],"duration_ms":0},{"bytes":[34,160,0,63,0,0,0,0,0,0,0],"duration_ms":0}]}}; /*EMBED_PROFILE_HOOK*/
+const EMBEDDED_PROFILE = {"name":"DS5 Profile","version":2,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":0,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":15,"effect_leak_sensitivity":50,"effect_leak_decay":80,"effect_leak_attack":50,"effect_leak_output_hp_hz":500,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":3500,"effect_leak_max_burst":0,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":1,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":1,"at_strength":30,"at_threshold":255,"at_start_pos":0,"at_shape":1,"at_strength_b":50,"at_detent_pos":5,"at_deadzone":5,"at_pushback":0,"at_kick_style":0,"at_pushback_freq":10,"at_pushback_src":2,"ce_r2_enable":1,"ce_r2_condition":0,"ce_r2_thresh":0,"ce_r2_rate":40,"ce_r2_state_count":2,"ce_r2_yield":1,"at_l2_mode":0,"at_l2_strength":70,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":0,"at_l2_strength_b":70,"at_l2_detent_pos":5,"at_l2_deadzone":0,"at_l2_pushback":0,"at_l2_kick_style":0,"at_l2_pushback_freq":35,"ce_l2_enable":0,"ce_l2_condition":0,"ce_l2_thresh":0,"ce_l2_rate":40,"ce_l2_state_count":0,"ce_l2_yield":1,"gyro_mode":1,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0},"effects":{"r2":[{"bytes":[33,12,0,192,15,0,0,0,0,0,0],"duration_ms":0},{"bytes":[34,160,0,63,0,0,0,0,0,0,0],"duration_ms":0}]}}; /*EMBED_PROFILE_HOOK*/
 const EMBEDDED_AUTOSAVE = true; /*EMBED_AUTOSAVE_HOOK*/
 
 async function autoApply(){
