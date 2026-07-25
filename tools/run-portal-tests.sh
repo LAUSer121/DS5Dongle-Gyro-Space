@@ -1,0 +1,16 @@
+#!/bin/sh
+# Extract the portal's script and run the three regression harnesses.
+# Run this after ANY edit to ds5-config-portal.html.
+set -e
+cd "$(dirname "$0")/.."
+python3 - << 'PY'
+import re
+s = open('ds5-config-portal.html', encoding='utf-8').read()
+b = re.findall(r"<script[^>]*>(.*?)</script>", s, re.S)
+open('/tmp/portal.js','w',encoding='utf-8').write("\n".join(b))
+PY
+node --check /tmp/portal.js && echo "SYNTAX OK"
+node tools/portal-coverage-test.js
+node tools/portal-render-test.js
+node tools/portal-attr-test.js
+node tools/portal-align-test.js
