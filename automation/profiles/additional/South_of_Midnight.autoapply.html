@@ -14,6 +14,19 @@
   .dot { width:10px; height:10px; border-radius:50%; background:var(--red); flex-shrink:0; }
   .dot.on { background:var(--green); }
   .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .subdiv { margin:16px 0 8px; padding-top:12px; border-top:2px solid var(--sub,#888);
+            font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+            color:var(--fg,#eee); }
+  .tpair { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 22px; align-items:start; }
+  .tcolhead { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub);
+              padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid var(--line,#333); }
+  .tcell { min-width:0; }
+  .tshared { margin-top:12px; padding-top:8px; border-top:1px solid var(--line,#333); }
+  .tabbar { display:flex; gap:4px; flex-wrap:wrap; margin:10px 0 14px; }
+  .tab { appearance:none; border:1px solid var(--line,#333); background:transparent; color:var(--sub);
+         padding:7px 15px; border-radius:8px; font:500 13px system-ui; cursor:pointer; }
+  .tab:hover { color:var(--fg,#eee); border-color:var(--sub); }
+  .tab.active { background:var(--accent,#3a6df0); border-color:var(--accent,#3a6df0); color:#fff; }
   .card-title { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub); margin-bottom:12px; }
   .row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
   .row:last-child { border-bottom:none; }
@@ -33,36 +46,12 @@
 </style>
 </head>
 <body>
-<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.13.3</span></h1>
+<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.1</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot on"></div>
-      <span style="flex:1">Connected — DualSense Edge · FW v1.13.3 · config v16</span>
+      <span style="flex:1">Connected — DualSense Edge · FW v1.17.1 · config v18</span>
       <button class="btn btn-outline" onclick="disconnect()">Disconnect</button>
-    </div><div class="card"><div class="card-title">Auto-Haptics</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['auto_haptics_enable']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_enable']=1"><option value="0">Off</option><option value="1" selected="">Mix with native</option><option value="2">Replace (audio only)</option></select></div></div><div class="row"><div><div class="label">Intensity (%)</div></div><div><input type="number" min="0" max="200" step="1" value="100" onchange="config['auto_haptics_gain']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_gain']=1"></div></div><div class="row"><div><div class="label">Smoothness</div></div><div><input type="number" min="0" max="100" step="1" value="40" onchange="config['auto_haptics_smooth']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_smooth']=1"></div></div><div class="row"><div><div class="label">Noise Gate</div></div><div><input type="number" min="0" max="100" step="1" value="20" onchange="config['auto_haptics_gate']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_gate']=1"></div></div><div class="row"><div><div class="label">Native Passthrough in Mix (%) — 0 for non-native games</div></div><div><input type="number" min="0" max="100" step="1" value="100" onchange="config['mix_native_level']=+this.value;(window._dirty=window._dirty||{})['mix_native_level']=1"></div></div><div class="row"><div><div class="label">LP Cutoff (Hz)</div></div><div><input type="number" min="30" max="200" step="1" value="60" onchange="config['auto_haptics_lowpass_hz']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_lowpass_hz']=1"></div></div><div class="row"><div><div class="label">Frequency Split Crossover (Hz, 0 = off; 30-200, must be BELOW LP Cutoff)</div></div><div><input type="number" min="0" max="200" step="1" value="0" onchange="config['ah_xover_hz']=+this.value;(window._dirty=window._dirty||{})['ah_xover_hz']=1"></div></div><div class="row"><div><div class="label">Low Band Gain (below crossover - impacts)</div></div><div><input type="number" min="0" max="100" step="1" value="100" onchange="config['ah_low_gain']=+this.value;(window._dirty=window._dirty||{})['ah_low_gain']=1"></div></div><div class="row"><div><div class="label">High Band Gain (crossover..cutoff - music/voice range)</div></div><div><input type="number" min="0" max="100" step="1" value="100" onchange="config['ah_high_gain']=+this.value;(window._dirty=window._dirty||{})['ah_high_gain']=1"></div></div><div class="row"><div><div class="label">Filter Slope</div></div><div><select onchange="config['auto_haptics_slope']=+this.value;(window._dirty=window._dirty||{})['auto_haptics_slope']=1"><option value="6">6 dB/oct (gentle)</option><option value="12" selected="">12 dB/oct (default)</option><option value="24">24 dB/oct (steep)</option></select></div></div><div class="row"><div><div class="label">Auto-mute Speaker (Replace)</div></div><div><select onchange="config['auto_mute_replace']=+this.value;(window._dirty=window._dirty||{})['auto_mute_replace']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div><div class="row"><div><div class="label">Auto-mute Speaker (Mix)</div></div><div><select onchange="config['auto_mute_mix']=+this.value;(window._dirty=window._dirty||{})['auto_mute_mix']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div><div class="row"><div><div class="label">Lightbar Off in Replace Mode</div></div><div><select onchange="config['lightbar_off']=+this.value;(window._dirty=window._dirty||{})['lightbar_off']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div><div class="row"><div><div class="label">Converted Rumble Strength (Mix)</div></div><div><input type="number" min="0" max="100" step="1" value="50" onchange="config['rumble_haptic_strength']=+this.value;(window._dirty=window._dirty||{})['rumble_haptic_strength']=1"></div></div><div class="row"><div><div class="label">Effect Leak Volume (0=off)</div></div><div><input type="number" min="0" max="100" step="1" value="70" onchange="config['effect_leak_volume']=+this.value;(window._dirty=window._dirty||{})['effect_leak_volume']=1"></div></div><div class="row"><div><div class="label">Effect Leak Sensitivity</div></div><div><input type="number" min="0" max="100" step="1" value="40" onchange="config['effect_leak_sensitivity']=+this.value;(window._dirty=window._dirty||{})['effect_leak_sensitivity']=1"></div></div><div class="row"><div><div class="label">Effect Leak Decay/Fade-out</div></div><div><input type="number" min="0" max="100" step="1" value="70" onchange="config['effect_leak_decay']=+this.value;(window._dirty=window._dirty||{})['effect_leak_decay']=1"></div></div><div class="row"><div><div class="label">Effect Leak Attack/Responsiveness</div></div><div><input type="number" min="0" max="100" step="1" value="100" onchange="config['effect_leak_attack']=+this.value;(window._dirty=window._dirty||{})['effect_leak_attack']=1"></div></div><div class="row"><div><div class="label">Effect Leak Output High-pass (Hz)</div></div><div><input type="number" min="50" max="2000" step="1" value="300" onchange="config['effect_leak_output_hp_hz']=+this.value;(window._dirty=window._dirty||{})['effect_leak_output_hp_hz']=1"></div></div><div class="row"><div><div class="label">Effect Leak Detection Band (Hz)</div></div><div><input type="number" min="100" max="5000" step="1" value="2500" onchange="config['effect_leak_hp_hz']=+this.value;(window._dirty=window._dirty||{})['effect_leak_hp_hz']=1"></div></div><div class="row"><div><div class="label">Effect Leak Output Low-pass (Hz) - high wall of the leak window</div></div><div><input type="number" min="500" max="12000" step="1" value="8000" onchange="config['effect_leak_lp_hz']=+this.value;(window._dirty=window._dirty||{})['effect_leak_lp_hz']=1"></div></div><div class="row"><div><div class="label">Max Burst (x5 ms, 0 = unlimited) - caps sustained sounds to one short accent</div></div><div><input type="number" min="0" max="100" step="1" value="2" onchange="config['effect_leak_max_burst']=+this.value;(window._dirty=window._dirty||{})['effect_leak_max_burst']=1"></div></div><div class="row"><div><div class="label">Effect Leak Gate Hold (x5 ms) - stops flutter/chop</div></div><div><input type="number" min="0" max="100" step="1" value="20" onchange="config['effect_leak_hold']=+this.value;(window._dirty=window._dirty||{})['effect_leak_hold']=1"></div></div></div><div class="card"><div class="card-title">Haptics &amp; Audio</div><div class="row"><div><div class="label">Native Haptics Gain</div></div><div><input type="number" min="1" max="2" step="0.05" value="1.00" onchange="config['haptics_gain']=parseFloat(this.value);(window._dirty=window._dirty||{})['haptics_gain']=1"></div></div><div class="row"><div><div class="label">Speaker Volume</div></div><div><input type="number" min="0" max="127" step="1" value="100" onchange="config['speaker_volume']=+this.value;(window._dirty=window._dirty||{})['speaker_volume']=1"></div></div><div class="row"><div><div class="label">Headset Volume</div></div><div><input type="number" min="0" max="127" step="1" value="100" onchange="config['headset_volume']=+this.value;(window._dirty=window._dirty||{})['headset_volume']=1"></div></div><div class="row"><div><div class="label">Speaker Gain</div></div><div><input type="number" min="0" max="7" step="1" value="2" onchange="config['speaker_gain']=+this.value;(window._dirty=window._dirty||{})['speaker_gain']=1"></div></div><div class="row"><div><div class="label">Sync Speaker &amp; Headset Volume</div></div><div><select onchange="config['sync_spk_headset_volume']=+this.value;(window._dirty=window._dirty||{})['sync_spk_headset_volume']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div><div class="row"><div><div class="label">Lock Volume</div></div><div><select onchange="config['lock_volume']=+this.value;(window._dirty=window._dirty||{})['lock_volume']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div><div class="row"><div><div class="label">Disable Mic</div></div><div><select onchange="config['disable_mic']=+this.value;(window._dirty=window._dirty||{})['disable_mic']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div><div class="row"><div><div class="label">Disable Speaker</div></div><div><select onchange="config['disable_speaker']=+this.value;(window._dirty=window._dirty||{})['disable_speaker']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div></div><div class="card"><div class="card-title">Device &amp; Connection</div><div class="row"><div><div class="label">Controller Type</div></div><div><select onchange="config['controller_mode']=+this.value;(window._dirty=window._dirty||{})['controller_mode']=1"><option value="0">DualSense (DS5)</option><option value="1">DualSense Edge (DSE)</option><option value="2" selected="">Auto-detect</option></select></div></div><div class="row"><div><div class="label">Polling Rate</div></div><div><select onchange="config['polling_rate_mode']=+this.value;(window._dirty=window._dirty||{})['polling_rate_mode']=1"><option value="0">250 Hz</option><option value="1">500 Hz</option><option value="2" selected="">Real-time</option></select></div></div><div class="row"><div><div class="label">Audio Buffer Length</div></div><div><input type="number" min="16" max="128" step="1" value="32" onchange="config['audio_buffer_length']=+this.value;(window._dirty=window._dirty||{})['audio_buffer_length']=1"></div></div><div class="row"><div><div class="label">Inactive Time (min)</div></div><div><input type="number" min="5" max="60" step="1" value="15" onchange="config['inactive_time']=+this.value;(window._dirty=window._dirty||{})['inactive_time']=1"></div></div><div class="row"><div><div class="label">Disable Inactive Disconnect</div></div><div><select onchange="config['disable_inactive_disconnect']=+this.value;(window._dirty=window._dirty||{})['disable_inactive_disconnect']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div><div class="row"><div><div class="label">Disable Pico LED</div></div><div><select onchange="config['disable_pico_led']=+this.value;(window._dirty=window._dirty||{})['disable_pico_led']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div><div class="row"><div><div class="label">Wake PC on PS Button</div></div><div><select onchange="config['enable_wake']=+this.value;(window._dirty=window._dirty||{})['enable_wake']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div></div><div class="card"><div class="card-title">Native Haptics</div><div class="row"><div><div class="label">Smoothing (anti-alias filter)</div></div><div><select onchange="config['haptics_aa']=+this.value;(window._dirty=window._dirty||{})['haptics_aa']=1"><option value="1">Off — raw &amp; gritty (pre-1.0.4 texture)</option><option value="2" selected="">Light — kills grit, keeps snap (recommended)</option><option value="3">Strong — maximum smooth (can feel muted)</option></select></div></div></div><div class="card"><div class="card-title">Rumble → Trigger</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['r2t_mode']=+this.value;(window._dirty=window._dirty||{})['r2t_mode']=1"><option value="0">Off</option><option value="1" selected="">Left trigger only</option><option value="2">Right trigger only</option><option value="3">Both triggers</option></select></div></div><div class="row"><div><div class="label">Only vibrate when trigger pressed</div></div><div><select onchange="config['r2t_on_press']=+this.value;(window._dirty=window._dirty||{})['r2t_on_press']=1">
-          <option value="0">No</option>
-          <option value="1" selected="">Yes</option></select></div></div><div class="row"><div><div class="label">Strength</div></div><div><input type="number" min="0" max="100" step="1" value="50" onchange="config['r2t_strength']=+this.value;(window._dirty=window._dirty||{})['r2t_strength']=1"></div></div><div class="row"><div><div class="label">Vibration frequency</div></div><div><input type="number" min="1" max="255" step="1" value="88" onchange="config['r2t_frequency']=+this.value;(window._dirty=window._dirty||{})['r2t_frequency']=1"></div></div><div class="row"><div><div class="label">Force override (ignore game/app trigger effects — applies to r2t AND adaptive triggers)</div></div><div><select onchange="config['synth_force']=+this.value;(window._dirty=window._dirty||{})['synth_force']=1">
-          <option value="0" selected="">No</option>
-          <option value="1">Yes</option></select></div></div></div><div class="card"><div class="card-title">Adaptive Triggers — R2 (right trigger)</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['at_mode']=+this.value;(window._dirty=window._dirty||{})['at_mode']=1"><option value="0">Off</option><option value="2" selected="">Always on</option><option value="1">Gated by L2 (aim trigger)</option><option value="3">Gated by L1 (shoulder)</option></select></div></div><div class="row"><div><div class="label">Resistance strength</div></div><div><input type="number" min="0" max="100" step="1" value="80" onchange="config['at_strength']=+this.value;(window._dirty=window._dirty||{})['at_strength']=1"></div></div><div class="row"><div><div class="label">Arming threshold (L2 press depth)</div></div><div><input type="number" min="1" max="255" step="1" value="255" onchange="config['at_threshold']=+this.value;(window._dirty=window._dirty||{})['at_threshold']=1"></div></div><div class="row"><div><div class="label">Resistance start position</div></div><div><input type="number" min="0" max="9" step="1" value="0" onchange="config['at_start_pos']=+this.value;(window._dirty=window._dirty||{})['at_start_pos']=1"></div></div><div class="row"><div><div class="label">Resistance shape</div></div><div><select onchange="config['at_shape']=+this.value;(window._dirty=window._dirty||{})['at_shape']=1"><option value="0">Constant</option><option value="1">Ramp (A → B)</option><option value="2">Two-stage detent</option><option value="3" selected="">Weapon break (snap-through)</option></select></div></div><div class="row"><div><div class="label">Strength B (ramp end / detent wall)</div></div><div><input type="number" min="0" max="100" step="1" value="20" onchange="config['at_strength_b']=+this.value;(window._dirty=window._dirty||{})['at_strength_b']=1"></div></div><div class="row"><div><div class="label">Detent zone / break point</div></div><div><input type="number" min="0" max="9" step="1" value="5" onchange="config['at_detent_pos']=+this.value;(window._dirty=window._dirty||{})['at_detent_pos']=1"></div></div><div class="row"><div><div class="label">Activation dead zone (0=off; game registers press from zone N)</div></div><div><input type="number" min="0" max="9" step="1" value="7" onchange="config['at_deadzone']=+this.value;(window._dirty=window._dirty||{})['at_deadzone']=1"></div></div><div class="row"><div><div class="label">Push-back kick (recoil) strength, 0 = no kick</div></div><div><input type="number" min="0" max="100" step="1" value="0" onchange="config['at_pushback']=+this.value;(window._dirty=window._dirty||{})['at_pushback']=1"></div></div><div class="row"><div><div class="label">Kick style</div></div><div><select onchange="config['at_kick_style']=+this.value;(window._dirty=window._dirty||{})['at_kick_style']=1"><option value="0">Vibration thump (buzz)</option><option value="1" selected="">Bow snap (mechanical push-back)</option></select></div></div><div class="row"><div><div class="label">Kick thump frequency (lower = heavier)</div></div><div><input type="number" min="10" max="200" step="1" value="35" onchange="config['at_pushback_freq']=+this.value;(window._dirty=window._dirty||{})['at_pushback_freq']=1"></div></div><div class="row"><div><div class="label">Kick follows (shared by both triggers)</div></div><div><select onchange="config['at_pushback_src']=+this.value;(window._dirty=window._dirty||{})['at_pushback_src']=1"><option value="0">Rumble only</option><option value="1">Audio haptics only</option><option value="2" selected="">Rumble + audio (strongest)</option></select></div></div></div><div class="card"><div class="card-title">Adaptive Triggers — L2 (left trigger)</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['at_l2_mode']=+this.value;(window._dirty=window._dirty||{})['at_l2_mode']=1"><option value="0" selected="">Off</option><option value="2">Always on</option><option value="1">Gated by R2 (fire trigger)</option><option value="3">Gated by R1 (shoulder)</option></select></div></div><div class="row"><div><div class="label">Resistance strength</div></div><div><input type="number" min="0" max="100" step="1" value="70" onchange="config['at_l2_strength']=+this.value;(window._dirty=window._dirty||{})['at_l2_strength']=1"></div></div><div class="row"><div><div class="label">Arming threshold (R2 press depth)</div></div><div><input type="number" min="1" max="255" step="1" value="255" onchange="config['at_l2_threshold']=+this.value;(window._dirty=window._dirty||{})['at_l2_threshold']=1"></div></div><div class="row"><div><div class="label">Resistance start position</div></div><div><input type="number" min="0" max="9" step="1" value="0" onchange="config['at_l2_start_pos']=+this.value;(window._dirty=window._dirty||{})['at_l2_start_pos']=1"></div></div><div class="row"><div><div class="label">Resistance shape</div></div><div><select onchange="config['at_l2_shape']=+this.value;(window._dirty=window._dirty||{})['at_l2_shape']=1"><option value="0" selected="">Constant</option><option value="1">Ramp (A → B)</option><option value="2">Two-stage detent</option><option value="3">Weapon break (snap-through)</option></select></div></div><div class="row"><div><div class="label">Strength B (ramp end / detent wall)</div></div><div><input type="number" min="0" max="100" step="1" value="70" onchange="config['at_l2_strength_b']=+this.value;(window._dirty=window._dirty||{})['at_l2_strength_b']=1"></div></div><div class="row"><div><div class="label">Detent zone / break point</div></div><div><input type="number" min="0" max="9" step="1" value="5" onchange="config['at_l2_detent_pos']=+this.value;(window._dirty=window._dirty||{})['at_l2_detent_pos']=1"></div></div><div class="row"><div><div class="label">Activation dead zone (0=off; game registers press from zone N)</div></div><div><input type="number" min="0" max="9" step="1" value="0" onchange="config['at_l2_deadzone']=+this.value;(window._dirty=window._dirty||{})['at_l2_deadzone']=1"></div></div><div class="row"><div><div class="label">Push-back kick (recoil) strength, 0 = no kick</div></div><div><input type="number" min="0" max="100" step="1" value="0" onchange="config['at_l2_pushback']=+this.value;(window._dirty=window._dirty||{})['at_l2_pushback']=1"></div></div><div class="row"><div><div class="label">Kick style</div></div><div><select onchange="config['at_l2_kick_style']=+this.value;(window._dirty=window._dirty||{})['at_l2_kick_style']=1"><option value="0" selected="">Vibration thump (buzz)</option><option value="1">Bow snap (mechanical push-back)</option></select></div></div><div class="row"><div><div class="label">Kick thump frequency (lower = heavier)</div></div><div><input type="number" min="10" max="200" step="1" value="35" onchange="config['at_l2_pushback_freq']=+this.value;(window._dirty=window._dirty||{})['at_l2_pushback_freq']=1"></div></div></div><div class="card"><div class="card-title">Gyro Aiming</div><div class="row"><div><div class="label">Mode</div></div><div><select onchange="config['gyro_mode']=+this.value;(window._dirty=window._dirty||{})['gyro_mode']=1"><option value="0">Off</option><option value="2">Always on</option><option value="1" selected="">Only while L2 (aim) held</option><option value="5">Only while R2 (fire) held</option><option value="6">Only while L1 held</option><option value="7">Only while R1 held</option><option value="3">Only while touchpad touched</option><option value="4">Always on — touch touchpad to pause (ratchet)</option></select></div></div><div class="row"><div><div class="label">Sensitivity</div></div><div><input type="number" min="1" max="100" step="1" value="50" onchange="config['gyro_sens']=+this.value;(window._dirty=window._dirty||{})['gyro_sens']=1"></div></div><div class="row"><div><div class="label">Horizontal source</div></div><div><select onchange="config['gyro_axis']=+this.value;(window._dirty=window._dirty||{})['gyro_axis']=1"><option value="0" selected="">Yaw (turn controller)</option><option value="1">Roll (tilt sideways)</option></select></div></div><div class="row"><div><div class="label">Invert axes (0=none, 1=X, 2=Y, 3=both)</div></div><div><input type="number" min="0" max="3" step="1" value="0" onchange="config['gyro_invert']=+this.value;(window._dirty=window._dirty||{})['gyro_invert']=1"></div></div></div><div class="card"><div class="card-title">Advanced — BT Latency (experimental)</div><div class="row"><div><div class="label">BT Flush Timeout (0=off)</div></div><div><select onchange="config['bt_flush_timeout']=+this.value;(window._dirty=window._dirty||{})['bt_flush_timeout']=1"><option value="0" selected="">Off (reliable)</option><option value="4">~2.5ms (low latency)</option><option value="6">~3.75ms</option><option value="10">~6.25ms</option><option value="16">~10ms</option></select></div></div><div class="row"><div><div class="label">BT QoS Latency (0=off)</div></div><div><select onchange="config['bt_qos_latency_us']=+this.value;(window._dirty=window._dirty||{})['bt_qos_latency_us']=1"><option value="0" selected="">Off</option><option value="5000">5ms (aggressive)</option><option value="10000">10ms</option><option value="15000">15ms</option><option value="20000">20ms (relaxed)</option></select></div></div></div><div class="actions">
+    </div><div class="tabbar"><button class="tab " onclick="setTab('device')">Device</button><button class="tab " onclick="setTab('haptics')">Haptics</button><button class="tab " onclick="setTab('triggers')">Triggers</button><button class="tab " onclick="setTab('gyro')">Gyro</button><button class="tab active" onclick="setTab('slots')">Slots</button></div><div class="actions">
     <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
     <button class="btn btn-outline" onclick="readAll().then(render)">Re-read</button>
     <button class="btn btn-outline" onclick="exportProfile()">Export Profile</button>
@@ -153,14 +142,55 @@
       <span style="flex:1"><b>South_Midnight</b></span>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(15)">Save current</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotActivate(15)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 17</span>
+      <span style="flex:1"><b>GOW_2018</b></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(16)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotActivate(16)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 18</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(17)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(17)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 19</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(18)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(18)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 20</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(19)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(19)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 21</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(20)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(20)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 22</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(21)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(21)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 23</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(22)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(22)">Activate</button>
+    </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="width:52px;color:var(--sub)">Slot 24</span>
+      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(23)">Save current</button>
+      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(23)">Activate</button>
     </div><div style="display:flex;gap:8px;align-items:center;margin:10px 0 2px;padding-top:8px;border-top:1px solid var(--line,#333)">
        <button class="btn btn-outline" style="padding:2px 10px" onclick="backupAllSlots()">Back up all slots</button>
        <button class="btn btn-outline" style="padding:2px 10px" onclick="document.getElementById('restoreFile').click()">Restore from file</button>
        <input id="restoreFile" type="file" accept="application/json,.json" style="display:none" onchange="if(this.files[0]){restoreAllSlots(this.files[0]); this.value='';}">
        <span id="backupStatus" style="flex:1;color:var(--sub);font-size:12px"></span>
      </div></div></div>
-  <div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Live audio stream: bytes_read=384, detected channels=4  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: -11 (good)<br>Audio signal: ch0-1 (speaker/DSP source)=2, ch2-3 (native actuators)=2  (ch0-1 must be &gt;0 for auto-haptics/effect-leak — if 0 here, the audio routing isn't putting game sound on those channels)<br>Gyro |raw| (horizontal): 114  (0 = gyro off or controller still — wave it to calibrate sensitivity)<br>Trigger synthesis: synth-L2 · synth-R2 · AT-engaged  (game-owns = your r2t/at yield; use Force override to take over)<br>Push-back envelope: 0/255  (must rise with rumble/gunfire while AT-engaged; kick fires at &gt;=32 - if this stays 0 during rumble, the selected source isn't producing signal)</div></div></div>
+  
+  
+  </div>
 <div class="toast" id="toast">Saved current settings to slot 16</div>
 <script>
 const SONY_VID = 0x054C, DS5_PID = 0x0CE6, DSE_PID = 0x0DF2;
@@ -218,7 +248,7 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
 // kind: 'number' | 'select' | 'bool' ; type: 'u8' | 'u16' | 'f32'
 const SECTIONS = [
-  { title: 'Auto-Haptics', fields: [
+  { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
     [0x13,'auto_haptics_gain','u8','Intensity (%)','number',[0,200]],
     [0x1a,'auto_haptics_smooth','u8','Smoothness','number',[0,100]],
@@ -243,7 +273,7 @@ const SECTIONS = [
     [0x56,'effect_leak_max_burst','u8','Max Burst (x5 ms, 0 = unlimited) - caps sustained sounds to one short accent','number',[0,100]],
     [0x41,'effect_leak_hold','u8','Effect Leak Gate Hold (x5 ms) - stops flutter/chop','number',[0,100]],
   ]},
-  { title: 'Haptics & Audio', fields: [
+  { title: 'General Haptics & Audio', fields: [
     [0x01,'haptics_gain','f32','Native Haptics Gain','number',[1.0,2.0]],
     [0x02,'speaker_volume','u8','Speaker Volume','number',[0,127]],
     [0x03,'headset_volume','u8','Headset Volume','number',[0,127]],
@@ -262,7 +292,7 @@ const SECTIONS = [
     [0x08,'disable_pico_led','u8','Disable Pico LED','bool'],
     [0x11,'enable_wake','u8','Wake PC on PS Button','bool'],
   ]},
-  { title: 'Native Haptics', fields: [
+  { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
   ]},
   { title: 'Rumble → Trigger', fields: [
@@ -285,6 +315,12 @@ const SECTIONS = [
     [0x44,'at_kick_style','u8','Kick style','select',{0:'Vibration thump (buzz)',1:'Bow snap (mechanical push-back)'}],
     [0x3b,'at_pushback_freq','u8','Kick thump frequency (lower = heavier)','number',[10,200]],
     [0x3a,'at_pushback_src','u8','Kick follows (shared by both triggers)','select',{0:'Rumble only',1:'Audio haptics only',2:'Rumble + audio (strongest)'}],
+    [0x57,'ce_r2_enable','u8','Custom captured effect — enable (assign via the Trigger Effect Monitor below)','select',[[0,'Off'],[1,'On']]],
+    [0x58,'ce_r2_condition','u8','Custom effect trigger condition','select',[[0,'While held'],[1,'On press'],[2,'On release']]],
+    [0x59,'ce_r2_thresh','u8','Custom effect zone — press/release: engage point; while-held walls: RE-ARM zone (wall resets when trigger returns below this; 0 = only at full release, click-free)','number',[0,9]],
+    [0x5a,'ce_r2_rate','u8','Custom effect A↔B toggle rate (only for 2-state vibration actions)','number',[1,100]],
+    [0x5b,'ce_r2_state_count','u8','Custom effect state count (auto-set by Assign / file load)','number',[1,5]],
+    [0x61,'ce_r2_yield','u8','Custom effect vs sliders on R2 (gate = L2 past its threshold, or L1 if the mode is shoulder-gated; the slider side needs a resistance mode armed in the half it covers)','select',{0:'Custom effect always owns R2',1:'Sliders while gated, custom effect otherwise',2:'Custom effect while gated, sliders otherwise'}],
   ]},
   { title: 'Adaptive Triggers — L2 (left trigger)', fields: [
     [0x42,'at_l2_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Gated by R2 (fire trigger)'],[3,'Gated by R1 (shoulder)']]],
@@ -298,6 +334,12 @@ const SECTIONS = [
     [0x47,'at_l2_pushback','u8','Push-back kick (recoil) strength, 0 = no kick','number',[0,100]],
     [0x49,'at_l2_kick_style','u8','Kick style','select',{0:'Vibration thump (buzz)',1:'Bow snap (mechanical push-back)'}],
     [0x48,'at_l2_pushback_freq','u8','Kick thump frequency (lower = heavier)','number',[10,200]],
+    [0x5c,'ce_l2_enable','u8','Custom captured effect — enable (assign via the Trigger Effect Monitor below)','select',[[0,'Off'],[1,'On']]],
+    [0x5d,'ce_l2_condition','u8','Custom effect trigger condition','select',[[0,'While held'],[1,'On press'],[2,'On release']]],
+    [0x5e,'ce_l2_thresh','u8','Custom effect zone — press/release: engage point; while-held walls: RE-ARM zone (wall resets when trigger returns below this; 0 = only at full release, click-free)','number',[0,9]],
+    [0x5f,'ce_l2_rate','u8','Custom effect A↔B toggle rate (only for 2-state vibration actions)','number',[1,100]],
+    [0x60,'ce_l2_state_count','u8','Custom effect state count (auto-set by Assign / file load)','number',[1,5]],
+    [0x62,'ce_l2_yield','u8','Custom effect vs sliders on L2 (gate = R2 past its threshold, or R1 if the mode is shoulder-gated; the slider side needs a resistance mode armed in the half it covers)','select',{0:'Custom effect always owns L2',1:'Sliders while gated, custom effect otherwise',2:'Custom effect while gated, sliders otherwise'}],
   ]},
   { title: 'Gyro Aiming', fields: [
     [0x2f,'gyro_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Only while L2 (aim) held'],[5,'Only while R2 (fire) held'],[6,'Only while L1 held'],[7,'Only while R1 held'],[3,'Only while touchpad touched'],[4,'Always on — touch touchpad to pause (ratchet)']]],
@@ -467,6 +509,10 @@ async function slotActivate(idx){
   }
   return null;
 }
+// Must match the firmware's SLOT_COUNT. A mismatch degrades gracefully both ways:
+// an older dongle simply reports the extra indices as empty, and an older portal
+// just shows fewer slots than exist.
+const UI_SLOT_COUNT = 24;
 let slotsBusy = false, slotsRerun = false;
 let _slotHealTries = 0;
 async function _refreshSlotsOnce(){
@@ -481,7 +527,7 @@ async function _refreshSlotsOnce(){
     return;
   }
   let rows = '';
-  for (let i = 0; i < 16; i++){ // fw >= 1.9.0: 16 slots (older fw reports 9+ as empty)
+  for (let i = 0; i < UI_SLOT_COUNT; i++){ // older fw reports out-of-range indices as empty
     let info = await hidLocked(() => slotInfo(i));
     if (info === null){
       // Freshly re-enumerated devices can miss the first queries; retry
@@ -700,15 +746,516 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.1) =====
+function effectTypeName(t){
+  switch(t){
+    case 0x00: return 'None';   case 0x05: return 'Off';
+    case 0x01: case 0x21: return 'Resistance';
+    case 0x02: case 0x22: return 'Bow / snap';
+    case 0x06: case 0x26: return 'Vibration';
+    case 0x23: case 0x25: return 'Weapon break';
+    case 0x27: return 'Multi-pos vibration';
+    default: return 'Type 0x' + t.toString(16).padStart(2,'0');
+  }
+}
+function isVibrationType(t){ return t === 0x26 || t === 0x06 || t === 0x27; }
+async function readEffectHistory(trig, slot){
+  await sendCmd(0x0e, [trig, slot]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x0e, undefined, 12);
+  if (!r || r[2] !== 0x00) return null;
+  return Array.from(r.slice(5, 16));
+}
+async function readTriggerEffects(trig){
+  const out = [];
+  for (let s = 0; s < 6; s++){
+    const eff = await readEffectHistory(trig, s);
+    if (!eff) break;
+    if (eff.every(b => b === 0)) continue;
+    out.push(eff);
+  }
+  return out;
+}
+// last-refreshed effects, per trigger, so the checkboxes map to bytes
+window._monEffects = { 0: [], 1: [] };
+async function refreshEffectMonitor(){
+  const box = document.getElementById('effmon');
+  if (!box) return;
+  try {
+    let html = '';
+    for (const [trig, label] of [[0,'R2 (right)'],[1,'L2 (left)']]){
+      const effs = await hidLocked(() => readTriggerEffects(trig));
+      window._monEffects[trig] = effs;
+      html += `<div style="margin:8px 0"><b>${label}</b>`;
+      if (!effs.length){ html += ` <span style="color:var(--sub)">— nothing captured yet (trigger the effect in-game, then Refresh)</span></div>`; continue; }
+      html += `<div style="font-size:11px;color:var(--sub);margin:2px 0">Tick up to 5 states that make up one action. Mechanical states (walls, resistances) are placed by their trigger positions and played in sequence as you pull (e.g. wall → wall → end-resistance, or a resistance before a wall); vibration pairs blend at the rate slider.</div>`;
+      effs.forEach((eff, i) => {
+        const nm = effectTypeName(eff[0]);
+        const hex = eff.map(b => b.toString(16).padStart(2,'0')).join(' ');
+        html += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:12px">
+          <input type="checkbox" id="mon_${trig}_${i}" onchange="onMonPick(${trig})">
+          <span style="min-width:110px"><b>${nm}</b>${i===0?' (newest)':''}</span>
+          <code style="color:var(--sub);font-size:11px">${hex}</code></div>`;
+      });
+      html += `<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px" onclick="assignCustom(${trig})">Assign ticked → custom effect (${trig===0?'R2':'L2'})</button>
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="saveCustomFile(${trig})">Save ticked to file</button></div></div>`;
+    }
+    box.innerHTML = html;
+  } catch(e){ box.innerHTML = 'Monitor error: ' + (e && e.message ? e.message : e); }
+}
+function getMonPicks(trig){
+  const effs = window._monEffects[trig] || [];
+  const picks = [];
+  effs.forEach((eff,i) => { const c = document.getElementById(`mon_${trig}_${i}`); if (c && c.checked) picks.push(eff); });
+  return picks;
+}
+function onMonPick(trig){
+  const picks = getMonPicks(trig);
+  if (picks.length > 5){ // cap at 5 (config stores 5 states)
+    const effs = window._monEffects[trig] || [];
+    let seen = 0;
+    effs.forEach((eff,i)=>{ const c=document.getElementById(`mon_${trig}_${i}`); if(c&&c.checked){ seen++; if(seen>5) c.checked=false; } });
+  }
+}
+// Write the ticked states into the live config as a custom effect on this trigger.
+async function assignCustom(trig){
+  const picks = getMonPicks(trig);
+  if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  try {
+    await hidLocked(async () => {
+      // write state A (and B if present) via cmd 0x11
+      for (let s = 0; s < picks.length; s++){
+        await sendCmd(0x11, [trig, s, ...picks[s]]);
+        await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      }
+      // set scalar controls: enable=1, state_count, default condition=hold, thresh=1, rate=40
+      const base = trig === 0 ? 0x57 : 0x5c;
+      await sendCmd(0x01, [base + 0, 1]);              // enable (field write = cmd 0x01 + id)
+      await sendCmd(0x01, [base + 4, picks.length]);   // state_count
+    });
+    // reflect in the editor: set config values + mark dirty, then re-render
+    const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+    config[pfx + '_enable'] = 1;
+    config[pfx + '_state_count'] = picks.length;
+    (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
+    window._dirty[pfx + '_state_count'] = 1;
+    render();
+    alert(`Assigned ${picks.length}-state custom effect to ${trig===0?'R2':'L2'}. Set condition/threshold/rate in the Custom Effect fields above, then Save to a slot.`);
+  } catch(e){ alert('Assign failed: ' + (e && e.message ? e.message : e)); }
+}
+// Save ticked states to a JSON file (transport / sharing).
+function saveCustomFile(trig){
+  const picks = getMonPicks(trig);
+  if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  const dump = {
+    format: 'ds5dongle-custom-effect', version: 1,
+    source: trig===0?'R2':'L2',
+    state_count: picks.length,
+    states: picks.map(e => ({ type: '0x'+e[0].toString(16).padStart(2,'0'), name: effectTypeName(e[0]), bytes: e }))
+  };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href = URL.createObjectURL(blob); a.download = `ds5-custom-effect-${trig===0?'r2':'l2'}-${stamp}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+// ===== Timeline capture (v1.17.1): record the real rhythm, replay verbatim =====
+async function tlSetArmed(on){
+  await sendCmd(0x13, [on ? 1 : 0]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
+  return !!(r && r[2] === 0x00);
+}
+async function tlReadEntry(trig, idx){
+  await sendCmd(0x14, [trig, idx]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x14, undefined, 12);
+  if (!r) return null;
+  const count = r[5];
+  if (r[2] !== 0x00) return { count, entry: null };
+  return { count, entry: { dt: r[6] | (r[7] << 8), bytes: Array.from(r.slice(8, 19)) } };
+}
+window._tlData = { 0: [], 1: [] };
+async function tlRecordStart(){
+  try {
+    const ok = await hidLocked(() => tlSetArmed(true));
+    document.getElementById('tlbox').innerHTML = ok
+      ? '<b>● Recording…</b> perform the trigger action in-game, then press Stop & fetch.'
+      : 'Arm failed.';
+  } catch(e){ alert('Record failed: ' + e); }
+}
+async function tlRecordStop(){
+  const box = document.getElementById('tlbox');
+  try {
+    await hidLocked(async () => {
+      await tlSetArmed(false);
+      for (const trig of [0,1]){
+        const list = [];
+        const first = await tlReadEntry(trig, 0);
+        const n = first ? Math.min(first.count, 16) : 0;
+        if (first && first.entry) list.push(first.entry);
+        for (let i = 1; i < n; i++){
+          const r = await tlReadEntry(trig, i);
+          if (r && r.entry) list.push(r.entry);
+        }
+        window._tlData[trig] = list;
+      }
+    });
+    let html = '';
+    for (const [trig,label] of [[0,'R2'],[1,'L2']]){
+      const tl = window._tlData[trig];
+      html += `<div style="margin:6px 0"><b>${label} timeline</b>`;
+      if (!tl.length){ html += ` <span style="color:var(--sub)">— nothing recorded</span></div>`; continue; }
+      html += ` <span style="color:var(--sub);font-size:11px">(tick up to 5 entries — the loopable core of the action — then Assign)</span>`;
+      tl.forEach((e,i)=>{
+        const nm = effectTypeName(e.bytes[0]);
+        const hex = e.bytes.map(b=>b.toString(16).padStart(2,'0')).join(' ');
+        html += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:12px">
+          <input type="checkbox" id="tl_${trig}_${i}">
+          <span style="min-width:150px"><b>${nm}</b> — ${e.dt} ms</span>
+          <code style="color:var(--sub);font-size:11px">${hex}</code></div>`;
+      });
+      html += `<div style="margin-top:4px">
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlAssign(${trig})">Assign ticked timeline → ${label}</button>
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlSaveFile(${trig})">Save ticked to file</button></div></div>`;
+    }
+    box.innerHTML = html || 'No timeline.';
+  } catch(e){ box.innerHTML = 'Fetch failed: ' + e; }
+}
+function tlPicks(trig){
+  const tl = window._tlData[trig] || [];
+  const picks = [];
+  tl.forEach((e,i)=>{ const c=document.getElementById(`tl_${trig}_${i}`); if(c&&c.checked) picks.push(e); });
+  return picks.slice(0,5);
+}
+async function tlAssign(trig){
+  const picks = tlPicks(trig);
+  if (!picks.length){ alert('Tick 1-5 timeline entries first.'); return; }
+  try {
+    await hidLocked(async () => {
+      for (let i = 0; i < picks.length; i++){
+        const t = picks[i].bytes[0];
+        const mech = (t===0x21||t===0x01||t===0x25||t===0x23||t===0x22||t===0x02); // bow is a force effect too
+        const dt = mech ? 0 : Math.min(65535, picks[i].dt|0);
+        await sendCmd(0x11, [trig, i, ...picks[i].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+        await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      }
+      const base = trig === 0 ? 0x57 : 0x5c;
+      await sendCmd(0x01, [base + 0, 1]);              // enable (field write = cmd 0x01 + id)
+      await sendCmd(0x01, [base + 4, picks.length]);   // state_count
+    });
+    const pfx2 = trig===0?'ce_r2':'ce_l2';
+    config[pfx2 + '_enable'] = 1;
+    config[pfx2 + '_state_count'] = picks.length;
+    alert(`Assigned ${picks.length}-entry TIMELINE to ${trig===0?'R2':'L2'} — replays with the recorded timing (rate slider not used). Save to a slot to keep it.`);
+  } catch(e){ alert('Assign failed: ' + e); }
+}
+function tlSaveFile(trig){
+  const picks = tlPicks(trig);
+  if (!picks.length){ alert('Tick entries first.'); return; }
+  const dump = { format:'ds5dongle-custom-effect', version:2, source: trig===0?'R2':'L2',
+    state_count: picks.length,
+    states: picks.map(e => ({ type:'0x'+e.bytes[0].toString(16).padStart(2,'0'),
+      name: effectTypeName(e.bytes[0]), bytes: e.bytes, duration_ms: e.dt })) };
+  const blob = new Blob([JSON.stringify(dump,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ds5-timeline-${trig===0?'r2':'l2'}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+// ===== Manual effect builder — author stages by hand, no capture needed =====
+// Encoding mirrors the firmware's own writers exactly, so a hand-built stage is
+// byte-identical to what the sliders (or a game) would emit for the same values.
+window._cebStages = [];
+function cebWire100(s){ const w = Math.floor((s * 7 + 50) / 100); return w > 7 ? 7 : (w < 0 ? 0 : w); }
+function cebPackZones(b, zones, val3){
+  let bits = 0;
+  for (let z = 0; z <= 9; z++) if (zones & (1 << z)) bits |= (val3 & 7) << (3 * z);
+  b[3] = bits & 0xFF; b[4] = (bits >>> 8) & 0xFF; b[5] = (bits >>> 16) & 0xFF; b[6] = (bits >>> 24) & 0xFF;
+}
+function cebBuildBytes(st){
+  const b = new Array(11).fill(0);
+  const s = Math.max(0, Math.min(9, st.start | 0));
+  const e = Math.max(0, Math.min(9, st.end | 0));
+  if (st.type === 'break'){
+    let ws = Math.max(2, Math.min(7, s));
+    let we = Math.min(8, Math.max(ws + 1, e));
+    const zp = (1 << ws) | (1 << we);
+    b[0] = 0x25; b[1] = zp & 0xFF; b[2] = (zp >>> 8) & 0xFF; b[3] = cebWire100(st.strength);
+  } else if (st.type === 'bow'){
+    // Bow/snap: zone pair in bytes 1-2, byte 3 packs draw strength and snap force
+    // (both 1-8, sent as value-1). The snap presses the trigger BACK against the
+    // finger at the end of the draw - the one thing resistance and weapon break
+    // can't do. Same layout the firmware's own bow writer uses.
+    let bs = Math.max(0, Math.min(7, s));
+    let be = Math.min(8, Math.max(bs + 1, e));
+    const zb = (1 << bs) | (1 << be);
+    b[0] = 0x22; b[1] = zb & 0xFF; b[2] = (zb >>> 8) & 0xFF;
+    b[3] = (cebWire100(st.strength) & 0x07) | ((cebWire100(st.snap) & 0x07) << 3);
+  } else {
+    const lo = Math.min(s, e), hi = Math.max(s, e);
+    let zones = 0;
+    for (let z = lo; z <= hi; z++) zones |= (1 << z);
+    b[0] = (st.type === 'vibration') ? 0x26 : 0x21;
+    b[1] = zones & 0xFF; b[2] = (zones >>> 8) & 0x03;
+    cebPackZones(b, zones, cebWire100(st.strength));
+    if (st.type === 'vibration') b[9] = Math.max(1, Math.min(255, st.freq | 0));
+  }
+  return b;
+}
+function cebZonesOf(b){ // the zones actually encoded (after clamping)
+  const zb = b[1] | ((b[2] & 0x03) << 8);
+  const out = [];
+  for (let z = 0; z < 10; z++) if (zb & (1 << z)) out.push(z);
+  return out;
+}
+function cebStartZone(b){ // lowest set zone, matching the firmware's ordering
+  const zb = b[1] | ((b[2] & 0x03) << 8);
+  for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
+  return 0;
+}
+function cebTypeChanged(){
+  const t = document.getElementById('ceb_type').value;
+  document.getElementById('ceb_endlbl').firstChild.textContent =
+    (t === 'break') ? 'Break zone ' : (t === 'bow') ? 'Draw end zone ' : 'End zone ';
+  document.getElementById('ceb_freqlbl').style.display = (t === 'vibration') ? '' : 'none';
+  document.getElementById('ceb_snaplbl').style.display = (t === 'bow') ? '' : 'none';
+  document.getElementById('ceb_strlbl').firstChild.textContent =
+    (t === 'bow') ? 'Draw strength % ' : 'Strength % ';
+}
+function cebAddStage(){
+  if (window._cebStages.length >= 5){ alert('5 stages maximum.'); return; }
+  const st = {
+    type: document.getElementById('ceb_type').value,
+    start: +document.getElementById('ceb_start').value,
+    end: +document.getElementById('ceb_end').value,
+    strength: +document.getElementById('ceb_str').value,
+    freq: +document.getElementById('ceb_freq').value,
+    snap: +document.getElementById('ceb_snap').value
+  };
+  st.bytes = cebBuildBytes(st);
+  const z = cebStartZone(st.bytes);
+  if (window._cebStages.some(o => cebStartZone(o.bytes) === z)){
+    alert('A stage in the list below already starts at zone ' + z + '.\n\nStages are ordered by their start zone, so each needs a different one. Use ✕ to drop that stage, or "Clear list" to start over.');
+    return;
+  }
+  window._cebStages.push(st);
+  cebRender();
+}
+function cebRemove(i){ window._cebStages.splice(i, 1); cebRender(); }
+function cebClear(){ window._cebStages = []; cebRender(); }
+function cebRender(){
+  const box = document.getElementById('ceb_list');
+  if (!box) return;
+  const list = window._cebStages;
+  if (!list.length){ box.innerHTML = 'No stages yet.'; return; }
+  const sorted = list.map((st, i) => ({ st, i })).sort((a, b) => cebStartZone(a.st.bytes) - cebStartZone(b.st.bytes));
+  let html = '<div style="color:var(--sub);font-size:11px;margin-bottom:2px">Played in this order as you pull:</div>';
+  const warn = [];
+  sorted.forEach(({ st, i }, n) => {
+    const hex = st.bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const zones = cebZonesOf(st.bytes);           // ACTUAL encoded zones, after clamping
+    const zs = zones.length ? zones[0] : 0;
+    const ze = zones.length ? zones[zones.length - 1] : 0;
+    const nm = effectTypeName(st.bytes[0]);
+    const at = Math.round(zs * 25.5);
+    const det = (st.type === 'break') ? `wall ${zs}→${ze}` :
+                (st.type === 'bow') ? `draw ${zs}→${ze}, snap ${st.snap}%` :
+                (st.type === 'vibration') ? `zones ${zs}–${ze}, freq ${st.freq}` :
+                `zones ${zs}–${ze}`;
+    // did the hardware limits change what was asked for?
+    const askLo = Math.min(st.start, st.end), askHi = Math.max(st.start, st.end);
+    const clamped = (st.type === 'break' || st.type === 'bow') && (zs !== askLo || ze !== askHi);
+    // how wide is this stage's felt window?
+    const nextZ = (n + 1 < sorted.length) ? cebStartZone(sorted[n + 1].st.bytes) : 10;
+    const from = (n === 0) ? 0 : Math.max(0, Math.round(zs * 25.5) - 12);
+    const to = (n + 1 < sorted.length) ? Math.max(0, Math.round(nextZ * 25.5) - 12) : 255;
+    if (to - from < 40) warn.push(`stage ${n + 1} (${nm}) is only active over ~${to - from} of 255 counts — a normal pull can skip straight past it. Space the stages further apart.`);
+    if (n === 0 && (st.bytes[0] === 0x26 || st.bytes[0] === 0x06 || st.bytes[0] === 0x27))
+      warn.push('the first stage is a Vibration — it is armed at rest and a vibration ignores trigger position, so it will buzz continuously. Put the vibration on a later (deeper) stage.');
+    html += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0">
+      <span style="min-width:14px;color:var(--sub)">${n + 1}.</span>
+      <span style="min-width:210px"><b>${nm}</b> — ${det}, ${st.strength}% <span style="color:var(--sub)">(pos ${from}–${to}${clamped ? ', clamped by hw' : ''})</span></span>
+      <code style="color:var(--sub);font-size:11px">${hex}</code>
+      <button class="btn btn-outline" style="padding:0 6px" onclick="cebRemove(${i})">✕</button></div>`;
+  });
+  if (warn.length) html += '<div style="font-size:11px;color:#e0a030;margin-top:4px">⚠ ' + warn.join('<br>⚠ ') + '</div>';
+  box.innerHTML = html;
+}
+async function cebAssign(trig){
+  const list = window._cebStages;
+  if (!list.length){ alert('Add at least one stage first.'); return; }
+  const sorted = list.slice().sort((a, b) => cebStartZone(a.bytes) - cebStartZone(b.bytes));
+  const base = trig === 0 ? 0x57 : 0x5c;   // used by the writes AND the read-back below
+  try {
+    await hidLocked(async () => {
+      for (let i = 0; i < sorted.length; i++){
+        await sendCmd(0x11, [trig, i, ...sorted[i].bytes, 0, 0]); // dt 0 = positional
+        await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      }
+      // Field writes MUST be wrapped as command 0x01 + field id — a bare
+      // sendCmd(fieldId) is an unknown top-level command and is silently
+      // ignored by the firmware (the bug that made every Assign unreliable).
+      await sendCmd(0x01, [base + 0, 1]);              // enable
+      await sendCmd(0x01, [base + 1, 0]);              // condition = While held
+      await sendCmd(0x01, [base + 2, 0]);              // zone 0 = reset on full release
+      await sendCmd(0x01, [base + 4, sorted.length]);  // state count
+    });
+    // Read back from the DEVICE and verify — never trust a silent write again.
+    const vEnable = await hidLocked(() => readField(base + 0, 'u8'));
+    const vCount  = await hidLocked(() => readField(base + 4, 'u8'));
+    if (vEnable !== 1 || vCount !== sorted.length){
+      alert(`VERIFY FAILED — device reports enable=${vEnable}, state count=${vCount} (expected 1 and ${sorted.length}). The effect will not play correctly; try Assign again.`);
+      return;
+    }
+    const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+    config[pfx + '_enable'] = 1;
+    config[pfx + '_condition'] = 0;
+    config[pfx + '_thresh'] = 0;
+    config[pfx + '_state_count'] = sorted.length;
+    (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
+    window._dirty[pfx + '_state_count'] = 1;
+    render(); cebRender();
+    alert(`Built ${sorted.length}-stage effect assigned to ${trig === 0 ? 'R2' : 'L2'} (condition While held, zone 0 set for you). Save to a slot to keep it.`);
+  } catch(e){ alert('Assign failed: ' + (e && e.message ? e.message : e)); }
+}
+async function ceClearDevice(trig){
+  const name = trig === 0 ? 'R2' : 'L2';
+  if (!confirm(`Remove the custom effect from ${name}?\n\nThis wipes its stored states on the device and returns ${name} to the trigger sliders. Your other ${name} settings, including the custom-effect-vs-sliders hand-off, are left alone. Save to a slot afterwards to make it permanent for that profile.`)) return;
+  const base = trig === 0 ? 0x57 : 0x5c;
+  // NOTE: deliberately does NOT touch ce_*_yield (the custom-effect-vs-sliders
+  // hand-off). That is a profile preference about how the trigger is shared, not
+  // part of the effect payload - resetting it meant re-picking it every time an
+  // effect was swapped.
+  try {
+    await hidLocked(async () => {
+      const zeros = new Array(11).fill(0);
+      for (let i = 0; i < 5; i++){                       // wipe all stored states
+        await sendCmd(0x11, [trig, i, ...zeros, 0, 0]);
+        await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      }
+      await sendCmd(0x01, [base + 0, 0]);                // enable off
+      await sendCmd(0x01, [base + 4, 0]);                // state count 0
+    });
+    const vEnable = await hidLocked(() => readField(base + 0, 'u8'));
+    const vCount  = await hidLocked(() => readField(base + 4, 'u8'));
+    if (vEnable !== 0 || vCount !== 0){
+      alert(`VERIFY FAILED — device still reports enable=${vEnable}, state count=${vCount}. Try again.`);
+      return;
+    }
+    window._cebStages = [];              // removing the effect starts the builder fresh
+    const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+    config[pfx + '_enable'] = 0;
+    config[pfx + '_state_count'] = 0;
+    (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
+    window._dirty[pfx + '_state_count'] = 1;
+    render();
+    alert(`${name} cleared — the trigger is back on its slider settings. Save to a slot to keep it that way.`);
+  } catch(e){ alert('Clear failed: ' + (e && e.message ? e.message : e)); }
+}
+
+// Export the effect currently assigned to a trigger, read back from the device.
+// Profile exports carry only the 85 scalar settings, so an assigned effect could
+// be enabled in a profile yet impossible to get back out as a file - this is the
+// way to recover one after the fact.
+async function exportEffectFile(trig){
+  const name = trig === 0 ? 'R2' : 'L2';
+  const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
+  const n = Math.min(5, +config[pfx + '_state_count'] || 0);
+  if (!n){ alert(`No custom effect is assigned to ${name}.`); return; }
+  try {
+    const states = [];
+    await hidLocked(async () => {
+      for (let i = 0; i < n; i++){
+        await sendCmd(0x12, [trig, i]);
+        const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+        if (!r || r[2] !== 0x00) throw new Error('device did not return state ' + i);
+        states.push({ bytes: Array.from(r.slice(5, 16)), dt: r[16] | (r[17] << 8) });
+      }
+    });
+    const dump = { format: 'ds5dongle-custom-effect', version: 2, source: name,
+      state_count: states.length,
+      states: states.map(st => ({ type: '0x' + st.bytes[0].toString(16).padStart(2,'0'),
+        name: effectTypeName(st.bytes[0]), bytes: st.bytes, duration_ms: st.dt })) };
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ds5-effect-${name.toLowerCase()}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch(e){ alert('Export failed: ' + (e && e.message ? e.message : e)); }
+}
+
+function cebSaveFile(){
+  const list = window._cebStages;
+  if (!list.length){ alert('Add at least one stage first.'); return; }
+  const sorted = list.slice().sort((a, b) => cebStartZone(a.bytes) - cebStartZone(b.bytes));
+  const dump = { format: 'ds5dongle-custom-effect', version: 2, source: 'built',
+    state_count: sorted.length,
+    states: sorted.map(st => ({ type: '0x' + st.bytes[0].toString(16).padStart(2, '0'),
+      name: effectTypeName(st.bytes[0]), bytes: st.bytes, duration_ms: 0 })) };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ds5-built-effect-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// Load a custom-effect file and write it to a trigger.
+async function loadCustomFile(event, trig){
+  const file = event.target.files[0]; if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== 'ds5dongle-custom-effect') throw new Error('not a custom-effect file');
+    if (!data.states || !data.states.length) throw new Error('no states in file');
+    const n = Math.min(5, data.states.length);
+    await hidLocked(async () => {
+      for (let s = 0; s < n; s++){
+        const st = data.states[s];
+        const t = st.bytes[0];
+        const mech = (t===0x21||t===0x01||t===0x25||t===0x23||t===0x22||t===0x02); // bow is a force effect too
+        // mechanical states never timeline-play - durations are game-state timing
+        const dt = mech ? 0 : Math.min(65535, (st.duration_ms|0) || 0);
+        await sendCmd(0x11, [trig, s, ...st.bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+        await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      }
+      const base = trig === 0 ? 0x57 : 0x5c;
+      await sendCmd(0x01, [base + 0, 1]);   // field write = cmd 0x01 + id
+      await sendCmd(0x01, [base + 4, n]);
+    });
+    const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+    config[pfx + '_enable'] = 1;
+    config[pfx + '_state_count'] = n;
+    (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
+    window._dirty[pfx + '_state_count'] = 1;
+    render();
+    alert(`Loaded ${n}-state custom effect onto ${trig===0?'R2':'L2'} (state count auto-set). Configure and Save to a slot.`);
+  } catch(e){ alert('Load failed: ' + (e && e.message ? e.message : e)); }
+  event.target.value = '';
+}
+
 // Back up ALL slots to one JSON file: names + every field value per valid slot.
+// Read one custom-effect state out of a SLOT (fw cmd 0x15). The raw effect bytes
+// are arrays inside the slot body, so the field-by-field export can't reach them -
+// without this a slot backup silently lost every custom effect.
+async function slotReadEffect(slot, trig, idx){
+  await sendCmd(0x15, [slot, trig, idx]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x15, undefined, 12);
+  if (!r || r[2] !== 0x00) return null;
+  const bytes = Array.from(r.slice(8, 19));
+  if (!bytes.some(b => b !== 0)) return null;        // empty state
+  return { bytes, duration_ms: r[6] | (r[7] << 8) };
+}
+
 async function backupAllSlots(){
   const status = document.getElementById('backupStatus');
   const setS = t => { if (status) status.textContent = t; };
-  const dump = { format: 'ds5dongle-slots', version: 1, savedAt: new Date().toISOString(), slots: [] };
+  const dump = { format: 'ds5dongle-slots', version: 2, savedAt: new Date().toISOString(), slots: [] };
   try {
     await hidLocked(async () => {
-      for (let i = 0; i < 16; i++){
-        setS(`Reading slot ${i+1}/16…`);
+      for (let i = 0; i < UI_SLOT_COUNT; i++){
+        setS(`Reading slot ${i+1}/${UI_SLOT_COUNT}…`);
         const info = await slotInfo(i);
         if (!info || !info.valid){ dump.slots.push({ index: i, valid: false }); continue; }
         const fields = {};
@@ -716,7 +1263,18 @@ async function backupAllSlots(){
           const v = await slotReadField(i, f);
           if (v !== null) fields[f[1]] = v;
         }
-        dump.slots.push({ index: i, valid: true, name: info.name, cfgVersion: info.cfgVersion, fields });
+        // raw custom-effect states (not reachable as fields)
+        const effects = {};
+        for (const [trig, key] of [[0,'r2'],[1,'l2']]){
+          const list = [];
+          for (let n = 0; n < 5; n++){
+            const e = await slotReadEffect(i, trig, n);
+            if (e) list.push(e); else break;
+          }
+          if (list.length) effects[key] = list;
+        }
+        dump.slots.push({ index: i, valid: true, name: info.name, cfgVersion: info.cfgVersion,
+                          fields, ...(Object.keys(effects).length ? { effects } : {}) });
       }
     });
     const validN = dump.slots.filter(s => s.valid).length;
@@ -760,6 +1318,18 @@ async function restoreAllSlots(file){
         }
         const wrote = await bulkWriteFields(entries);
         if (!wrote){ failed++; continue; }
+        // Raw effect states go into the live config first; slot_save snapshots the
+        // whole body, so they land in the slot with everything else.
+        if (s.effects){
+          for (const [trig, key] of [[0,'r2'],[1,'l2']]){
+            const list = s.effects[key] || [];
+            for (let n = 0; n < Math.min(5, list.length); n++){
+              const dt = Math.min(65535, (list[n].duration_ms|0) || 0);
+              await sendCmd(0x11, [trig, n, ...list[n].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+              await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+            }
+          }
+        }
         const saved = await slotSave(s.index, s.name || '');
         if (saved) done++; else failed++;
       }
@@ -822,14 +1392,54 @@ async function writeFieldSafe(fid, type, value){
 // A profile is a JSON object of {field_name: value} for every known field, plus a
 // small wrapper with a name and version. The same JSON is consumed by the ds5profile
 // CLI helper (for Playnite auto-apply), so keep the field names in sync with FIELDS.
-function exportProfile(){
+// Effects are raw state ARRAYS on the device, not numbered settings, so they are
+// invisible to the field-by-field profile export. These two helpers move them in
+// and out so a profile (and an auto-apply HTML) is a complete snapshot: without
+// them a profile could record that a trigger HAS a custom effect while carrying
+// nothing to recreate it.  Call inside hidLocked().
+async function readEffectsFromDevice(){
+  const out = {};
+  for (const [trig,key] of [[0,'r2'],[1,'l2']]){
+    const n = Math.min(5, +config[(trig===0?'ce_r2':'ce_l2') + '_state_count'] || 0);
+    const list = [];
+    for (let i = 0; i < n; i++){
+      await sendCmd(0x12, [trig, i]);
+      const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+      if (!r || r[2] !== 0x00) break;
+      const bytes = Array.from(r.slice(5, 16));
+      if (!bytes.some(b => b !== 0)) break;
+      list.push({ bytes, duration_ms: r[16] | (r[17] << 8) });
+    }
+    if (list.length) out[key] = list;
+  }
+  return out;
+}
+async function writeEffectsToDevice(effects){
+  if (!effects) return 0;
+  let n = 0;
+  for (const [trig,key] of [[0,'r2'],[1,'l2']]){
+    const list = effects[key] || [];
+    for (let i = 0; i < Math.min(5, list.length); i++){
+      const dt = Math.min(65535, (list[i].duration_ms|0) || 0);
+      await sendCmd(0x11, [trig, i, ...list[i].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+      await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      n++;
+    }
+  }
+  return n;
+}
+
+async function exportProfile(){
   const settings = {};
   for (const [fid,key] of FIELDS){ settings[key] = config[key] ?? 0; }
+  let effects = null;
+  try { effects = await hidLocked(() => readEffectsFromDevice()); } catch(e){ effects = null; }
   const profile = {
     name: 'ds5dongle-profile',
-    version: 1,
+    version: 2,
     note: 'DS5Dongle auto-haptics profile. Apply via the portal (Import) or the ds5profile CLI.',
-    settings
+    settings,
+    ...(effects && Object.keys(effects).length ? { effects } : {})
   };
   const blob = new Blob([JSON.stringify(profile, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -838,7 +1448,7 @@ function exportProfile(){
   a.download = 'ds5dongle-profile.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast('Profile exported');
+  toast('Profile exported' + (profile.effects ? ' (with custom effects)' : ''));
 }
 
 // Export a STANDALONE auto-applying HTML with the current settings baked in.
@@ -849,7 +1459,10 @@ async function exportHtml(){
                        'DS5 Profile') || 'DS5 Profile').trim() || 'DS5 Profile';
   const settings = {};
   for (const [fid,key] of FIELDS){ settings[key] = config[key] ?? 0; }
-  const embedded = { name, version: 1, settings };
+  let hEffects = null;
+  try { hEffects = await hidLocked(() => readEffectsFromDevice()); } catch(e){ hEffects = null; }
+  const embedded = { name, version: 2, settings,
+    ...(hEffects && Object.keys(hEffects).length ? { effects: hEffects } : {}) };
 
   // Get the portal's own source BYTE-EXACT by fetching the file itself, rather than
   // document.documentElement.outerHTML (which the browser may re-normalize —
@@ -891,7 +1504,7 @@ function importProfile(event){
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try{
       let data = JSON.parse(reader.result);
       // Accept either a bare {field:value} object or a {settings:{...}} wrapper.
@@ -903,7 +1516,14 @@ function importProfile(event){
         else unknown.push(k);
       }
       render();
-      toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + ' — click Save to Device to apply');
+      let extra = '';
+      if (data && data.effects){
+        try {
+          const n = await hidLocked(() => writeEffectsToDevice(data.effects));
+          extra = ` + ${n} effect state(s) applied`;
+        } catch(e){ extra = ' (custom effects need a connected device — connect and re-import)'; }
+      }
+      toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + extra + ' — click Save to Device to apply');
     }catch(e){
       toast('Import failed: not a valid profile JSON', true);
     }
@@ -1051,10 +1671,177 @@ async function refreshDiag(){
 }
 setInterval(()=>{ if(!saving && !slotsBusy && device && device.opened && document.getElementById('diagbox')) hidLocked(refreshDiag); }, 1000);
 
+// ===== Tabbed navigation =====
+// Sections keep their existing definitions; tabs are a RENDER-TIME partition, so
+// no field entry moves and no binding changes. Custom-effect fields (ce_*) live
+// inside the per-trigger sections but are shown on the Custom Effects tab, so
+// everything about an effect sits together.
+const SECTION_TAB = {
+  'Adaptive Triggers — R2 (right trigger)':'triggers',
+  'Adaptive Triggers — L2 (left trigger)':'triggers',
+  'Rumble → Trigger':'triggers',
+  'Auto-Haptics & Speaker Effect Leak':'haptics',
+  'General Haptics & Audio':'haptics',
+  'Native Haptics Filter':'haptics',
+  'Gyro Aiming':'gyro',
+  'Device & Connection':'device',
+  'Advanced — BT Latency (experimental)':'device',
+};
+// Order: connection first, then the feature areas, with Slots (where you save
+// what you just set up) last. Custom effects are NOT a separate tab: every
+// custom effect is a TRIGGER effect, and its settings cross-reference the
+// resistance mode on the same trigger (the gate hand-off warning names it), so
+// splitting them put a warning on one tab and its fix on another.
+const TABS = [
+  {id:'device',   label:'Device'},
+  {id:'haptics',  label:'Haptics'},
+  {id:'triggers', label:'Triggers'},
+  {id:'gyro',     label:'Gyro'},
+  {id:'slots',    label:'Slots'},
+];
+window._tab = window._tab || 'triggers';
+function setTab(id){ window._tab = id; render(); }
+
+// Startup self-check. This portal is one large hand-edited file and several
+// regressions were invisible: a field silently not rendered, an event attribute
+// broken by an embedded quote, a panel showing a placeholder while its data
+// still lived in memory. Fail loudly at load instead.
+function portalSelfCheck(){
+  const problems = [];
+  const seen = new Map();
+  for (const sec of SECTIONS){
+    if (!(sec.title in SECTION_TAB)) problems.push(`section "${sec.title}" is not assigned to a tab`);
+    for (const [fid,key] of sec.fields){
+      if (seen.has(key)) problems.push(`field key "${key}" appears twice`);
+      seen.set(key, fid);
+    }
+  }
+  const ids = new Map();
+  for (const [fid,key] of FIELDS){
+    if (ids.has(fid) && ids.get(fid) !== key)
+      problems.push(`field id 0x${fid.toString(16)} used by both "${ids.get(fid)}" and "${key}"`);
+    ids.set(fid, key);
+  }
+  // every section must land on a tab that exists
+  for (const sec of SECTIONS){
+    const tab = SECTION_TAB[sec.title];
+    if (!TABS.some(t => t.id === tab))
+      problems.push(`section "${sec.title}" maps to unknown tab "${tab}"`);
+  }
+  if (problems.length){
+    console.error('PORTAL SELF-CHECK FAILED:\n' + problems.join('\n'));
+    const b = document.createElement('div');
+    b.style.cssText = 'background:#5a1b1b;color:#ffd9d9;padding:8px 12px;font:12px system-ui;white-space:pre-wrap';
+    b.textContent = 'Portal self-check failed — some settings may be unreachable:\n' + problems.join('\n');
+    document.body.prepend(b);
+  }
+  return problems.length === 0;
+}
+
+// A gate hand-off is only useful if BOTH halves have something armed. The custom
+// side always does; the slider side only plays where its resistance mode is armed.
+// Rather than silently rewriting a resistance mode the user chose, flag the
+// combination and name the setting to change.
+function ceGateWarning(key){
+  const isR2 = key === 'ce_r2_yield';
+  const y = +config[isR2 ? 'ce_r2_yield' : 'ce_l2_yield'] || 0;
+  const en = +config[isR2 ? 'ce_r2_enable' : 'ce_l2_enable'] || 0;
+  if (!en || !y) return '';
+  const mode = +config[isR2 ? 'at_mode' : 'at_l2_mode'] || 0;
+  const T = isR2 ? 'R2' : 'L2';
+  const resLabel = `${T} resistance mode`;
+  if (y === 2 && mode !== 2)
+    return `Set <b>${resLabel}</b> to <b>always on</b>, or the ungated half is silent: the custom effect covers ${T} while the gate is held, and nothing is armed to cover it the rest of the time.`;
+  if (y === 1 && mode === 0)
+    return `<b>${resLabel}</b> is off, so the gated half is silent — the custom effect covers ${T} while the gate is open, but there is no slider effect to hand over to while it is held.`;
+  return '';
+}
+
+// Sub-dividers inside a section: a bold labelled rule emitted BEFORE the named
+// field, to visually split a long card into its distinct halves. Keyed by field
+// so it survives fields being reordered around it.
+const SUB_DIVIDERS = {
+  'effect_leak_volume': 'Speaker Effect Leak',
+};
+
+// One settings row. Extracted from render() so the side-by-side trigger view can
+// place identical markup into grid cells without duplicating any of it.
+function fieldRowHTML(f){
+  const [fid,key,type,label,kind,opts] = f;
+  let html = '';
+  if (SUB_DIVIDERS[key]) html += `<div class="subdiv">${SUB_DIVIDERS[key]}</div>`;
+  html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
+  if(kind==='bool'){
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
+      <option value="0" ${config[key]==0?'selected':''}>No</option>
+      <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
+  } else if(kind==='select'){
+    // NOTE: never embed a JSON array here - its double quotes close the onchange
+    // attribute and silently break EVERY select in the portal. Decide the
+    // re-render here and emit only a bare call.
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
+    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
+    html += `</select>`;
+  } else {
+    const [min,max]=opts;
+    const step = (type==='f32') ? '0.05' : '1';
+    const val = (config[key]??0);
+    const shown = (type==='f32') ? Number(val).toFixed(2) : val;
+    html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=${type==='f32'?'parseFloat(this.value)':'+this.value'};(window._dirty=window._dirty||{})['${key}']=1">`;
+  }
+  html += `</div></div>`;
+  if(key === 'ce_r2_yield' || key === 'ce_l2_yield'){
+    const w = ceGateWarning(key);
+    if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
+  }
+  return html;
+}
+
+// R2 and L2 side by side. The two lists are otherwise identical in content and
+// order, so pairing them by their shared logical key keeps every row aligned -
+// a CSS grid sizes each row to its tallest cell, so a label that wraps on one
+// side can't make the columns drift apart. "Kick follows" is the one field that
+// is SHARED by both triggers (it lives in the R2 list only), so it is lifted out
+// to a full-width row beneath rather than left dangling in one column.
+const R2_TITLE = 'Adaptive Triggers — R2 (right trigger)';
+const L2_TITLE = 'Adaptive Triggers — L2 (left trigger)';
+const SHARED_TRIGGER_KEYS = new Set(['at_pushback_src']);
+const trigLogical = k => k.replace('at_l2_','at_').replace('ce_l2_','ce_').replace('ce_r2_','ce_');
+function triggerPairHTML(){
+  const secOf = t => (SECTIONS.find(s => s.title === t) || {fields:[]}).fields;
+  const r2 = secOf(R2_TITLE), l2 = secOf(L2_TITLE);
+  const shared = [...r2, ...l2].filter(f => SHARED_TRIGGER_KEYS.has(f[1]));
+  const l2map = new Map(l2.filter(f => !SHARED_TRIGGER_KEYS.has(f[1]))
+                          .map(f => [trigLogical(f[1]), f]));
+  const rows = [];
+  for(const f of r2){
+    if(SHARED_TRIGGER_KEYS.has(f[1])) continue;
+    const lk = trigLogical(f[1]);
+    rows.push([f, l2map.get(lk) || null]);
+    l2map.delete(lk);
+  }
+  for(const f of l2map.values()) rows.push([null, f]);   // any L2-only field
+  let h = `<div class="card"><div class="card-title">Adaptive Triggers</div>
+    <div class="tpair">
+      <div class="tcolhead">L2 — left trigger</div>
+      <div class="tcolhead">R2 — right trigger</div>`;
+  // L2 first: the columns mirror the controller, where L2 is the left trigger.
+  for(const [a,b] of rows)
+    h += `<div class="tcell">${b ? fieldRowHTML(b) : ''}</div><div class="tcell">${a ? fieldRowHTML(a) : ''}</div>`;
+  h += `</div>`;
+  if(shared.length){
+    h += `<div class="tshared"><div style="font-size:11px;color:var(--sub);margin-bottom:2px">Shared by both triggers</div>`;
+    for(const f of shared) h += fieldRowHTML(f);
+    h += `</div>`;
+  }
+  return h + `</div>`;
+}
+
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.13.3</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.1</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1064,27 +1851,17 @@ function render(){
     html += `<div class="card"><p class="info-text">Click Connect and pick your DS5 Bridge.<br>Chrome or Edge required (WebHID).</p></div>`;
     app.innerHTML=html; return;
   }
+  const tab = window._tab || 'triggers';
+  html += `<div class="tabbar">` + TABS.map(t =>
+      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
+    ).join('') + `</div>`;
+
   for(const section of SECTIONS){
+    if ((SECTION_TAB[section.title] || 'device') !== tab) continue;
+    if (section.title === L2_TITLE) continue;              // drawn beside R2
+    if (section.title === R2_TITLE) { html += triggerPairHTML(); continue; }
     html += `<div class="card"><div class="card-title">${section.title}</div>`;
-    for(const [fid,key,type,label,kind,opts] of section.fields){
-      html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
-      if(kind==='bool'){
-        html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
-          <option value="0" ${config[key]==0?'selected':''}>No</option>
-          <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
-      } else if(kind==='select'){
-        html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">`;
-        { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
-        html += `</select>`;
-      } else {
-        const [min,max]=opts;
-        const step = (type==='f32') ? '0.05' : '1';
-        const val = (config[key]??0);
-        const shown = (type==='f32') ? Number(val).toFixed(2) : val;
-        html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=${type==='f32'?'parseFloat(this.value)':'+this.value'};(window._dirty=window._dirty||{})['${key}']=1">`;
-      }
-      html += `</div></div>`;
-    }
+    for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
   }
   html += `<div class="actions">
@@ -1096,16 +1873,75 @@ function render(){
     <input type="file" id="importFile" accept=".json,.ds5profile" style="display:none" onchange="importProfile(event)">
     <button class="btn btn-outline" onclick="rebootBootloader()">Reboot to Bootloader</button>
   </div>
-  <div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
+  ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
-    <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>
-  <div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>`;
+    <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
+  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
+    <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">Refresh captured effects</button>
+    <span style="font-size:12px;color:var(--sub)"> · Load custom effect file → </span>
+    <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileL2').click()">L2</button>
+    <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
+    <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
+    <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
+    <div id="effmon" style="font-size:13px;margin-top:6px">Connect and press Refresh after triggering an effect in-game.</div>
+    <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
+      <b style="font-size:13px">Timeline recording</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">● Record</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">Stop &amp; fetch</button>
+      <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">Not recording.</div>
+    </div></div>
+  <div class="card"><div class="card-title">Build a Custom Effect <span style="font-size:11px;color:var(--sub)">(author stages by hand — no game capture needed)</span></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Add up to 5 stages. Mechanical stages (weapon breaks, resistances) are played <b>in sequence as you pull</b>, ordered by their start zone — so two walls at different depths give a genuine two-stage pull, which the trigger sliders can't do. A vibration stage can be mixed in and takes over at its own depth (it replaces the wall there — the controller plays one trigger effect at a time). Each stage needs a <b>different start zone</b>, and stages want <b>room between them</b> — a stage squeezed into one or two zones can be skipped by a normal pull. Zones are 0–9 ≈ 0–100% of the pull. Weapon-break limits: wall start 2–7, break point 3–8. Bow limits: draw start 0–7, draw end 1–8. Values outside those are clamped, and the list shows what was actually encoded. A <b>bow</b> builds resistance through the draw and then <b>pushes the trigger back</b> at the end — the one thing resistance and weapon break can't do. Put any vibration on a <b>later</b> stage — a vibration on the first stage buzzes at rest.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px">
+      <select id="ceb_type" onchange="cebTypeChanged()">
+        <option value="break">Weapon break (wall that gives way)</option>
+        <option value="bow">Bow / snap (draws, then pushes back)</option>
+        <option value="resistance">Resistance</option>
+        <option value="vibration">Vibration</option>
+      </select>
+      <label>Start zone <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
+      <label id="ceb_endlbl">Break zone <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
+      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px"></label>
+      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px"></label>
+      <label id="ceb_freqlbl" style="display:none">Frequency <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
+    </div>
+    <div id="ceb_list" style="font-size:12px;margin-top:8px">No stages yet.</div>
+    <div style="margin-top:6px">
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">Assign → L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">Save to file</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">Clear list</button>
+    </div>
+    <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
+      <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(1)">Remove effect from L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
+    </div>
+    <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
+      <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
+    </div></div>` : '') + `
+  ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
+    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>` : '') + `
+  `;
   app.innerHTML=html;
-  refreshSlots();
+  // Only sweep the slots when their list is actually on screen. render() runs on
+  // every tab switch and on some dropdown changes, and the sweep costs one HID
+  // round-trip per slot (~60 ms each), so refreshing it from a tab that doesn't
+  // show it was over a second of pointless traffic per re-render. Explicit
+  // callers (save, activate, delete) still refresh directly.
+  if ((window._tab || 'triggers') === 'slots') refreshSlots();
+  // render() rebuilds the whole page, so the dynamic panels revert to their
+  // placeholders while their data still exists in memory. Repopulate them, or the
+  // builder shows an empty list yet still rejects a stage as a duplicate zone.
+  try { if (typeof cebRender === 'function') cebRender(); } catch(e){}
 }
 
 render();
+portalSelfCheck();
 
 // --- Automation entry point (for AHK / Playnite) ---------------------------
 // Opening the portal with ?autoapply=<base64-json>[&autosave=1] will:
@@ -1120,7 +1956,7 @@ render();
 // make-autoapply-html.py), the profile JSON is stamped in here and auto-applies
 // the moment the page opens — no URL parameters needed, just open the file.
 // Left null in the master portal (which behaves normally / uses URL params).
-const EMBEDDED_PROFILE = {"name":"South_of_Midnight","version":1,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":100,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":40,"effect_leak_sensitivity":40,"effect_leak_decay":70,"effect_leak_attack":100,"effect_leak_output_hp_hz":300,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":8000,"effect_leak_max_burst":2,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":0,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":2,"at_strength":80,"at_threshold":255,"at_start_pos":0,"at_shape":2,"at_strength_b":20,"at_detent_pos":5,"at_deadzone":5,"at_pushback":100,"at_kick_style":1,"at_pushback_freq":10,"at_pushback_src":2,"at_l2_mode":2,"at_l2_strength":40,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":2,"at_l2_strength_b":5,"at_l2_detent_pos":8,"at_l2_deadzone":0,"at_l2_pushback":100,"at_l2_kick_style":1,"at_l2_pushback_freq":10,"gyro_mode":7,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0}}; /*EMBED_PROFILE_HOOK*/
+const EMBEDDED_PROFILE = {"name":"DS5 Profile","version":2,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":100,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":40,"effect_leak_sensitivity":80,"effect_leak_decay":70,"effect_leak_attack":100,"effect_leak_output_hp_hz":300,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":8000,"effect_leak_max_burst":2,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":0,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":2,"at_strength":60,"at_threshold":255,"at_start_pos":0,"at_shape":2,"at_strength_b":20,"at_detent_pos":5,"at_deadzone":5,"at_pushback":100,"at_kick_style":1,"at_pushback_freq":10,"at_pushback_src":2,"ce_r2_enable":0,"ce_r2_condition":0,"ce_r2_thresh":0,"ce_r2_rate":40,"ce_r2_state_count":0,"ce_r2_yield":0,"at_l2_mode":2,"at_l2_strength":40,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":2,"at_l2_strength_b":5,"at_l2_detent_pos":8,"at_l2_deadzone":0,"at_l2_pushback":100,"at_l2_kick_style":1,"at_l2_pushback_freq":10,"ce_l2_enable":0,"ce_l2_condition":0,"ce_l2_thresh":0,"ce_l2_rate":40,"ce_l2_state_count":0,"ce_l2_yield":0,"gyro_mode":7,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0}}; /*EMBED_PROFILE_HOOK*/
 const EMBEDDED_AUTOSAVE = true; /*EMBED_AUTOSAVE_HOOK*/
 
 async function autoApply(){
@@ -1171,6 +2007,9 @@ async function autoApply(){
       const known = new Set(FIELDS.map(f=>f[1]));
       let applied=0;
       for (const k of Object.keys(settings)){ if(known.has(k)){ config[k]=settings[k]; applied++; } }
+      if (json && json.effects){
+        try { await writeEffectsToDevice(json.effects); } catch(e){ /* settings still apply */ }
+      }
       render();
       banner.textContent = `Loaded ${applied} setting(s)` + (profileName?` from "${profileName}"`:'');
 
