@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.1] — 2026-07-25
+
+### Fixed
+- **The automation could not activate slots above 16.** Raising the slot count to
+  24 left two limits behind: the profile-override parser only recognised
+  `slot 1`-`slot 16`, and the slot-activate page rejected anything higher. An
+  override like `slot17` therefore failed to parse, was treated as a profile
+  filename, and — finding no such file — silently fell back to the default
+  profile, activating the wrong slot. Both now accept 1-24, and a slot number
+  outside that range is reported as an out-of-range slot instead of a missing
+  profile file, so the failure names its real cause.
+
 ## [1.17.0] — 2026-07-25
 
 ### Changed
