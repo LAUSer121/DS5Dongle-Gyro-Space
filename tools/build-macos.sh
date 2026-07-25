@@ -6,6 +6,7 @@ TINYUSB_VERSION="0.20.0"
 BUILD_TYPE="Release"
 BUILD_DIR="build/wake"
 ENABLE_WAKE_HID="ON"
+WAVESHARE="OFF"
 SDK_DIR=""
 DEFAULT_SDK_DIR=""
 USING_DEFAULT_SDK="ON"
@@ -21,6 +22,8 @@ Build DS5Dongle on macOS using a repo-local Pico SDK checkout.
 Options:
   --standard          Build standard firmware without ENABLE_WAKE_HID.
   --wake              Build wake firmware with ENABLE_WAKE_HID (default).
+  --waveshare         Build for the Waveshare RP2350B-Plus-W board
+                      (-DWAVESHARE_RP2350B_PLUS_W_BUILD=ON), into build/waveshare.
   --clean             Remove the selected build directory before configuring.
   --sdk-dir <path>    Use this Pico SDK checkout instead of .deps/pico-sdk.
   -h, --help          Show this help.
@@ -83,6 +86,11 @@ while [[ $# -gt 0 ]]; do
     --wake)
       ENABLE_WAKE_HID="ON"
       BUILD_DIR="build/wake"
+      shift
+      ;;
+    --waveshare)
+      WAVESHARE="ON"
+      BUILD_DIR="build/waveshare"
       shift
       ;;
     --clean)
@@ -221,6 +229,10 @@ CMAKE_ARGS=(
   -DPICO_SDK_PATH="$SDK_DIR"
   -DENABLE_WAKE_HID="$ENABLE_WAKE_HID"
 )
+
+if [[ "$WAVESHARE" == "ON" ]]; then
+  CMAKE_ARGS+=(-DWAVESHARE_RP2350B_PLUS_W_BUILD=ON)
+fi
 
 if [[ -n "$PICO_TOOLCHAIN_PATH" ]]; then
   CMAKE_ARGS+=(-DPICO_TOOLCHAIN_PATH="$PICO_TOOLCHAIN_PATH")

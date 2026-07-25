@@ -17,6 +17,9 @@
     standard (default) - normal firmware.
     debug              - adds -DENABLE_SERIAL=ON -DENABLE_VERBOSE=ON.
     wake               - adds -DENABLE_WAKE_HID=ON (Wake-on-PS build).
+    waveshare          - adds -DWAVESHARE_RP2350B_PLUS_W_BUILD=ON, for the
+                         Waveshare RP2350B-Plus-W board (USB-C, 16MB flash).
+                         Builds into build\waveshare as ds5-bridge-waveshare.uf2.
 
 .PARAMETER Clean
     Delete the variant's build directory before configuring.
@@ -465,6 +468,7 @@ $cmakeArgs = @(
 switch ($Variant) {
     'debug' { $cmakeArgs += @('-DENABLE_SERIAL=ON', '-DENABLE_VERBOSE=ON') }
     'wake'  { $cmakeArgs += @('-DENABLE_WAKE_HID=ON') }
+    'waveshare' { $cmakeArgs += @('-DWAVESHARE_RP2350B_PLUS_W_BUILD=ON') }
 }
 
 Info "Configuring: cmake $($cmakeArgs -join ' ')"
