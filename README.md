@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.14.8**
+**Version 1.17.0**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -57,7 +57,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   bursts knock the trigger back against your finger — as a low-frequency vibration
   thump or a mechanical **bow-snap**, selectable per trigger — then resistance
   resumes.
-- **Custom captured effects (new in 1.14.8)** — capture the *actual* adaptive-trigger
+- **Custom captured effects (new in 1.17.0)** — capture the *actual* adaptive-trigger
   effects a game sends (weapon walls, resistances, vibrations) and replay them on
   either trigger in games that have none. Effects are stored as the exact bytes the
   game sent — nothing is decoded into sliders, so the feel is the original one.
@@ -65,7 +65,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   and played **in sequence as you pull** (e.g. wall → wall → end-resistance);
   vibrations can be captured **with their timing** and replayed to that rhythm.
   Effects can be saved and shared as JSON files.
-- **Profile slots** — up to 8 complete configurations stored on the dongle
+- **Profile slots** — up to 24 complete configurations stored on the dongle
   itself. Save your setups once in the portal; switching later is a single
   instant command instead of a full profile write — used by the automation for
   per-game profiles (`Game = slot 3` in `profile-overrides.txt`), and applied
@@ -111,7 +111,7 @@ the PC is actually asleep (where wake needs it).
    this will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.14.8.uf2` to the `RPI-RP2` drive that appears.
+   `ds5-v1.17.0.uf2` to the `RPI-RP2` drive that appears.
    - **First time / after a settings-structure change:** flash `flash_nuke.uf2`
      first to clear old settings, then flash this firmware.
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
@@ -323,7 +323,7 @@ on gunfire via the auto-haptics envelope. The diagnostics box shows the live
 ≥ 32, so if the number stays 0 while the game rumbles, the selected source isn't
 producing signal.
 
-### Custom Captured Effects (new in 1.14.8)
+### Custom Captured Effects (new in 1.17.0)
 
 Capture a real adaptive-trigger effect from a game that has one, and replay it on
 any trigger in a game that doesn't. Effects are stored as the exact 11-byte
@@ -529,9 +529,9 @@ put them in **separate profile slots** — the automation switches slots per gam
 
 **Save ticked to file** writes the effect as readable JSON (raw bytes, plus
 durations for timeline recordings). **Load custom effect file → R2 / L2** loads one
-onto a trigger and sets enable and state count automatically. Note that the
-portal's *Back up all slots* JSON does **not** include custom-effect raw bytes (it
-reconstructs slots field by field) — the on-device slot save/load **does**.
+onto a trigger and sets enable and state count automatically. The portal's *Back up all slots* JSON includes each slot's
+custom-effect states as well as its settings, so a backup restores a slot
+complete. (Backups taken before 1.17.0 predate this and contain settings only.)
 
 ### Gyro-to-Stick
 Maps controller motion onto the right stick for motion aiming.
@@ -682,9 +682,9 @@ is high-passed to protect the small speaker from low-frequency popping.
   applying a wake change through an auto-apply profile is unreliable. **Recommended:
   choose wake on or off once and leave it — don't switch it per-game.** If you rely
   on native haptics or the auto-apply profiles, keep wake **off**.
-- **Upgrading to 1.14.8 (custom effects).** The on-device configuration layout
+- **Upgrading to 1.17.0 (custom effects).** The on-device configuration layout
   changed in this release. Existing settings migrate, but any custom captured
-  effect assigned under a pre-1.14.8 test build must be **re-assigned** from the
+  effect assigned under a pre-1.17.0 test build must be **re-assigned** from the
   Trigger Effect Monitor or re-loaded from its JSON file after flashing.
 - **Hub-induced suspends.** A brief USB suspend caused by a flaky hub (while the host
   is awake) no longer powers off the controller. The power-off is debounced so only a
@@ -762,7 +762,7 @@ copyright notice is preserved as required.
 
 ## Files in this release
 
-- `ds5-v1.14.8.uf2` — the firmware (flash this; reports version 1.14.8)
+- `ds5-v1.17.0.uf2` — the firmware (flash this; reports version 1.17.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility (run before flashing if coming from a
   different config layout)

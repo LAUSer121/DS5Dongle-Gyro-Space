@@ -2,6 +2,155 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.0] — 2026-07-25
+
+### Changed
+- **24 profile slots**, up from 16. Slots occupy three flash sectors instead of
+  two, still well clear of the configuration page, with megabytes free beneath.
+  Activating a slot is unaffected — it is an index lookup, not a scan, so it costs
+  the same regardless of how many slots exist.
+- **The slot list is only re-read when it is on screen.** The portal re-renders on
+  every tab switch, and the sweep costs one round-trip per slot, so it was
+  spending over a second on HID traffic even when the Slots tab wasn't showing.
+  Saving, activating and deleting a slot still refresh the list immediately.
+
+### Upgrade note
+- Existing slots are untouched: slot storage grows downward into previously unused
+  flash, so slots 0-15 keep their addresses and contents. An older portal against
+  this firmware simply shows the first 16; a newer portal against older firmware
+  shows the extra slots as empty.
+
+## [1.16.4] — 2026-07-25
+
+### Changed
+- Portal section names are clearer about what they cover: **Auto-Haptics** is now
+  *Auto-Haptics & Speaker Effect Leak* (the leak settings live there because the
+  mode setting governs both, so they can't sensibly be split out), **Haptics &
+  Audio** is *General Haptics & Audio*, and **Native Haptics** is *Native Haptics
+  Filter*.
+- A bold labelled **Speaker Effect Leak** divider now separates the leak settings
+  from the auto-haptics ones inside that card, instead of the two halves running
+  together.
+
+## [1.16.3] — 2026-07-25
+
+### Fixed
+- **Profiles and auto-apply HTML files now carry custom effects.** Both exported
+  only the numbered settings, so a profile could record that a trigger *has* a
+  custom effect — its enable flag, condition, zone and state count — while
+  carrying nothing to recreate it, leaving the effect existing only on the device.
+  Export now reads the effect states off the device and includes them; Import and
+  auto-apply write them back. Profile files are format version 2; version 1 files
+  still import, just without effects, since they never contained any.
+
+## [1.16.2] — 2026-07-25
+
+### Added
+- **Export effect from L2 / R2** in the Build a Custom Effect panel: saves the
+  effect currently assigned to a trigger to a JSON file, read back from the
+  device. Profile exports carry only the numbered settings, so an effect could be
+  enabled in a saved profile yet impossible to get back out as a file — this
+  recovers one after the fact.
+
+### Changed
+- **L2 is now on the left and R2 on the right**, matching their positions on the
+  controller — in the side-by-side trigger columns and in the Load custom effect
+  file, Assign, Remove and Export buttons.
+
+## [1.16.1] — 2026-07-25
+
+### Changed
+- **R2 and L2 settings are now side by side.** The two triggers hold the same
+  settings in the same order, so they are drawn as two aligned columns in a single
+  Adaptive Triggers card — roughly halving the scroll and making the two triggers
+  directly comparable. Rows are paired by setting rather than by position and laid
+  out on a grid, so a label that wraps on one side cannot make the columns drift.
+  "Kick follows", which is shared by both triggers rather than belonging to R2, is
+  lifted out to a full-width row beneath the columns instead of leaving one column
+  a row longer than the other.
+
+### Added
+- A fourth portal regression test checks the two trigger columns stay aligned
+  row-for-row and that no setting is dropped from the paired view.
+
+## [1.16.0] — 2026-07-25
+
+### Fixed
+- **Slot backups now include custom effects.** "Back up all slots" exports each
+  slot field by field, but a custom effect's raw states are arrays inside the slot
+  body rather than settings, so every backup silently lost them: restoring a slot
+  brought back its settings with the effect itself missing. A new firmware command
+  reads a slot's stored effect states directly (without activating the slot), the
+  backup file now carries them per slot, and restore writes them back before
+  saving each slot. Backup files are now format version 2; version 1 files still
+  restore, just without effects, since they never contained any.
+
+## [1.15.3] — 2026-07-25
+
+### Changed
+- **Trigger synthesis now backs off when the trigger is idle.** The fast 8 ms
+  cadence exists so a stage sequence can see the trigger cross a boundary
+  mid-pull, but it was running whenever a custom effect was merely *enabled* —
+  composing 125 times a second even with both triggers resting, and re-sending a
+  sustained vibration every 25 ms indefinitely. The cadence is now 8 ms while a
+  trigger is touched or has moved in the last 300 ms, and 50 ms otherwise, which
+  cuts idle work by about 84% with no change during a pull. The interval is
+  re-evaluated every main-loop pass and trigger position comes from the input
+  report path, so movement restores the fast cadence within microseconds — stage
+  arming keeps the reliability it gained in 1.14.x. Profiles without a custom
+  effect are unaffected.
+
+## [1.15.2] — 2026-07-25
+
+### Changed
+- **Custom effects are no longer a separate tab.** Every custom effect is a
+  trigger effect, and its settings cross-reference the resistance mode on the
+  same trigger — the gate hand-off warning names that setting by name — so
+  splitting them put a warning on one tab and its fix on another. Custom-effect
+  settings now sit in their trigger's own card, directly below the resistance
+  settings they interact with, and the effect monitor and builder are on the
+  Triggers tab. The Triggers tab is longer as a result, but everything about a
+  trigger is in one place.
+- Tab order is now Device · Haptics · Triggers · Gyro · Slots — connection first,
+  then the feature areas, with Slots (where you save what you just set up) last.
+  The portal still opens on Triggers.
+
+## [1.15.1] — 2026-07-24
+
+### Fixed
+- **Wake-on-PS still unreliable with a custom effect engaged.** The 1.14.3 fix
+  stopped trigger synthesis while the host was suspended, but stopping only
+  halted *updates* — whatever effect was last written stayed **latched on the
+  controller** for the entire sleep. That is specific to custom effects: a
+  while-held effect is asserted continuously and never releases on its own, so
+  the trigger actuator stayed energized (and a captured vibration, which only
+  ends on physical release, kept buzzing) right across the deferred controller
+  power-off that the wake path depends on. Slider effects release by themselves
+  when the trigger is let go, which is why this only showed with a custom effect.
+  The bridge now sends one explicit trigger Off the moment the host suspends,
+  before standing down.
+
+## [1.15.0] — 2026-07-24
+
+### Changed
+- **The configuration portal is now organised into tabs** — Triggers, Custom
+  Effects, Haptics, Gyro, Slots and Device — instead of one long column of
+  eighty-five settings and four panels. Custom-effect settings for both triggers
+  now sit on the Custom Effects tab alongside the monitor and the builder, so
+  everything about an effect is in one place. No setting was renamed, removed or
+  re-bound: tabs are a render-time grouping of the existing definitions, so saved
+  profiles, slots and the automation entry point are unaffected.
+
+### Added
+- **Portal regression tests** (`tools/run-portal-tests.sh`). The portal is a
+  single large hand-edited file and several regressions this cycle were invisible
+  — a field silently unreachable, an event handler truncated by an embedded quote,
+  a panel showing a placeholder while its data still existed. Three harnesses now
+  check the script parses, that every one of the 85 settings renders on exactly
+  one tab, and that no generated event handler contains a stray quote or
+  unbalanced parenthesis. A self-check also runs when the portal loads and shows a
+  banner if any setting would be unreachable.
+
 ## [1.14.8] — 2026-07-24
 
 ### Fixed

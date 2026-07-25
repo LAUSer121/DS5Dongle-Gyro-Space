@@ -15,6 +15,19 @@
   .dot { width:10px; height:10px; border-radius:50%; background:var(--red); flex-shrink:0; }
   .dot.on { background:var(--green); }
   .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .subdiv { margin:16px 0 8px; padding-top:12px; border-top:2px solid var(--sub,#888);
+            font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+            color:var(--fg,#eee); }
+  .tpair { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 22px; align-items:start; }
+  .tcolhead { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub);
+              padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid var(--line,#333); }
+  .tcell { min-width:0; }
+  .tshared { margin-top:12px; padding-top:8px; border-top:1px solid var(--line,#333); }
+  .tabbar { display:flex; gap:4px; flex-wrap:wrap; margin:10px 0 14px; }
+  .tab { appearance:none; border:1px solid var(--line,#333); background:transparent; color:var(--sub);
+         padding:7px 15px; border-radius:8px; font:500 13px system-ui; cursor:pointer; }
+  .tab:hover { color:var(--fg,#eee); border-color:var(--sub); }
+  .tab.active { background:var(--accent,#3a6df0); border-color:var(--accent,#3a6df0); color:#fff; }
   .card-title { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub); margin-bottom:12px; }
   .row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
   .row:last-child { border-bottom:none; }
@@ -92,7 +105,7 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
 // kind: 'number' | 'select' | 'bool' ; type: 'u8' | 'u16' | 'f32'
 const SECTIONS = [
-  { title: 'Auto-Haptics', fields: [
+  { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
     [0x13,'auto_haptics_gain','u8','Intensity (%)','number',[0,200]],
     [0x1a,'auto_haptics_smooth','u8','Smoothness','number',[0,100]],
@@ -117,7 +130,7 @@ const SECTIONS = [
     [0x56,'effect_leak_max_burst','u8','Max Burst (x5 ms, 0 = unlimited) - caps sustained sounds to one short accent','number',[0,100]],
     [0x41,'effect_leak_hold','u8','Effect Leak Gate Hold (x5 ms) - stops flutter/chop','number',[0,100]],
   ]},
-  { title: 'Haptics & Audio', fields: [
+  { title: 'General Haptics & Audio', fields: [
     [0x01,'haptics_gain','f32','Native Haptics Gain','number',[1.0,2.0]],
     [0x02,'speaker_volume','u8','Speaker Volume','number',[0,127]],
     [0x03,'headset_volume','u8','Headset Volume','number',[0,127]],
@@ -136,7 +149,7 @@ const SECTIONS = [
     [0x08,'disable_pico_led','u8','Disable Pico LED','bool'],
     [0x11,'enable_wake','u8','Wake PC on PS Button','bool'],
   ]},
-  { title: 'Native Haptics', fields: [
+  { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
   ]},
   { title: 'Rumble → Trigger', fields: [
@@ -353,6 +366,10 @@ async function slotActivate(idx){
   }
   return null;
 }
+// Must match the firmware's SLOT_COUNT. A mismatch degrades gracefully both ways:
+// an older dongle simply reports the extra indices as empty, and an older portal
+// just shows fewer slots than exist.
+const UI_SLOT_COUNT = 24;
 let slotsBusy = false, slotsRerun = false;
 let _slotHealTries = 0;
 async function _refreshSlotsOnce(){
@@ -367,7 +384,7 @@ async function _refreshSlotsOnce(){
     return;
   }
   let rows = '';
-  for (let i = 0; i < 16; i++){ // fw >= 1.9.0: 16 slots (older fw reports 9+ as empty)
+  for (let i = 0; i < UI_SLOT_COUNT; i++){ // older fw reports out-of-range indices as empty
     let info = await hidLocked(() => slotInfo(i));
     if (info === null){
       // Freshly re-enumerated devices can miss the first queries; retry
@@ -586,7 +603,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.14.8) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.0) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -699,7 +716,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.14.8): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.17.0): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -994,6 +1011,38 @@ async function ceClearDevice(trig){
   } catch(e){ alert('Clear failed: ' + (e && e.message ? e.message : e)); }
 }
 
+// Export the effect currently assigned to a trigger, read back from the device.
+// Profile exports carry only the 85 scalar settings, so an assigned effect could
+// be enabled in a profile yet impossible to get back out as a file - this is the
+// way to recover one after the fact.
+async function exportEffectFile(trig){
+  const name = trig === 0 ? 'R2' : 'L2';
+  const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
+  const n = Math.min(5, +config[pfx + '_state_count'] || 0);
+  if (!n){ alert(`No custom effect is assigned to ${name}.`); return; }
+  try {
+    const states = [];
+    await hidLocked(async () => {
+      for (let i = 0; i < n; i++){
+        await sendCmd(0x12, [trig, i]);
+        const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+        if (!r || r[2] !== 0x00) throw new Error('device did not return state ' + i);
+        states.push({ bytes: Array.from(r.slice(5, 16)), dt: r[16] | (r[17] << 8) });
+      }
+    });
+    const dump = { format: 'ds5dongle-custom-effect', version: 2, source: name,
+      state_count: states.length,
+      states: states.map(st => ({ type: '0x' + st.bytes[0].toString(16).padStart(2,'0'),
+        name: effectTypeName(st.bytes[0]), bytes: st.bytes, duration_ms: st.dt })) };
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ds5-effect-${name.toLowerCase()}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch(e){ alert('Export failed: ' + (e && e.message ? e.message : e)); }
+}
+
 function cebSaveFile(){
   const list = window._cebStages;
   if (!list.length){ alert('Add at least one stage first.'); return; }
@@ -1044,14 +1093,26 @@ async function loadCustomFile(event, trig){
 }
 
 // Back up ALL slots to one JSON file: names + every field value per valid slot.
+// Read one custom-effect state out of a SLOT (fw cmd 0x15). The raw effect bytes
+// are arrays inside the slot body, so the field-by-field export can't reach them -
+// without this a slot backup silently lost every custom effect.
+async function slotReadEffect(slot, trig, idx){
+  await sendCmd(0x15, [slot, trig, idx]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x15, undefined, 12);
+  if (!r || r[2] !== 0x00) return null;
+  const bytes = Array.from(r.slice(8, 19));
+  if (!bytes.some(b => b !== 0)) return null;        // empty state
+  return { bytes, duration_ms: r[6] | (r[7] << 8) };
+}
+
 async function backupAllSlots(){
   const status = document.getElementById('backupStatus');
   const setS = t => { if (status) status.textContent = t; };
-  const dump = { format: 'ds5dongle-slots', version: 1, savedAt: new Date().toISOString(), slots: [] };
+  const dump = { format: 'ds5dongle-slots', version: 2, savedAt: new Date().toISOString(), slots: [] };
   try {
     await hidLocked(async () => {
-      for (let i = 0; i < 16; i++){
-        setS(`Reading slot ${i+1}/16…`);
+      for (let i = 0; i < UI_SLOT_COUNT; i++){
+        setS(`Reading slot ${i+1}/${UI_SLOT_COUNT}…`);
         const info = await slotInfo(i);
         if (!info || !info.valid){ dump.slots.push({ index: i, valid: false }); continue; }
         const fields = {};
@@ -1059,7 +1120,18 @@ async function backupAllSlots(){
           const v = await slotReadField(i, f);
           if (v !== null) fields[f[1]] = v;
         }
-        dump.slots.push({ index: i, valid: true, name: info.name, cfgVersion: info.cfgVersion, fields });
+        // raw custom-effect states (not reachable as fields)
+        const effects = {};
+        for (const [trig, key] of [[0,'r2'],[1,'l2']]){
+          const list = [];
+          for (let n = 0; n < 5; n++){
+            const e = await slotReadEffect(i, trig, n);
+            if (e) list.push(e); else break;
+          }
+          if (list.length) effects[key] = list;
+        }
+        dump.slots.push({ index: i, valid: true, name: info.name, cfgVersion: info.cfgVersion,
+                          fields, ...(Object.keys(effects).length ? { effects } : {}) });
       }
     });
     const validN = dump.slots.filter(s => s.valid).length;
@@ -1103,6 +1175,18 @@ async function restoreAllSlots(file){
         }
         const wrote = await bulkWriteFields(entries);
         if (!wrote){ failed++; continue; }
+        // Raw effect states go into the live config first; slot_save snapshots the
+        // whole body, so they land in the slot with everything else.
+        if (s.effects){
+          for (const [trig, key] of [[0,'r2'],[1,'l2']]){
+            const list = s.effects[key] || [];
+            for (let n = 0; n < Math.min(5, list.length); n++){
+              const dt = Math.min(65535, (list[n].duration_ms|0) || 0);
+              await sendCmd(0x11, [trig, n, ...list[n].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+              await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+            }
+          }
+        }
         const saved = await slotSave(s.index, s.name || '');
         if (saved) done++; else failed++;
       }
@@ -1165,14 +1249,54 @@ async function writeFieldSafe(fid, type, value){
 // A profile is a JSON object of {field_name: value} for every known field, plus a
 // small wrapper with a name and version. The same JSON is consumed by the ds5profile
 // CLI helper (for Playnite auto-apply), so keep the field names in sync with FIELDS.
-function exportProfile(){
+// Effects are raw state ARRAYS on the device, not numbered settings, so they are
+// invisible to the field-by-field profile export. These two helpers move them in
+// and out so a profile (and an auto-apply HTML) is a complete snapshot: without
+// them a profile could record that a trigger HAS a custom effect while carrying
+// nothing to recreate it.  Call inside hidLocked().
+async function readEffectsFromDevice(){
+  const out = {};
+  for (const [trig,key] of [[0,'r2'],[1,'l2']]){
+    const n = Math.min(5, +config[(trig===0?'ce_r2':'ce_l2') + '_state_count'] || 0);
+    const list = [];
+    for (let i = 0; i < n; i++){
+      await sendCmd(0x12, [trig, i]);
+      const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+      if (!r || r[2] !== 0x00) break;
+      const bytes = Array.from(r.slice(5, 16));
+      if (!bytes.some(b => b !== 0)) break;
+      list.push({ bytes, duration_ms: r[16] | (r[17] << 8) });
+    }
+    if (list.length) out[key] = list;
+  }
+  return out;
+}
+async function writeEffectsToDevice(effects){
+  if (!effects) return 0;
+  let n = 0;
+  for (const [trig,key] of [[0,'r2'],[1,'l2']]){
+    const list = effects[key] || [];
+    for (let i = 0; i < Math.min(5, list.length); i++){
+      const dt = Math.min(65535, (list[i].duration_ms|0) || 0);
+      await sendCmd(0x11, [trig, i, ...list[i].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
+      await readCmdReplyOn(SLOT_REPORT, 0x11, undefined, 12);
+      n++;
+    }
+  }
+  return n;
+}
+
+async function exportProfile(){
   const settings = {};
   for (const [fid,key] of FIELDS){ settings[key] = config[key] ?? 0; }
+  let effects = null;
+  try { effects = await hidLocked(() => readEffectsFromDevice()); } catch(e){ effects = null; }
   const profile = {
     name: 'ds5dongle-profile',
-    version: 1,
+    version: 2,
     note: 'DS5Dongle auto-haptics profile. Apply via the portal (Import) or the ds5profile CLI.',
-    settings
+    settings,
+    ...(effects && Object.keys(effects).length ? { effects } : {})
   };
   const blob = new Blob([JSON.stringify(profile, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1181,7 +1305,7 @@ function exportProfile(){
   a.download = 'ds5dongle-profile.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast('Profile exported');
+  toast('Profile exported' + (profile.effects ? ' (with custom effects)' : ''));
 }
 
 // Export a STANDALONE auto-applying HTML with the current settings baked in.
@@ -1192,7 +1316,10 @@ async function exportHtml(){
                        'DS5 Profile') || 'DS5 Profile').trim() || 'DS5 Profile';
   const settings = {};
   for (const [fid,key] of FIELDS){ settings[key] = config[key] ?? 0; }
-  const embedded = { name, version: 1, settings };
+  let hEffects = null;
+  try { hEffects = await hidLocked(() => readEffectsFromDevice()); } catch(e){ hEffects = null; }
+  const embedded = { name, version: 2, settings,
+    ...(hEffects && Object.keys(hEffects).length ? { effects: hEffects } : {}) };
 
   // Get the portal's own source BYTE-EXACT by fetching the file itself, rather than
   // document.documentElement.outerHTML (which the browser may re-normalize —
@@ -1234,7 +1361,7 @@ function importProfile(event){
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try{
       let data = JSON.parse(reader.result);
       // Accept either a bare {field:value} object or a {settings:{...}} wrapper.
@@ -1246,7 +1373,14 @@ function importProfile(event){
         else unknown.push(k);
       }
       render();
-      toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + ' — click Save to Device to apply');
+      let extra = '';
+      if (data && data.effects){
+        try {
+          const n = await hidLocked(() => writeEffectsToDevice(data.effects));
+          extra = ` + ${n} effect state(s) applied`;
+        } catch(e){ extra = ' (custom effects need a connected device — connect and re-import)'; }
+      }
+      toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + extra + ' — click Save to Device to apply');
     }catch(e){
       toast('Import failed: not a valid profile JSON', true);
     }
@@ -1394,6 +1528,73 @@ async function refreshDiag(){
 }
 setInterval(()=>{ if(!saving && !slotsBusy && device && device.opened && document.getElementById('diagbox')) hidLocked(refreshDiag); }, 1000);
 
+// ===== Tabbed navigation =====
+// Sections keep their existing definitions; tabs are a RENDER-TIME partition, so
+// no field entry moves and no binding changes. Custom-effect fields (ce_*) live
+// inside the per-trigger sections but are shown on the Custom Effects tab, so
+// everything about an effect sits together.
+const SECTION_TAB = {
+  'Adaptive Triggers — R2 (right trigger)':'triggers',
+  'Adaptive Triggers — L2 (left trigger)':'triggers',
+  'Rumble → Trigger':'triggers',
+  'Auto-Haptics & Speaker Effect Leak':'haptics',
+  'General Haptics & Audio':'haptics',
+  'Native Haptics Filter':'haptics',
+  'Gyro Aiming':'gyro',
+  'Device & Connection':'device',
+  'Advanced — BT Latency (experimental)':'device',
+};
+// Order: connection first, then the feature areas, with Slots (where you save
+// what you just set up) last. Custom effects are NOT a separate tab: every
+// custom effect is a TRIGGER effect, and its settings cross-reference the
+// resistance mode on the same trigger (the gate hand-off warning names it), so
+// splitting them put a warning on one tab and its fix on another.
+const TABS = [
+  {id:'device',   label:'Device'},
+  {id:'haptics',  label:'Haptics'},
+  {id:'triggers', label:'Triggers'},
+  {id:'gyro',     label:'Gyro'},
+  {id:'slots',    label:'Slots'},
+];
+window._tab = window._tab || 'triggers';
+function setTab(id){ window._tab = id; render(); }
+
+// Startup self-check. This portal is one large hand-edited file and several
+// regressions were invisible: a field silently not rendered, an event attribute
+// broken by an embedded quote, a panel showing a placeholder while its data
+// still lived in memory. Fail loudly at load instead.
+function portalSelfCheck(){
+  const problems = [];
+  const seen = new Map();
+  for (const sec of SECTIONS){
+    if (!(sec.title in SECTION_TAB)) problems.push(`section "${sec.title}" is not assigned to a tab`);
+    for (const [fid,key] of sec.fields){
+      if (seen.has(key)) problems.push(`field key "${key}" appears twice`);
+      seen.set(key, fid);
+    }
+  }
+  const ids = new Map();
+  for (const [fid,key] of FIELDS){
+    if (ids.has(fid) && ids.get(fid) !== key)
+      problems.push(`field id 0x${fid.toString(16)} used by both "${ids.get(fid)}" and "${key}"`);
+    ids.set(fid, key);
+  }
+  // every section must land on a tab that exists
+  for (const sec of SECTIONS){
+    const tab = SECTION_TAB[sec.title];
+    if (!TABS.some(t => t.id === tab))
+      problems.push(`section "${sec.title}" maps to unknown tab "${tab}"`);
+  }
+  if (problems.length){
+    console.error('PORTAL SELF-CHECK FAILED:\n' + problems.join('\n'));
+    const b = document.createElement('div');
+    b.style.cssText = 'background:#5a1b1b;color:#ffd9d9;padding:8px 12px;font:12px system-ui;white-space:pre-wrap';
+    b.textContent = 'Portal self-check failed — some settings may be unreachable:\n' + problems.join('\n');
+    document.body.prepend(b);
+  }
+  return problems.length === 0;
+}
+
 // A gate hand-off is only useful if BOTH halves have something armed. The custom
 // side always does; the slider side only plays where its resistance mode is armed.
 // Rather than silently rewriting a resistance mode the user chose, flag the
@@ -1413,10 +1614,91 @@ function ceGateWarning(key){
   return '';
 }
 
+// Sub-dividers inside a section: a bold labelled rule emitted BEFORE the named
+// field, to visually split a long card into its distinct halves. Keyed by field
+// so it survives fields being reordered around it.
+const SUB_DIVIDERS = {
+  'effect_leak_volume': 'Speaker Effect Leak',
+};
+
+// One settings row. Extracted from render() so the side-by-side trigger view can
+// place identical markup into grid cells without duplicating any of it.
+function fieldRowHTML(f){
+  const [fid,key,type,label,kind,opts] = f;
+  let html = '';
+  if (SUB_DIVIDERS[key]) html += `<div class="subdiv">${SUB_DIVIDERS[key]}</div>`;
+  html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
+  if(kind==='bool'){
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
+      <option value="0" ${config[key]==0?'selected':''}>No</option>
+      <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
+  } else if(kind==='select'){
+    // NOTE: never embed a JSON array here - its double quotes close the onchange
+    // attribute and silently break EVERY select in the portal. Decide the
+    // re-render here and emit only a bare call.
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
+    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
+    html += `</select>`;
+  } else {
+    const [min,max]=opts;
+    const step = (type==='f32') ? '0.05' : '1';
+    const val = (config[key]??0);
+    const shown = (type==='f32') ? Number(val).toFixed(2) : val;
+    html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=${type==='f32'?'parseFloat(this.value)':'+this.value'};(window._dirty=window._dirty||{})['${key}']=1">`;
+  }
+  html += `</div></div>`;
+  if(key === 'ce_r2_yield' || key === 'ce_l2_yield'){
+    const w = ceGateWarning(key);
+    if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
+  }
+  return html;
+}
+
+// R2 and L2 side by side. The two lists are otherwise identical in content and
+// order, so pairing them by their shared logical key keeps every row aligned -
+// a CSS grid sizes each row to its tallest cell, so a label that wraps on one
+// side can't make the columns drift apart. "Kick follows" is the one field that
+// is SHARED by both triggers (it lives in the R2 list only), so it is lifted out
+// to a full-width row beneath rather than left dangling in one column.
+const R2_TITLE = 'Adaptive Triggers — R2 (right trigger)';
+const L2_TITLE = 'Adaptive Triggers — L2 (left trigger)';
+const SHARED_TRIGGER_KEYS = new Set(['at_pushback_src']);
+const trigLogical = k => k.replace('at_l2_','at_').replace('ce_l2_','ce_').replace('ce_r2_','ce_');
+function triggerPairHTML(){
+  const secOf = t => (SECTIONS.find(s => s.title === t) || {fields:[]}).fields;
+  const r2 = secOf(R2_TITLE), l2 = secOf(L2_TITLE);
+  const shared = [...r2, ...l2].filter(f => SHARED_TRIGGER_KEYS.has(f[1]));
+  const l2map = new Map(l2.filter(f => !SHARED_TRIGGER_KEYS.has(f[1]))
+                          .map(f => [trigLogical(f[1]), f]));
+  const rows = [];
+  for(const f of r2){
+    if(SHARED_TRIGGER_KEYS.has(f[1])) continue;
+    const lk = trigLogical(f[1]);
+    rows.push([f, l2map.get(lk) || null]);
+    l2map.delete(lk);
+  }
+  for(const f of l2map.values()) rows.push([null, f]);   // any L2-only field
+  let h = `<div class="card"><div class="card-title">Adaptive Triggers</div>
+    <div class="tpair">
+      <div class="tcolhead">L2 — left trigger</div>
+      <div class="tcolhead">R2 — right trigger</div>`;
+  // L2 first: the columns mirror the controller, where L2 is the left trigger.
+  for(const [a,b] of rows)
+    h += `<div class="tcell">${b ? fieldRowHTML(b) : ''}</div><div class="tcell">${a ? fieldRowHTML(a) : ''}</div>`;
+  h += `</div>`;
+  if(shared.length){
+    h += `<div class="tshared"><div style="font-size:11px;color:var(--sub);margin-bottom:2px">Shared by both triggers</div>`;
+    for(const f of shared) h += fieldRowHTML(f);
+    h += `</div>`;
+  }
+  return h + `</div>`;
+}
+
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.14.8</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.0</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1426,35 +1708,17 @@ function render(){
     html += `<div class="card"><p class="info-text">Click Connect and pick your DS5 Bridge.<br>Chrome or Edge required (WebHID).</p></div>`;
     app.innerHTML=html; return;
   }
+  const tab = window._tab || 'triggers';
+  html += `<div class="tabbar">` + TABS.map(t =>
+      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
+    ).join('') + `</div>`;
+
   for(const section of SECTIONS){
+    if ((SECTION_TAB[section.title] || 'device') !== tab) continue;
+    if (section.title === L2_TITLE) continue;              // drawn beside R2
+    if (section.title === R2_TITLE) { html += triggerPairHTML(); continue; }
     html += `<div class="card"><div class="card-title">${section.title}</div>`;
-    for(const [fid,key,type,label,kind,opts] of section.fields){
-      html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
-      if(kind==='bool'){
-        html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
-          <option value="0" ${config[key]==0?'selected':''}>No</option>
-          <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
-      } else if(kind==='select'){
-        // NOTE: never embed a JSON array here - its double quotes close the
-        // onchange attribute and silently break EVERY select in the portal.
-        // Decide re-render here, emit only a bare call.
-        const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
-        html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
-        { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
-        html += `</select>`;
-      } else {
-        const [min,max]=opts;
-        const step = (type==='f32') ? '0.05' : '1';
-        const val = (config[key]??0);
-        const shown = (type==='f32') ? Number(val).toFixed(2) : val;
-        html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=${type==='f32'?'parseFloat(this.value)':'+this.value'};(window._dirty=window._dirty||{})['${key}']=1">`;
-      }
-      html += `</div></div>`;
-      if(key === 'ce_r2_yield' || key === 'ce_l2_yield'){
-        const w = ceGateWarning(key);
-        if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
-      }
-    }
+    for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
   }
   html += `<div class="actions">
@@ -1466,15 +1730,15 @@ function render(){
     <input type="file" id="importFile" accept=".json,.ds5profile" style="display:none" onchange="importProfile(event)">
     <button class="btn btn-outline" onclick="rebootBootloader()">Reboot to Bootloader</button>
   </div>
-  <div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
+  ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
-    <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>
-  <div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
+    <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
+  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
     <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">Refresh captured effects</button>
     <span style="font-size:12px;color:var(--sub)"> · Load custom effect file → </span>
-    <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileL2').click()">L2</button>
+    <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
     <div id="effmon" style="font-size:13px;margin-top:6px">Connect and press Refresh after triggering an effect in-game.</div>
@@ -1502,20 +1766,31 @@ function render(){
     </div>
     <div id="ceb_list" style="font-size:12px;margin-top:8px">No stages yet.</div>
     <div style="margin-top:6px">
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">Assign → L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">Save to file</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">Clear list</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(1)">Remove effect from L2</button>
-    </div></div>
-  <div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>`;
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
+    </div>
+    <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
+      <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
+    </div></div>` : '') + `
+  ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
+    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>` : '') + `
+  `;
   app.innerHTML=html;
-  refreshSlots();
+  // Only sweep the slots when their list is actually on screen. render() runs on
+  // every tab switch and on some dropdown changes, and the sweep costs one HID
+  // round-trip per slot (~60 ms each), so refreshing it from a tab that doesn't
+  // show it was over a second of pointless traffic per re-render. Explicit
+  // callers (save, activate, delete) still refresh directly.
+  if ((window._tab || 'triggers') === 'slots') refreshSlots();
   // render() rebuilds the whole page, so the dynamic panels revert to their
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
@@ -1523,6 +1798,7 @@ function render(){
 }
 
 render();
+portalSelfCheck();
 
 // --- Automation entry point (for AHK / Playnite) ---------------------------
 // Opening the portal with ?autoapply=<base64-json>[&autosave=1] will:
@@ -1588,6 +1864,9 @@ async function autoApply(){
       const known = new Set(FIELDS.map(f=>f[1]));
       let applied=0;
       for (const k of Object.keys(settings)){ if(known.has(k)){ config[k]=settings[k]; applied++; } }
+      if (json && json.effects){
+        try { await writeEffectsToDevice(json.effects); } catch(e){ /* settings still apply */ }
+      }
       render();
       banner.textContent = `Loaded ${applied} setting(s)` + (profileName?` from "${profileName}"`:'');
 
