@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.2**
+**Version 1.17.3**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -10,14 +10,32 @@ leak** for added immersion, and **custom captured trigger effects** — record a
 real adaptive-trigger effect from a game that has one and replay it in games that
 don't — all configurable from a web-based portal.
 
-> ⚠️ **Hardware requirement — Pico 2 W only.** The released `.uf2` is built for the
-> **Raspberry Pi Pico 2 W** (RP2350). It will **not** run on the original
-> **Raspberry Pi Pico W** (RP2040) — they are different chips (Cortex-M33 vs
-> Cortex-M0+, different memory and no FPU on the RP2040), so a binary built for one
-> cannot run on the other. This firmware's floating-point audio DSP (auto-haptics,
-> the effect leak, resampling) is designed around the RP2350's FPU and larger RAM;
-> the original Pico W is not supported. Make sure your board is a **Pico 2 W**
-> before flashing.
+> ⚠️ **Hardware requirement — an RP2350 board.** Two are supported:
+>
+> - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
+>   it and you're done.
+> - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — supported,
+>   but no prebuilt binary ships for it, so build it with **one command**:
+>
+>   ```
+>   Windows:  powershell -ExecutionPolicy Bypass -File tools\build-windows.ps1 -Variant waveshare
+>   macOS:    ./tools/build-macos.sh --waveshare
+>   ```
+>
+>   These fetch the right toolchain and SDK for you and write
+>   `ds5-bridge-waveshare.uf2` into its own build directory. **This board needs
+>   pico-sdk 2.2.0**, newer than the 2.1.1 used for the Pico 2 W build — and the
+>   difference matters: against 2.1.1 this target still *compiles*, but the
+>   resulting firmware does not work properly, because the RM2 wireless needs
+>   2.2.0. If you build by hand with `boards/build_waveshare_rp2350b_plus_w.sh`,
+>   it now checks your SDK version and refuses rather than handing you a
+>   silently broken build.
+>
+> The original **Raspberry Pi Pico W** (RP2040) is **not** supported — it is a
+> different chip (Cortex-M0+ vs Cortex-M33, less memory, no FPU), so a binary built
+> for one cannot run on the other, and this firmware's floating-point audio DSP
+> (auto-haptics, the effect leak, resampling) is designed around the RP2350's FPU
+> and larger RAM. Check which board you have before flashing.
 
 Built on **awalol/DS5Dongle v0.7.0**, which relocates the entire BT/USB/audio path
 to RAM so native fine haptics and controller audio work without overclocking.
@@ -57,7 +75,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   bursts knock the trigger back against your finger — as a low-frequency vibration
   thump or a mechanical **bow-snap**, selectable per trigger — then resistance
   resumes.
-- **Custom captured effects (new in 1.17.2)** — capture the *actual* adaptive-trigger
+- **Custom captured effects (new in 1.17.3)** — capture the *actual* adaptive-trigger
   effects a game sends (weapon walls, resistances, vibrations) and replay them on
   either trigger in games that have none. Effects are stored as the exact bytes the
   game sent — nothing is decoded into sliders, so the feel is the original one.
@@ -107,11 +125,11 @@ the PC is actually asleep (where wake needs it).
 
 ## Quick start
 
-1. **Flash the firmware.** *(Pico 2 W / RP2350 only — see the hardware note above;
+1. **Flash the firmware.** *(RP2350 only — Pico 2 W prebuilt, Waveshare RP2350B-Plus-W build-it-yourself; see the hardware note above;
    this will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.2.uf2` to the `RPI-RP2` drive that appears.
+   `ds5-v1.17.3.uf2` to the `RPI-RP2` drive that appears.
    - **First time / after a settings-structure change:** flash `flash_nuke.uf2`
      first to clear old settings, then flash this firmware.
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
@@ -323,7 +341,7 @@ on gunfire via the auto-haptics envelope. The diagnostics box shows the live
 ≥ 32, so if the number stays 0 while the game rumbles, the selected source isn't
 producing signal.
 
-### Custom Captured Effects (new in 1.17.2)
+### Custom Captured Effects (new in 1.17.3)
 
 Capture a real adaptive-trigger effect from a game that has one, and replay it on
 any trigger in a game that doesn't. Effects are stored as the exact 11-byte
@@ -545,7 +563,7 @@ put them in **separate profile slots** — the automation switches slots per gam
 durations for timeline recordings). **Load custom effect file → R2 / L2** loads one
 onto a trigger and sets enable and state count automatically. The portal's *Back up all slots* JSON includes each slot's
 custom-effect states as well as its settings, so a backup restores a slot
-complete. (Backups taken before 1.17.2 predate this and contain settings only.)
+complete. (Backups taken before 1.17.3 predate this and contain settings only.)
 
 ### Gyro-to-Stick
 Maps controller motion onto the right stick for motion aiming.
@@ -696,9 +714,9 @@ is high-passed to protect the small speaker from low-frequency popping.
   applying a wake change through an auto-apply profile is unreliable. **Recommended:
   choose wake on or off once and leave it — don't switch it per-game.** If you rely
   on native haptics or the auto-apply profiles, keep wake **off**.
-- **Upgrading to 1.17.2 (custom effects).** The on-device configuration layout
+- **Upgrading to 1.17.3 (custom effects).** The on-device configuration layout
   changed in this release. Existing settings migrate, but any custom captured
-  effect assigned under a pre-1.17.2 test build must be **re-assigned** from the
+  effect assigned under a pre-1.17.3 test build must be **re-assigned** from the
   Trigger Effect Monitor or re-loaded from its JSON file after flashing.
 - **Hub-induced suspends.** A brief USB suspend caused by a flaky hub (while the host
   is awake) no longer powers off the controller. The power-off is debounced so only a
@@ -776,7 +794,7 @@ copyright notice is preserved as required.
 
 ## Files in this release
 
-- `ds5-v1.17.2.uf2` — the firmware (flash this; reports version 1.17.2)
+- `ds5-v1.17.3.uf2` — the firmware (flash this; reports version 1.17.3)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility (run before flashing if coming from a
   different config layout)

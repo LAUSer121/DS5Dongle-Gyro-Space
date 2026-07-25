@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.3] — 2026-07-25
+
+### Fixed
+- **Building for the Waveshare RP2350B-Plus-W is now one command, and can no
+  longer produce a silently broken binary.** A user reported that
+  `boards/build_waveshare_rp2350b_plus_w.sh` was hard to use and that even after
+  working through its errors the firmware "still didn't work correctly", while
+  passing the board flag to the Windows builder worked flawlessly. The cause: the
+  script only checked that `PICO_SDK_PATH` was *set*, not what it pointed at. This
+  target compiles cleanly against SDK 2.1.1 — the version the README's own setup
+  recipe produces for the Pico 2 W build — but the board's RM2 wireless needs
+  2.2.0, so a 2.1.1 checkout yields firmware that builds and then misbehaves. The
+  script now verifies the SDK version and refuses, naming the easier route.
+
+### Added
+- **A supported `waveshare` build variant** in both one-command builders, so the
+  board no longer needs anyone to hand-edit CMake arguments:
+  `tools/build-windows.ps1 -Variant waveshare` and
+  `tools/build-macos.sh --waveshare`. Each fetches the correct SDK and TinyUSB,
+  builds into its own directory, and produces `ds5-bridge-waveshare.uf2`.
+
 ## [1.17.2] — 2026-07-25
 
 ### Fixed
