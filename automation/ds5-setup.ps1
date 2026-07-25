@@ -64,7 +64,7 @@ $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
 $DS5Dir        = $scriptDir
 $NativeList    = Join-Path $DS5Dir "native-games.txt"
-# Default profiles: an .html filename in profiles\, OR "slot N" (N = 1-16) to
+# Default profiles: an .html filename in profiles\, OR "slot N" (N = 1-24) to
 # activate a profile saved ON THE DONGLE - one atomic command via the self-
 # closing slot page: faster than a field-by-field html apply, and no window
 # stays open. Example: $AudioProfile = "slot 1"
@@ -284,10 +284,14 @@ function Apply-Profile($htmlPath, $query = "") {
 # profile .html filename - into the page + query to open. $null if unusable.
 function Resolve-DS5Profile([string]$spec) {
     if (-not $spec) { return $null }
-    if ($spec -match '^(?i)slot[\s:]*([1-9]|1[0-6])$') {
+    if ($spec -match '^(?i)slot[\s:]*([1-9]|1[0-9]|2[0-4])$') {
         $p = Join-Path (Join-Path $DS5Dir "profiles") "slot-activate.html"
         if (Test-Path -LiteralPath $p) { return @{ Path = $p; Query = "?slot=$($Matches[1])" } }
         Log "WARN slot-activate.html missing - re-run ds5-setup"
+        return $null
+    }
+    if ($spec -match '^(?i)slot[\s:]*([0-9]+)$') {
+        Log "WARN slot number out of range: '$spec' - valid slots are 1-24 (fw 1.17.0+; older firmware 1-16)"
         return $null
     }
     $p = Join-Path (Join-Path $DS5Dir "profiles") $spec
@@ -938,7 +942,7 @@ if (-not (Test-Path -LiteralPath $ovrList)) {
 #
 # - The fragment matches the Playnite game name (case-insensitive, partial,
 #   accent/encoding tolerant - same rules as native-games.txt).
-# - "slot N" (or "slot:N", N = 1-16) activates a profile saved on the dongle in
+# - "slot N" (or "slot:N", N = 1-24) activates a profile saved on the dongle in
 #   the portal's Profile Slots panel - a single instant command; preferred.
 # - The file form points at an exported .autoapply.html placed in profiles\.
 # - Optional flag: ", audio" also runs the ds5audio capture, ", noaudio" skips
