@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.1**
+**Version 1.17.2**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -57,7 +57,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   bursts knock the trigger back against your finger — as a low-frequency vibration
   thump or a mechanical **bow-snap**, selectable per trigger — then resistance
   resumes.
-- **Custom captured effects (new in 1.17.1)** — capture the *actual* adaptive-trigger
+- **Custom captured effects (new in 1.17.2)** — capture the *actual* adaptive-trigger
   effects a game sends (weapon walls, resistances, vibrations) and replay them on
   either trigger in games that have none. Effects are stored as the exact bytes the
   game sent — nothing is decoded into sliders, so the feel is the original one.
@@ -111,7 +111,7 @@ the PC is actually asleep (where wake needs it).
    this will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.1.uf2` to the `RPI-RP2` drive that appears.
+   `ds5-v1.17.2.uf2` to the `RPI-RP2` drive that appears.
    - **First time / after a settings-structure change:** flash `flash_nuke.uf2`
      first to clear old settings, then flash this firmware.
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
@@ -323,7 +323,7 @@ on gunfire via the auto-haptics envelope. The diagnostics box shows the live
 ≥ 32, so if the number stays 0 while the game rumbles, the selected source isn't
 producing signal.
 
-### Custom Captured Effects (new in 1.17.1)
+### Custom Captured Effects (new in 1.17.2)
 
 Capture a real adaptive-trigger effect from a game that has one, and replay it on
 any trigger in a game that doesn't. Effects are stored as the exact 11-byte
@@ -386,6 +386,20 @@ captured effect can't respond to a game explosion.
   wall at ~30% → wall at ~50% → light end-resistance in the rapid-fire hold.
 - **Vibration states → time-based.** A 2-state pair blends A↔B at the toggle rate;
   a timeline recording (below) replays the recorded rhythm instead.
+
+**How far each stage runs.** A stage hands over to the next one shortly *before*
+the next stage's region begins, so the next effect is always armed ahead of your
+finger rather than snapping into place under it. The consequence is worth knowing
+when you design a sequence:
+
+- **Stages that don't overlap** — e.g. zones 1-3, then 4-7, then 8-9 — each play
+  their **whole span**, including the last. Any clean gap between one stage's end
+  and the next stage's start is enough.
+- **Stages that overlap** — e.g. zones 1-3, then 2-4 — are **cut short**, because
+  the hand-over point falls inside the earlier stage. A bow whose draw is cut
+  before its end never reaches its snap, which softens the ending. That can be
+  exactly what you want, but it is easy to hit by accident: the builder warns
+  whenever a stage ends up with less than 40 of the trigger's 255 counts.
 
 So there are three distinct replay behaviours, picked for you:
 
@@ -531,7 +545,7 @@ put them in **separate profile slots** — the automation switches slots per gam
 durations for timeline recordings). **Load custom effect file → R2 / L2** loads one
 onto a trigger and sets enable and state count automatically. The portal's *Back up all slots* JSON includes each slot's
 custom-effect states as well as its settings, so a backup restores a slot
-complete. (Backups taken before 1.17.1 predate this and contain settings only.)
+complete. (Backups taken before 1.17.2 predate this and contain settings only.)
 
 ### Gyro-to-Stick
 Maps controller motion onto the right stick for motion aiming.
@@ -682,9 +696,9 @@ is high-passed to protect the small speaker from low-frequency popping.
   applying a wake change through an auto-apply profile is unreliable. **Recommended:
   choose wake on or off once and leave it — don't switch it per-game.** If you rely
   on native haptics or the auto-apply profiles, keep wake **off**.
-- **Upgrading to 1.17.1 (custom effects).** The on-device configuration layout
+- **Upgrading to 1.17.2 (custom effects).** The on-device configuration layout
   changed in this release. Existing settings migrate, but any custom captured
-  effect assigned under a pre-1.17.1 test build must be **re-assigned** from the
+  effect assigned under a pre-1.17.2 test build must be **re-assigned** from the
   Trigger Effect Monitor or re-loaded from its JSON file after flashing.
 - **Hub-induced suspends.** A brief USB suspend caused by a flaky hub (while the host
   is awake) no longer powers off the controller. The power-off is debounced so only a
@@ -762,7 +776,7 @@ copyright notice is preserved as required.
 
 ## Files in this release
 
-- `ds5-v1.17.1.uf2` — the firmware (flash this; reports version 1.17.1)
+- `ds5-v1.17.2.uf2` — the firmware (flash this; reports version 1.17.2)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility (run before flashing if coming from a
   different config layout)

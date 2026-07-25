@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.2] — 2026-07-25
+
+### Fixed
+- Exported profiles no longer tell you to apply them with a `ds5profile` CLI. No
+  such tool was ever shipped, so every exported profile carried a note pointing at
+  something that doesn't exist.
+
+### Documentation
+- The README now explains **how far each stage of a multi-stage effect runs**. A
+  stage hands over shortly before the next stage's region begins, so the next
+  effect is armed ahead of your finger. Stages that don't overlap each play their
+  whole span; stages that overlap are cut short — which softens a bow's ending by
+  cutting it before its snap, useful deliberately but easy to hit by accident.
+
 ## [1.17.1] — 2026-07-25
 
 ### Fixed

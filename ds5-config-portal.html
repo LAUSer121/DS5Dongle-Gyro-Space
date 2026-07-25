@@ -603,7 +603,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.1) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.2) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -716,7 +716,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.17.1): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.17.2): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -1247,7 +1247,9 @@ async function writeFieldSafe(fid, type, value){
 
 // --- Profile export/import ---
 // A profile is a JSON object of {field_name: value} for every known field, plus a
-// small wrapper with a name and version. The same JSON is consumed by the ds5profile
+// small wrapper with a name and version. (An earlier note here promised a
+// ds5profile CLI; no such tool was ever shipped, so the note was removed rather
+// than left pointing at something that does not exist.)
 // CLI helper (for Playnite auto-apply), so keep the field names in sync with FIELDS.
 // Effects are raw state ARRAYS on the device, not numbered settings, so they are
 // invisible to the field-by-field profile export. These two helpers move them in
@@ -1294,7 +1296,7 @@ async function exportProfile(){
   const profile = {
     name: 'ds5dongle-profile',
     version: 2,
-    note: 'DS5Dongle auto-haptics profile. Apply via the portal (Import) or the ds5profile CLI.',
+    note: 'DS5Dongle profile. Import it with the configuration portal.',
     settings,
     ...(effects && Object.keys(effects).length ? { effects } : {})
   };
@@ -1698,7 +1700,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.1</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.2</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1727,7 +1729,7 @@ function render(){
     <button class="btn btn-outline" onclick="exportProfile()">Export Profile</button>
     <button class="btn btn-outline" onclick="exportHtml()">Export HTML</button>
     <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">Import Profile</button>
-    <input type="file" id="importFile" accept=".json,.ds5profile" style="display:none" onchange="importProfile(event)">
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProfile(event)">
     <button class="btn btn-outline" onclick="rebootBootloader()">Reboot to Bootloader</button>
   </div>
   ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
