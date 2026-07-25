@@ -108,6 +108,32 @@ bool get_effect_history(uint8_t trig, uint8_t slot, uint8_t out[11]) {
 
 static bool state_update_apply(const uint8_t *data, uint8_t size);
 
+// Adaptive synthesis cadence. The 8 ms tick exists so a stage sequence can see
+// the trigger cross a boundary mid-pull - but a trigger sitting at rest cannot
+// cross anything, so composing 125 times a second while nothing moves is wasted
+// work (and, for a sustained vibration, a wasted re-send every 25 ms).
+// Positions are updated by the INPUT report path, independent of this tick, so
+// backing off never blinds us. The CALLER must evaluate this every main-loop
+// pass, not at the tick rate: then a movement is noticed within one pass
+// (microseconds) and the fast cadence is already back before the next tick is
+// due. Evaluating it only at 50 ms would let a fast pull travel ~128 counts
+// unseen - exactly the stage-skipping this cadence was raised to fix.
+uint32_t state_synth_interval_ms() {
+    extern volatile uint8_t g_r2_pos, g_l2_pos;
+    const Config_body &c = get_config();
+    if (!c.ce_r2_enable && !c.ce_l2_enable) return 50;   // no custom effect: as before
+    static uint8_t  last_r2 = 0, last_l2 = 0;
+    static uint32_t moved_ms = 0;
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (g_r2_pos != last_r2 || g_l2_pos != last_l2) {
+        last_r2 = g_r2_pos; last_l2 = g_l2_pos;
+        moved_ms = now;
+    }
+    const bool touched   = (g_r2_pos > 3) || (g_l2_pos > 3);
+    const bool just_moved = (now - moved_ms) < 300;       // cover the release/reset too
+    return (touched || just_moved) ? 8u : 50u;
+}
+
 bool state_synth_tick() {
     if (!g_host_cache_size) return false;                  // no host intent cached yet
     const uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -119,8 +145,7 @@ bool state_synth_tick() {
     // transitions latch), so drop to 8 ms - still far slower than the 250-1000 Hz
     // a host report path already handles.
     {
-        const Config_body &c = get_config();
-        const uint32_t quiet_ms = (c.ce_r2_enable || c.ce_l2_enable) ? 8u : 50u;
+        const uint32_t quiet_ms = state_synth_interval_ms();
         if (now - g_last_host_ms < quiet_ms) return false;  // host actively driving
     }
     alignas(4) static uint8_t copy[sizeof(SetStateData)];
@@ -1063,4 +1088,26 @@ void set_volume(const uint8_t speaker, const uint8_t headset) {
 void set_gain(const uint8_t value) {
     state.SpeakerCompPreGain = value;
     state.BeamformingEnable = true;
+}
+
+// Called once when the host suspends. Standing down (1.14.3) only stopped
+// UPDATING - whatever was last written stayed LATCHED on the controller for the
+// whole sleep. That is specific to custom effects: a while-held effect is
+// asserted continuously and never releases on its own, so the trigger actuator
+// stays energized (and a captured vibration, which only ends on physical
+// release, keeps buzzing) right through the sleep, across the deferred
+// bt_power_off_controller() the wake path depends on. Slider effects release by
+// themselves when the trigger is let go, which is why this only bit with a
+// custom effect engaged. Send ONE explicit Off for both triggers.
+bool state_release_for_suspend() {
+    for (int i = 0; i < 11; ++i) {
+        state.RightTriggerFFB[i] = 0;
+        state.LeftTriggerFFB[i] = 0;
+    }
+    state.RightTriggerFFB[0] = 0x05;      // Off - an explicit release, not "don't touch"
+    state.LeftTriggerFFB[0]  = 0x05;
+    state.AllowRightTriggerFFB = 1;
+    state.AllowLeftTriggerFFB  = 1;
+    g_ce_force_send = true;               // bypass change-suppression for this one send
+    return true;
 }

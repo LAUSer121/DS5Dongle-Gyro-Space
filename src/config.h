@@ -199,7 +199,7 @@ bool config_save();
 // below the active-config sector). Saving a slot is a rare manual portal
 // action; activating one at game launch is a single atomic command instead of
 // a 30-field write.
-constexpr uint8_t SLOT_COUNT = 16;       // v1.9.0: 16 (was 8) - 8 per flash sector
+constexpr uint8_t SLOT_COUNT = 24;       // v1.17.0: 24 (was 16) - 8 per flash sector, 3 sectors
 constexpr uint8_t SLOTS_PER_SECTOR = 8;  // 512-byte stride in a 4 KB sector
 constexpr uint8_t SLOT_NAME_LEN = 16;
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current config.body -> slot

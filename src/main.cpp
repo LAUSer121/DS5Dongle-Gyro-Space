@@ -435,6 +435,23 @@ int main() {
         // engage/release from live trigger movement, and releases must actually
         // reach the controller (fixes triggers stuck in resistance after rapid
         // R2/L2 play in games that only send reports when rumble changes).
+        // Host just went to sleep: actively release the triggers ONCE before
+        // standing down, so nothing stays latched on the controller through the
+        // sleep and across the deferred power-off the wake path relies on.
+        {
+            static bool was_suspended = false;
+            const bool susp = wake_host_is_suspended();
+            if (susp && !was_suspended && state_release_for_suspend()) {
+                uint8_t outputData[78]{};
+                outputData[0] = 0x31;
+                outputData[1] = reportSeqCounter << 4;
+                if (++reportSeqCounter == 256) reportSeqCounter = 0;
+                outputData[2] = 0x10;
+                state_set(outputData + 3, sizeof(SetStateData));
+                bt_write(outputData, sizeof(outputData));
+            }
+            was_suspended = susp;
+        }
         {
             static uint32_t last_synth_tick_ms = 0;
             const uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -449,7 +466,10 @@ int main() {
             // wake-on-PS has to observe - so stand down completely until resume.
             // (Raising this cadence from 50 ms without that guard is what made
             // wake less reliable than 1.13.3.)
-            if (!wake_host_is_suspended() && now - last_synth_tick_ms >= 8) {
+            // Interval is re-evaluated EVERY pass (cheap), so trigger movement
+            // restores the fast cadence immediately; only the tick is rate-limited.
+            if (!wake_host_is_suspended() &&
+                now - last_synth_tick_ms >= state_synth_interval_ms()) {
                 last_synth_tick_ms = now;
                 if (state_synth_tick()) {
                     uint8_t outputData[78]{};

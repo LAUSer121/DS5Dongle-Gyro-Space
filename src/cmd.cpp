@@ -35,8 +35,8 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 14;
-constexpr uint8_t FW_VER_PATCH = 8;
+constexpr uint8_t FW_VER_MINOR = 17;
+constexpr uint8_t FW_VER_PATCH = 0;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -658,6 +658,31 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     buf[2] = 0x00;
                     buf[6] = (uint8_t)(dt & 0xFF); buf[7] = (uint8_t)(dt >> 8);
                     memcpy(buf + 8, eff, 11);
+                }
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x15: {
+            // READ a custom-effect state FROM A SLOT (for backup/export), without
+            // activating it. The raw effect bytes live in the slot's Config_body but
+            // are arrays, not scalar fields, so the field-by-field export at 0x0d
+            // cannot see them - which is why slot backups used to lose every custom
+            // effect. Payload: [slot, trig, idx]. Reply:
+            //   0x66 0x15 status slot trig idx dt_lo dt_hi <11 bytes>
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x15; buf[2] = 0x01;
+            if (bufsize >= 3 && buffer[0] < SLOT_COUNT && buffer[1] <= 1 && buffer[2] <= 4) {
+                buf[3] = buffer[0]; buf[4] = buffer[1]; buf[5] = buffer[2];
+                Config_body sb{};
+                if (slot_load_body(buffer[0], sb)) {
+                    const uint8_t *src = (buffer[1] == 0) ? sb.ce_r2_states[buffer[2]]
+                                                          : sb.ce_l2_states[buffer[2]];
+                    const uint16_t dt = (buffer[1] == 0) ? sb.ce_r2_dt[buffer[2]]
+                                                         : sb.ce_l2_dt[buffer[2]];
+                    buf[2] = 0x00;
+                    buf[6] = (uint8_t)(dt & 0xFF); buf[7] = (uint8_t)(dt >> 8);
+                    memcpy(buf + 8, src, 11);
                 }
             }
             feature_data[0x84].assign(buf, buf + sizeof(buf));
