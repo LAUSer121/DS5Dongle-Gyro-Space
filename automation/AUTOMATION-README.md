@@ -22,9 +22,24 @@ audio-driven auto-haptics games.
 ## Requirements
 
 - Windows with PowerShell 5.1 (built into Windows 10/11).
-- Python 3 with the `pyaudiowpatch` package: `pip install pyaudiowpatch`.
 - A Chromium browser (Chrome/Edge) for the WebHID config portal.
 - The DS5Dongle flashed and connected.
+- **Python 3 — only if you play games *without* native DualSense support.** The
+  automation starts the audio bridge (`ds5audio.py`) for those games, and that
+  needs Python. Install it from [python.org](https://www.python.org/downloads/)
+  (tick *"Add python.exe to PATH"*), then:
+
+  ```
+  pip install PyAudioWPatch
+  ```
+
+  *Already installed this for audio routing while following the main README's
+  Quick start? Then you're done — it's the same install, nothing to repeat.*
+
+  **A native-only setup needs no Python at all.** For any game listed in
+  `native-games.txt` the automation applies the native profile and deliberately
+  starts no audio capture, so the automation still works — slot switching, wake,
+  per-game profiles and all — with Python absent.
 
 ## Setup (once)
 
