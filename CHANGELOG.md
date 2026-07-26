@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.4] — 2026-07-25
+
+### Documentation
+- **Wake guidance corrected.** The README told everyone to leave wake off. That
+  advice only holds for games with native DualSense support, where the altered USB
+  descriptor can break native recognition. For non-native games driven by an
+  auto-haptics profile nothing depends on that recognition, so wake can stay on.
+  Wake is an ordinary configuration field, so every profile and slot carries its
+  own value and the automation switches it per game — on for auto-haptics
+  profiles, off for native ones. The one real caveat is now stated precisely:
+  changing wake forces a USB re-enumeration, which slot activation handles cleanly
+  (a single command) but a field-by-field `.html` profile can be interrupted by.
+- **Stale references swept.** Section names in the configuration reference now
+  match the portal's renamed sections; instructions name the tab a panel lives on
+  now that the portal is tabbed; the gate hand-off setting was added to the
+  per-trigger settings table; and five "new in ..." notes that had been dragged
+  along by version bumps now name the release each feature actually arrived in
+  (custom effects 1.14.0, effect-carrying backups 1.16.0) rather than the current
+  one.
+
 ## [1.17.3] — 2026-07-25
 
 ### Fixed
