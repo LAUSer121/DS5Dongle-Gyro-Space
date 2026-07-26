@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.4**
+**Version 1.17.5**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -14,8 +14,11 @@ don't — all configurable from a web-based portal.
 >
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
-> - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — supported,
->   but no prebuilt binary ships for it, so build it with **one command**:
+> - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
+>   `ds5-v1.17.5-waveshare.uf2` now ships with each release; flash that and you're
+>   done. It is built against pico-sdk 2.2.0, as this board requires.
+>   *It has not yet been confirmed on hardware by anyone — if you have this board,
+>   a report either way is very welcome.* To build it yourself instead, one command:
 >
 >   ```
 >   Windows:  powershell -ExecutionPolicy Bypass -File tools\build-windows.ps1 -Variant waveshare
@@ -64,6 +67,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
 - [Building from source](#building-from-source)
   - [Modified files](#modified-files)
 - [Credits & license](#credits--license)
+- [Keeping up to date](#keeping-up-to-date)
 - [Files in this release](#files-in-this-release)
 - [Optional: Playnite automation](#optional-playnite-automation)
 
@@ -167,7 +171,7 @@ the PC is actually asleep (where wake needs it).
    this will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.4.uf2` to the `RPI-RP2` drive that appears.
+   `ds5-v1.17.5.uf2` to the `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`.** Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
@@ -905,9 +909,35 @@ copyright notice is preserved as required.
 
 ---
 
+## Keeping up to date
+
+**Watch releases, not commits.** Development happens as a steady stream of commits;
+those are work in progress and aren't meant to be flashed. Every tested build is
+published as a **release** with its own `.uf2`, portal and changelog entry. On
+GitHub, *Watch* → *Custom* → *Releases* notifies you about those and nothing else.
+
+**Updating is drag-and-drop.** Hold BOOTSEL while plugging the board in (or
+triple-click BOOTSEL on a running one) and copy the new `.uf2` to the `RPI-RP2`
+drive. Take the portal from the same release — the portal and firmware are released
+together and are tested as a pair.
+
+**Your settings survive.** Configuration and all saved profile slots carry across an
+upgrade: new options are appended to the stored layout, so existing values keep
+their meaning and anything new starts at its default. There is nothing to back up,
+nothing to re-enter, and no need for `flash_nuke.uf2` unless a release note says so.
+
+**How often is up to you.** There's no auto-update and nothing nags you. If your
+setup works, staying on it is perfectly fine — upgrade when a release mentions a fix
+or feature you actually want. Release notes say plainly when a change is
+firmware-only, portal-only or documentation-only, so you can skip the ones that
+don't affect you.
+
 ## Files in this release
 
-- `ds5-v1.17.4.uf2` — the firmware (flash this; reports version 1.17.4)
+- `ds5-v1.17.5.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.17.5)
+- `ds5-v1.17.5-waveshare.uf2` — the same firmware for the **Waveshare
+  RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
   only when a release note says so, or to recover from clearly corrupted settings.

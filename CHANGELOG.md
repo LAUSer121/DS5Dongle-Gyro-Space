@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.5] — 2026-07-26
+
+### Added
+- **A prebuilt Waveshare RP2350B-Plus-W binary now ships** —
+  `ds5-v1.17.5-waveshare.uf2`, alongside the Pico 2 W firmware. It is built
+  against pico-sdk 2.2.0 as that board requires, so it no longer has to be built
+  by hand.
+
+### Fixed
+- **`-Variant waveshare` was rejected before it ran.** The variant added in 1.17.3
+  was documented and wired into the build switch, but never added to the
+  `ValidateSet` on the script's `-Variant` parameter, so PowerShell refused the
+  value at parameter binding and the option could not be used at all. Thanks to
+  **@ishay3000** for catching and fixing it (#2).
+
 ## [1.17.4] — 2026-07-25
 
 ### Documentation
