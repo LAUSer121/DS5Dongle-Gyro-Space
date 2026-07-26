@@ -48,7 +48,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('standard', 'debug', 'wake')]
+    [ValidateSet('standard', 'debug', 'wake', 'waveshare')]
     [string]$Variant = 'standard',
     [switch]$Clean,
     # Project to build when this script is run standalone (not from inside a
