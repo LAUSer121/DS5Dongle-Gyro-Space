@@ -42,6 +42,32 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 ---
 
+## Contents
+
+- [What this adds over the base firmware](#what-this-adds-over-the-base-firmware)
+- [Quick start](#quick-start)
+- [Suggested setup](#suggested-setup)
+- [Configuration reference](#configuration-reference)
+  - [Auto-Haptics & Speaker Effect Leak](#auto-haptics--speaker-effect-leak)
+  - [General Haptics & Audio](#general-haptics--audio)
+  - [Trigger-to-Rumble (R2T)](#trigger-to-rumble-r2t)
+  - [Adaptive Triggers (Stage 1: resistance, Stage 2: push-back kick)](#adaptive-triggers-stage-1-resistance-stage-2-push-back-kick)
+  - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
+  - [Gyro-to-Stick](#gyro-to-stick)
+  - [Trigger effects — shared](#trigger-effects--shared)
+  - [Device & Connection](#device--connection)
+  - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
+- [Modes explained](#modes-explained)
+- [How it works (brief)](#how-it-works-brief)
+- [Notes & known behavior](#notes--known-behavior)
+- [Building from source](#building-from-source)
+  - [Modified files](#modified-files)
+- [Credits & license](#credits--license)
+- [Files in this release](#files-in-this-release)
+- [Optional: Playnite automation](#optional-playnite-automation)
+
+---
+
 ## What this adds over the base firmware
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
@@ -165,7 +191,7 @@ adjust to taste — but they give a working, balanced configuration without tria
 error. (The firmware does not ship with these as defaults, so there's no flashing
 surprise; apply them in the portal and save.)
 
-**Auto-Haptics**
+**Auto-Haptics & Speaker Effect Leak**
 | Setting | Value |
 |---|---|
 | Mode | Off (switch to Mix or Replace per game) |
@@ -191,7 +217,7 @@ surprise; apply them in the portal and save.)
 | Effect Leak Max Burst (x5 ms) | 0 (off; try 30) |
 | Effect Leak Detection Band (Hz) | 2500 |
 
-**Haptics & Audio**
+**General Haptics & Audio**
 | Setting | Value |
 |---|---|
 | Native Haptics Gain | 1.00 |
@@ -211,7 +237,7 @@ surprise; apply them in the portal and save.)
 | Inactive Time (min) | 12 |
 | Disable Inactive Disconnect | No |
 | Disable Pico LED | No |
-| Wake PC on PS Button | Off by default — on for auto-haptics profiles, off for native games (see above) |
+| Wake PC on PS Button | On for auto-haptics profiles, off for native games |
 
 **Advanced — BT Latency (experimental)**
 | Setting | Value |
@@ -267,6 +293,11 @@ different setups:
 
 Rule of thumb: **the fader answers "is there anything REAL on ch3/4?"** Native
 game = yes, keep 100. Non-native = no (it's a duplicate), set 0.
+
+Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
 | Auto-mute Speaker (Replace) | on/off | on | Mute controller speaker in Replace mode |
 | Auto-mute Speaker (Mix) | on/off | off | Mute controller speaker in Mix mode |
 | Lightbar Off in Replace Mode | on/off | off | Kills the lightbar glow in Replace (e.g. blue in Xbox360 mode) |
