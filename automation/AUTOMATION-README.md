@@ -119,6 +119,54 @@ pre-launch apply (one profile, one window, no focus loss), and the mix profile
 is restored automatically on game exit. Do NOT wire extra per-game scripts in
 Playnite for this: a second apply would race the first one mid-write.
 
+## Known issues
+
+**Some games don't work with Playnite's global script.** A few titles never fire
+the global start/stop scripts, or fire them at the wrong moment, so the profile is
+never applied and audio capture never starts. *Resident Evil 4* is one of them.
+
+Fix it for that game only:
+
+1. In Playnite, open the game's **Edit** → **Scripts**.
+2. Untick **"Execute global script"** for this game.
+3. Paste the same start and stop lines that `ds5-setup.bat` printed into that
+   game's own **Execute before starting game** and **Execute after exiting game**
+   boxes.
+
+The game then runs the scripts directly instead of through the global hook and
+behaves like every other title. Everything else keeps using the global script — you
+only need this for the games that misbehave.
+
+## Mixing native DualSense and virtual (XB360/DS4) controllers
+
+If some of your games have native DualSense support and the rest need an Xbox 360
+or DS4 pad through DS4Windows, you can run both without changing anything at launch
+time. The trick is to control **which games can see the DualSense at all**.
+
+1. **DS4Windows — default profile: Xbox 360 (or DS4).** This runs for everything by
+   default, so all your non-native games get a virtual pad exactly as before.
+2. **DS4Windows — one manual profile per native game, set to *passthrough*.**
+   Passthrough leaves the DualSense as itself instead of converting it, so the game
+   sees a real DualSense and its native haptics and triggers work.
+3. **HidHide — hide the DualSense from everything except your native games.** Add
+   the DualSense to the hidden device list, then whitelist only the executables of
+   the native titles.
+
+The result needs no intervention:
+
+| Game | Sees the DualSense? | What it gets |
+|---|---|---|
+| Native DualSense title | Yes — whitelisted in HidHide | The real controller, DS4Windows passing it through: native haptics and adaptive triggers |
+| Everything else | No — hidden | The DS4Windows virtual Xbox 360 / DS4 pad |
+
+This also removes the need to close DS4Windows before launching a native game
+(see *Native-haptics games — required setup* in the main README): the virtual pad
+never competes for those titles, because the game can only see the DualSense.
+
+And it composes with the dongle's own automation rather than conflicting with it —
+Playnite still switches the dongle's profile slot per game, while HidHide and
+DS4Windows decide which controller identity that game sees.
+
 ## Troubleshooting
 
 Everything is logged to `ds5-automation.log`. Each line shows the game name, the
