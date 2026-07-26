@@ -167,8 +167,12 @@ the PC is actually asleep (where wake needs it).
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
    `ds5-v1.17.4.uf2` to the `RPI-RP2` drive that appears.
-   - **First time / after a settings-structure change:** flash `flash_nuke.uf2`
-     first to clear old settings, then flash this firmware.
+   - **You do not normally need `flash_nuke.uf2`.** Settings and saved profile
+     slots survive an upgrade — new options are appended to the stored layout, so
+     old values keep their meaning and anything new lands on its default. Only
+     run it if a release note explicitly says to, or if the portal shows settings
+     that are clearly nonsense. **It erases every setting *and* all 24 profile
+     slots**, so back up your slots first (*Slots* tab → *Back up all slots*).
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
    downloaded file in Chrome or Edge. (WebHID needs a secure context — opening it
    directly from a website host or `file://` that the browser flags will fail with
@@ -875,8 +879,9 @@ copyright notice is preserved as required.
 
 - `ds5-v1.17.4.uf2` — the firmware (flash this; reports version 1.17.4)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
-- `flash_nuke.uf2` — config-reset utility (run before flashing if coming from a
-  different config layout)
+- `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
+  only when a release note says so, or to recover from clearly corrupted settings.
+  Erases all settings and every profile slot.
 - `src/` — the modified source files
 - `ds5dongle-v1.0.9.patch` — unified diff against awalol v0.7.0 (up to fw 1.0.9)
 - `LICENSE` — MIT license
