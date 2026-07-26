@@ -176,10 +176,30 @@ the PC is actually asleep (where wake needs it).
    serving it from `http://localhost`.)
 3. **Connect.** Click *Connect* and select the DualSense.
 4. **Configure.** Set *Auto Haptics Mode* and tune to taste, then *Save to Device*.
+5. **Start the audio bridge — required for auto-haptics.** Auto-haptics are
+   *derived from your PC's game audio*, and nothing derives them until this is
+   running:
 
-The firmware ships with safe stock defaults (auto-haptics off, standard buffer),
-so a fresh flash works out of the box with no required configuration. For a tuned
-auto-haptics + immersion setup, see **Suggested setup** below.
+   ```
+   python automation/ds5audio.py
+   ```
+
+   No device flags are needed for most setups — it finds the DualSense on its own
+   (`--list`, `--in-index`, `--out-index` are there for when it picks wrong). Leave
+   it running while you play.
+
+> **The audio bridge is not optional, and it is not part of the Playnite
+> automation.** Without `ds5audio.py` running there is no audio for the firmware to
+> work from, so *Auto Haptics Mode* will appear to do nothing no matter how it is
+> tuned — the single most common reason auto-haptics "doesn't work". The one case
+> that doesn't need it is a game with **native** DualSense support, which drives
+> the controller directly; for those, run the game without the bridge (and see the
+> wake note about native games).
+
+The firmware ships with safe stock defaults (auto-haptics off, standard buffer), so
+a fresh flash is safe and passthrough works immediately. **Auto-haptics additionally
+need the audio bridge above.** For a tuned auto-haptics + immersion setup, see
+**Suggested setup** below.
 
 ---
 
