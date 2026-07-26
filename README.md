@@ -896,7 +896,17 @@ profile per game and routes game audio to the dongle for audio-driven auto-hapti
 switching automatically between native-haptics games and everything else.
 
 Quick start:
-1. Install Python 3 and `pip install pyaudiowpatch numpy`.
+1. **Python 3 — only if you play games *without* native DualSense support.** The
+   automation starts the audio bridge for those games, and that needs Python. For
+   any game listed in `native-games.txt` it applies the native profile and starts
+   no audio capture, so **a native-only setup needs no Python** — slot switching,
+   wake and per-game profiles all still work.
+   - *Already installed it for audio routing in step 5 of the Quick start above?
+     It's the same install — skip this and go to step 2.*
+   - Otherwise install Python 3 from [python.org](https://www.python.org/downloads/)
+     (tick *"Add python.exe to PATH"*), then `pip install PyAudioWPatch`.
+     `numpy` is **optional** — it gives cleaner resampling, and is only *required*
+     by the separate `ds5audio_downmix.py` helper.
 2. Run `automation\ds5-setup.bat` — it detects its own folder and generates the
    Playnite scripts with correct paths, then prints the exact lines to paste into
    Playnite's script settings.
