@@ -46,6 +46,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - [What this adds over the base firmware](#what-this-adds-over-the-base-firmware)
 - [Quick start](#quick-start)
+- [Native-haptics games — required setup](#native-haptics-games--required-setup)
 - [Suggested setup](#suggested-setup)
 - [Configuration reference](#configuration-reference)
   - [Auto-Haptics & Speaker Effect Leak](#auto-haptics--speaker-effect-leak)
@@ -184,7 +185,9 @@ the PC is actually asleep (where wake needs it).
    - **Playing games with native DualSense support?** Leave *Auto Haptics Mode* on
      **Off**, click *Save to Device*, and **you're finished.** Native games drive
      the controller's haptics themselves and the dongle passes them straight
-     through — no Python, no helper, nothing else to install.
+     through — no Python, no helper, nothing else to install. **Native haptics also
+     need two settings outside this project** — see
+     [Native-haptics games — required setup](#native-haptics-games--required-setup).
    - **Want haptics in games *without* native support?** (Most games.) Set *Auto
      Haptics Mode* to **Mix** or **Replace**, tune to taste, *Save to Device* —
      then continue to step 5.
@@ -221,6 +224,33 @@ a fresh flash is safe and native passthrough works immediately. For a tuned
 auto-haptics + immersion setup, see **Suggested setup** below.
 
 ---
+
+## Native-haptics games — required setup
+
+Games with native DualSense support drive the controller themselves and the dongle
+passes their haptics straight through. Whether that actually happens is decided by
+two things outside this project, and both catch people out.
+
+**1. Steam: set the controller override to *Disabled* for that game.**
+Right-click the game in Steam → *Properties* → *Controller*, and set the override
+to **Disabled**. Not *Default*, and not *Enabled* — either of those leaves Steam
+Input in front of the controller, the game stops seeing a real DualSense, and
+native haptics never arrive at all.
+
+**2. DS4Windows may have to be closed.**
+If you use DS4Windows to present an Xbox 360 or DS4 virtual pad, Steam can pick up
+that virtual controller instead of the DualSense and refuse to treat the game as
+native. Some titles need DS4Windows **closed entirely before launch** — *Doom: The
+Dark Ages* is one. If a game that should have native haptics gives you nothing,
+close DS4Windows and relaunch it before changing any other setting.
+
+> You can stop the second problem happening at all by hiding the DualSense from
+> everything except your native games, so the two worlds never collide. See
+> **Mixing native DualSense and virtual controllers** in
+> `automation/AUTOMATION-README.md`.
+
+Also worth knowing for native games: keep **Wake PC on PS Button** *off* in those
+profiles — see the wake note above for why.
 
 ## Suggested setup
 
