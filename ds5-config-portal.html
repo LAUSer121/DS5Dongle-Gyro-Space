@@ -603,7 +603,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.5) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.7) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -674,9 +674,50 @@ function onMonPick(trig){
   }
 }
 // Write the ticked states into the live config as a custom effect on this trigger.
+// A mechanical set only sequences if every state starts at a DIFFERENT trigger
+// zone. Assign one that doesn't and the firmware silently falls back to rapid
+// A/B cycling — which, with a weapon break in the set, is heard as constant
+// clicking. Games routinely return to an earlier state (ready -> fired -> ready),
+// so a timeline capture very often contains the same state twice; that repeat is
+// not a third effect. Drop exact repeats automatically, and refuse anything still
+// ambiguous rather than assigning something that will misbehave.
+function ceValidateStates(list, getBytes){
+  const seen = [], kept = [], dropped = [];
+  for (const item of list){
+    const b = getBytes(item);
+    if (seen.some(x => x.every((v,i) => v === b[i]))) { dropped.push(b); continue; }
+    seen.push(b); kept.push(item);
+  }
+  const isMech = b => [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]);
+  const startZone = b => {
+    const zb = b[1] | ((b[2] & 0x03) << 8);
+    for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
+    return 0;
+  };
+  let clash = null;
+  const mechKept = kept.map(getBytes).filter(isMech);
+  if (mechKept.length > 1){
+    const zs = mechKept.map(startZone);
+    zs.forEach((z,i) => { if (clash === null && zs.indexOf(z) !== i) clash = z; });
+  }
+  return { kept, dropped, clash };
+}
+
+const CE_ZONE_CLASH_MSG = zone =>
+  `Two of the ticked states begin at the same trigger position (zone ${zone}).\n\n` +
+  `A multi-stage effect is ordered by where each stage starts, so every stage must ` +
+  `start at a different position. Assigning these would fall back to rapid A/B ` +
+  `cycling instead — with a weapon break in the set that is heard as constant clicking.\n\n` +
+  `Untick one of them and assign again.`;
+
 async function assignCustom(trig){
-  const picks = getMonPicks(trig);
+  let picks = getMonPicks(trig);
   if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  {
+    const v = ceValidateStates(picks, b => b);
+    if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+    if (v.dropped.length) picks = v.kept;
+  }
   try {
     await hidLocked(async () => {
       // write state A (and B if present) via cmd 0x11
@@ -716,7 +757,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.17.5): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.17.7): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -784,8 +825,16 @@ function tlPicks(trig){
   return picks.slice(0,5);
 }
 async function tlAssign(trig){
-  const picks = tlPicks(trig);
+  let picks = tlPicks(trig);
   if (!picks.length){ alert('Tick 1-5 timeline entries first.'); return; }
+  {
+    const v = ceValidateStates(picks, e => e.bytes);
+    if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+    if (v.dropped.length){
+      picks = v.kept;
+      alert(`${v.dropped.length} ticked entr${v.dropped.length===1?'y was':'ies were'} an exact repeat of another — the game returning to a state it had already used, not a separate effect. ${v.dropped.length===1?'It has':'They have'} been skipped; assigning ${picks.length} state${picks.length===1?'':'s'}.`);
+    }
+  }
   try {
     await hidLocked(async () => {
       for (let i = 0; i < picks.length; i++){
@@ -939,6 +988,10 @@ function cebRender(){
   if (warn.length) html += '<div style="font-size:11px;color:#e0a030;margin-top:4px">⚠ ' + warn.join('<br>⚠ ') + '</div>';
   box.innerHTML = html;
 }
+// NOTE: no ceValidateStates() call here by design — cebAddStage() already refuses
+// a stage whose start zone matches one already in the list, so the builder cannot
+// produce a duplicate or clashing set. The other write paths take arbitrary
+// captured data and do need the guard.
 async function cebAssign(trig){
   const list = window._cebStages;
   if (!list.length){ alert('Add at least one stage first.'); return; }
@@ -1066,10 +1119,22 @@ async function loadCustomFile(event, trig){
     const data = JSON.parse(await file.text());
     if (data.format !== 'ds5dongle-custom-effect') throw new Error('not a custom-effect file');
     if (!data.states || !data.states.length) throw new Error('no states in file');
-    const n = Math.min(5, data.states.length);
+    // Same guard as the monitor and timeline assign paths: a saved file is just a
+    // capture someone ticked, so it can carry the same state twice (the game
+    // returning to it) or two stages starting at the same trigger position.
+    let states = data.states;
+    {
+      const v = ceValidateStates(states, st => st.bytes);
+      if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+      if (v.dropped.length){
+        states = v.kept;
+        alert(`${v.dropped.length} state${v.dropped.length===1?'':'s'} in this file ${v.dropped.length===1?'was an exact repeat':'were exact repeats'} of another — the game returning to a state it had already used, not a separate effect. Loading ${states.length} instead.`);
+      }
+    }
+    const n = Math.min(5, states.length);
     await hidLocked(async () => {
       for (let s = 0; s < n; s++){
-        const st = data.states[s];
+        const st = states[s];
         const t = st.bytes[0];
         const mech = (t===0x21||t===0x01||t===0x25||t===0x23||t===0x22||t===0x02); // bow is a force effect too
         // mechanical states never timeline-play - durations are game-state timing
@@ -1277,7 +1342,19 @@ async function writeEffectsToDevice(effects){
   if (!effects) return 0;
   let n = 0;
   for (const [trig,key] of [[0,'r2'],[1,'l2']]){
-    const list = effects[key] || [];
+    let list = effects[key] || [];
+    if (!list.length) continue;
+    // A profile or backup can carry a set that was captured with the same state
+    // twice. Drop exact repeats and correct the stored count to match, so a
+    // restore can't silently reinstate a set that falls back to A/B cycling.
+    const v = ceValidateStates(list, st => st.bytes);
+    if (v.dropped.length){
+      list = v.kept;
+      const base = trig === 0 ? 0x57 : 0x5c;
+      await sendCmd(0x01, [base + 4, Math.min(5, list.length)]);
+      const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+      config[pfx + '_state_count'] = Math.min(5, list.length);
+    }
     for (let i = 0; i < Math.min(5, list.length); i++){
       const dt = Math.min(65535, (list[i].duration_ms|0) || 0);
       await sendCmd(0x11, [trig, i, ...list[i].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
@@ -1700,7 +1777,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.5</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.7</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>

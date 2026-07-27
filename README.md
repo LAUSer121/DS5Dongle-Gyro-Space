@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.5**
+**Version 1.17.7**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.17.5-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.17.7-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -171,7 +171,7 @@ the PC is actually asleep (where wake needs it).
    this will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.5.uf2` to the `RPI-RP2` drive that appears.
+   `ds5-v1.17.7.uf2` to the `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`.** Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
@@ -934,9 +934,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.17.5.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.17.5)
-- `ds5-v1.17.5-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.17.7.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.17.7)
+- `ds5-v1.17.7-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

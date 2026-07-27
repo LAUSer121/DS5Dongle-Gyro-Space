@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.7] — 2026-07-26
+
+### Fixed
+- **The repeated-state guard added in 1.17.6 only covered two of the four places
+  effects are written.** Loading a saved effect file — the most likely way to hit
+  it, since a file is just a capture someone ticked earlier — skipped the check
+  entirely and still produced constant clicking. Restoring effects from a profile
+  or slot backup was equally unguarded. All four write paths now share the same
+  validation: exact repeats are dropped (and the stored state count corrected to
+  match), and a set whose stages genuinely start at the same trigger position is
+  refused with the zone named. The effect builder needs no check because it
+  already refuses a stage whose start zone is taken.
+
+## [1.17.6] — 2026-07-26
+
+### Fixed
+- **Assigning a repeated state from a capture caused constant clicking.** Games
+  routinely return to a state they have already used (ready → fired → ready), so a
+  timeline capture usually contains the same effect twice. Ticking both assigned
+  two stages starting at the same trigger position; the sequencer requires
+  distinct start positions, so it silently fell back to rapid A/B cycling — which,
+  with a weapon break in the set, is felt as continuous clicking. Assigning from
+  the monitor or a timeline now skips exact repeats automatically (saying so), and
+  refuses a set whose stages genuinely start at the same position, naming the zone
+  instead of assigning something that will misbehave.
+
 ## [1.17.5] — 2026-07-26
 
 ### Added
