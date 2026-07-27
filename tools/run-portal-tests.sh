@@ -14,3 +14,5 @@ node tools/portal-coverage-test.js
 node tools/portal-render-test.js
 node tools/portal-attr-test.js
 node tools/portal-align-test.js
+node tools/portal-validate-test.js
+[ -f /mnt/user-data/uploads/R2_3x.json ] && node tools/portal-fileload-test.js || true
