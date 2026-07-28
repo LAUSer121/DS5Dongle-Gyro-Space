@@ -167,8 +167,8 @@ the PC is actually asleep (where wake needs it).
 
 ## Quick start
 
-1. **Flash the firmware.** *RP2350 only — Pico 2 W / Waveshare RP2350B-Plus-W (via respective prebuilt firmware or build it yourself).
-   This will not run on the original Pico W.* Hold the BOOTSEL button while
+1. **Flash the firmware.** *(RP2350 only — Pico 2 W / Waveshare RP2350B-Plus-W via respective prebuilt firmware or build it yourself;
+   This will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
    `ds5-v1.17.7.uf2` to the `RPI-RP2` drive that appears.
@@ -178,13 +178,13 @@ the PC is actually asleep (where wake needs it).
      run it if a release note explicitly says to, or if the portal shows settings
      that are clearly nonsense. **It erases every setting *and* all 24 profile
      slots**, so back up your slots first (*Slots* tab → *Back up all slots*).
-2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
+3. **Open the portal.** **Download** `ds5-config-portal.html` and open the
    downloaded file in Chrome or Edge. (WebHID needs a secure context — opening it
    directly from a website host or `file://` that the browser flags will fail with
    a permissions error. Downloading it and opening the local file works, as does
    serving it from `http://localhost`.)
-3. **Connect.** Click *Connect* and select the DualSense.
-4. **Decide what you need — this determines whether there is anything left to do.**
+4. **Connect.** Click *Connect* and select the DualSense.
+5. **Decide what you need — this determines whether there is anything left to do.**
 
    - **Playing games with native DualSense support?** Leave *Auto Haptics Mode* on
      **Off**, click *Save to Device*, and **you're finished.** Native games drive
@@ -196,7 +196,7 @@ the PC is actually asleep (where wake needs it).
      Haptics Mode* to **Mix** or **Replace**, tune to taste, *Save to Device* —
      then continue to step 5.
 
-5. **Mix / Replace only — install and run the audio bridge.** Auto-haptics are
+6. **Mix / Replace only — install and run the audio bridge.** Auto-haptics are
    *derived from your PC's game audio*, so a small helper has to capture that audio
    and feed it to the dongle. Windows only, since it uses WASAPI:
 
