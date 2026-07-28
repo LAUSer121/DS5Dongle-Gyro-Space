@@ -167,8 +167,8 @@ the PC is actually asleep (where wake needs it).
 
 ## Quick start
 
-1. **Flash the firmware.** *RP2350 only — Pico 2 W / Waveshare RP2350B-Plus-W (via respective prebuilt firmware or build it yourself)
-   this will not run on the original Pico W.)* Hold the BOOTSEL button while
+1. **Flash the firmware.** *RP2350 only — Pico 2 W / Waveshare RP2350B-Plus-W (via respective prebuilt firmware or build it yourself).
+   This will not run on the original Pico W.* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
    `ds5-v1.17.7.uf2` to the `RPI-RP2` drive that appears.
