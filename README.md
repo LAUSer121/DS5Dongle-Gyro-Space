@@ -171,8 +171,8 @@ the PC is actually asleep (where wake needs it).
    This will not run on the original Pico W.)* Hold the BOOTSEL button while
    plugging in the Pico 2W
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.7.uf2` to the `RPI-RP2` drive that appears.
-   - **You do not normally need `flash_nuke.uf2`.** Settings and saved profile
+   `ds5-v1.17.7.uf2/ds5-v1.17.7-waveshare.uf2` to the `RPI-RP2` drive that appears.
+   - **You do not normally need `flash_nuke.uf2 (provided for 2W)`.** Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
      run it if a release note explicitly says to, or if the portal shows settings
