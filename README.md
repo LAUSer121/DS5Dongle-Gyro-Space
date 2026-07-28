@@ -443,7 +443,7 @@ with the full set of settings below. The only shared control is **Kick follows**
 
 | Shared setting | Range | Default | Notes |
 |---|---|---|---|
-| Kick follows | Rumble / Audio / Both | Both | Envelope source for **both** triggers' kicks: game rumble (incl. converted DS4Windows rumble), the auto-haptics audio envelope, or the strongest of the two; Unless running gated recommended is to run rumble only otherwise audio will move your trigger all the time, including speech |
+| Kick follows | Rumble / Audio / Both | Both | Envelope source for **both** triggers' kicks: game rumble (incl. converted DS4Windows rumble), the auto-haptics audio envelope, or the strongest of the two; Unless running gated, it is recommended is to run rumble only, otherwise audio will move your trigger all the time |
 
 *Guide:* **L2-gated** gives a shooter-style "aim to feel the trigger tension"
 effect without needing native adaptive-trigger support. Resistance wins over R2T
