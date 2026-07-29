@@ -603,7 +603,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.7) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.8) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -682,13 +682,20 @@ function onMonPick(trig){
 // not a third effect. Drop exact repeats automatically, and refuse anything still
 // ambiguous rather than assigning something that will misbehave.
 function ceValidateStates(list, getBytes){
+  const isMech = b => [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]);
+  // Only MECHANICAL repeats are dropped. Their durations are discarded by the
+  // firmware (position decides everything), so two byte-identical mechanical
+  // states really are interchangeable and the first is kept. A VIBRATION set is
+  // driven by TIME, so the same bytes held for a different length is a different
+  // beat of the rhythm - deduplicating those would quietly destroy the pattern
+  // the timeline recorder went to the trouble of capturing.
   const seen = [], kept = [], dropped = [];
   for (const item of list){
     const b = getBytes(item);
-    if (seen.some(x => x.every((v,i) => v === b[i]))) { dropped.push(b); continue; }
-    seen.push(b); kept.push(item);
+    if (isMech(b) && seen.some(x => x.every((v,i) => v === b[i]))) { dropped.push(b); continue; }
+    if (isMech(b)) seen.push(b);
+    kept.push(item);
   }
-  const isMech = b => [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]);
   const startZone = b => {
     const zb = b[1] | ((b[2] & 0x03) << 8);
     for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
@@ -757,7 +764,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.17.7): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.17.8): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -1777,7 +1784,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.7</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.8</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>

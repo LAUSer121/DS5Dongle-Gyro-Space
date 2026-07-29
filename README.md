@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.7**
+**Version 1.17.8**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.17.7-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.17.8-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -167,24 +167,26 @@ the PC is actually asleep (where wake needs it).
 
 ## Quick start
 
-1. **Flash the firmware.** *(RP2350 only — Pico 2 W / Waveshare RP2350B-Plus-W via respective prebuilt firmware or build it yourself;
-   This will not run on the original Pico W.)* Hold the BOOTSEL button while
-   plugging in the Pico 2W
+1. **Flash the firmware.** *(RP2350 only — Pico 2 W and Waveshare RP2350B-Plus-W
+   each have their own prebuilt firmware, or build it yourself; this will not run
+   on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.7.uf2/ds5-v1.17.7-waveshare.uf2` to the `RPI-RP2` drive that appears.
-   - **You do not normally need `flash_nuke.uf2 (provided for 2W)`.** Settings and saved profile
+   `ds5-v1.17.8.uf2` (Pico 2 W) or `ds5-v1.17.8-waveshare.uf2` (Waveshare) to the
+   `RPI-RP2` drive that appears.
+   - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
+     the Pico 2 W). Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
      run it if a release note explicitly says to, or if the portal shows settings
      that are clearly nonsense. **It erases every setting *and* all 24 profile
      slots**, so back up your slots first (*Slots* tab → *Back up all slots*).
-3. **Open the portal.** **Download** `ds5-config-portal.html` and open the
+2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
    downloaded file in Chrome or Edge. (WebHID needs a secure context — opening it
    directly from a website host or `file://` that the browser flags will fail with
    a permissions error. Downloading it and opening the local file works, as does
    serving it from `http://localhost`.)
-4. **Connect.** Click *Connect* and select the DualSense.
-5. **Decide what you need — this determines whether there is anything left to do.**
+3. **Connect.** Click *Connect* and select the DualSense.
+4. **Decide what you need — this determines whether there is anything left to do.**
 
    - **Playing games with native DualSense support?** Leave *Auto Haptics Mode* on
      **Off**, click *Save to Device*, and **you're finished.** Native games drive
@@ -196,7 +198,7 @@ the PC is actually asleep (where wake needs it).
      Haptics Mode* to **Mix** or **Replace**, tune to taste, *Save to Device* —
      then continue to step 5.
 
-6. **Mix / Replace only — install and run the audio bridge.** Auto-haptics are
+5. **Mix / Replace only — install and run the audio bridge.** Auto-haptics are
    *derived from your PC's game audio*, so a small helper has to capture that audio
    and feed it to the dongle. Windows only, since it uses WASAPI:
 
@@ -443,7 +445,7 @@ with the full set of settings below. The only shared control is **Kick follows**
 
 | Shared setting | Range | Default | Notes |
 |---|---|---|---|
-| Kick follows | Rumble / Audio / Both | Both | Envelope source for **both** triggers' kicks: game rumble (incl. converted DS4Windows rumble), the auto-haptics audio envelope, or the strongest of the two; Unless running gated, it is recommended to run rumble only, otherwise audio will move your trigger all the time due to generated haptics |
+| Kick follows | Rumble / Audio / Both | Both | Envelope source for **both** triggers' kicks: game rumble (incl. converted DS4Windows rumble), the auto-haptics audio envelope, or the strongest of the two. **Unless the trigger is gated, prefer *Rumble* only** — otherwise the generated haptics keep the audio envelope alive and the trigger moves almost constantly |
 
 *Guide:* **L2-gated** gives a shooter-style "aim to feel the trigger tension"
 effect without needing native adaptive-trigger support. Resistance wins over R2T
@@ -934,9 +936,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.17.7.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.17.7)
-- `ds5-v1.17.7-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.17.8.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.17.8)
+- `ds5-v1.17.8-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
