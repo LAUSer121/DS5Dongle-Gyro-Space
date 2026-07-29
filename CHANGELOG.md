@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [1.17.8] — 2026-07-26
+
+### Fixed
+- **The repeated-state check no longer touches vibration sets.** It compared only
+  the effect bytes, so in an all-vibration timeline — the one case where recorded
+  durations actually drive playback — the same vibration held for a different
+  length was treated as a duplicate and dropped, quietly flattening the rhythm the
+  recorder had captured. Repeats are now dropped only for mechanical states, whose
+  durations the firmware discards anyway, so two identical ones really are
+  interchangeable. Where a repeat is dropped, the first occurrence is kept.
+
 ## [1.17.7] — 2026-07-26
 
 ### Fixed
