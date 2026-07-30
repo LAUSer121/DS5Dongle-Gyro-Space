@@ -999,6 +999,9 @@ don't affect you.
 - `LICENSE` — MIT license
 - `README.md` — this file
 - `CHANGELOG.md` — version history
+- `tools/` — one-command builders for Windows and macOS, plus the portal test
+  harness
+- `boards/` — board support, including the Waveshare RP2350B-Plus-W build script
 - `automation/` — **optional** Playnite integration (see below)
 
 ## Optional: Playnite automation
