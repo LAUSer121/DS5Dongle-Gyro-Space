@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.18.2**
+**Version 1.18.4**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.18.2-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.18.4-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -171,7 +171,7 @@ the PC is actually asleep (where wake needs it).
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.18.2.uf2` (Pico 2 W) or `ds5-v1.18.2-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.18.4.uf2` (Pico 2 W) or `ds5-v1.18.4-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -422,9 +422,11 @@ rumble/haptics burst momentarily switches the kicking trigger(s) to a low-freque
 that knocks the trigger back against your finger, then resistance resumes as the
 burst fades (hysteresis prevents chatter at the threshold).
 
-The R2 and L2 triggers each have their own independent section in the portal
-with the full set of settings below. The only shared control is **Kick follows**
-(the kick's envelope source), since it's a single signal both triggers listen to.
+R2 and L2 are shown side by side in the portal, as two aligned columns of the
+same settings — the list below applies to each. The one exception is **Kick
+follows** (the kick's envelope source): it is a single signal both triggers
+listen to, so it sits in its own full-width row beneath the columns rather than
+in either one.
 
 | Setting (per trigger) | Range | Default | Notes |
 |---|---|---|---|
@@ -985,9 +987,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.18.2.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.18.2)
-- `ds5-v1.18.2-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.18.4.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.18.4)
+- `ds5-v1.18.4-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

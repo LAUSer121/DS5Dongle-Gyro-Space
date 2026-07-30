@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.4] — 2026-07-27
+
+### Fixed
+- **A missed USB suspend notification disabled the entire wake path.** Everything
+  that has to happen when the PC sleeps — disconnecting the controller, waking the
+  host when it reconnects, and the low-level wake fallback — was gated on the
+  suspend *callback* having fired. When that notification is missed, which a hub
+  between the host and the dongle can cause, all three silently do nothing at
+  once: the controller stays powered on at sleep **and** a later button press
+  fails to wake the PC. That is one cause for both halves of the symptom. The
+  bridge now also polls the USB stack's current suspend state rather than relying
+  on the edge, so a missed notification is recovered within a cycle, and the
+  mirror case (a missed resume leaving it convinced the host is still asleep) is
+  recovered too.
+
+### Added
+- **Wake diagnostics**, in the portal's Device tab. Because this failure is
+  intermittent, the firmware now records what it actually observed — how many
+  suspends it saw, how many had to be recovered by polling, whether the host
+  *permitted* remote wakeup, whether the controller disconnect found a live link,
+  and what each wake attempt returned. Read it after a sleep that failed to wake
+  and it will say which stage broke instead of leaving it to guesswork. It also
+  flags the case where Windows has not been told the dongle may wake the machine.
+
+## [1.18.3] — 2026-07-27
+
+### Fixed
+- **The controller sometimes stayed connected when the PC slept, and then would
+  not wake it.** On suspend the bridge asked the controller to power itself off,
+  which is a request the DualSense has to receive and obey — when it wasn't
+  delivered or was ignored, the controller stayed connected and awake, and because
+  the wake logic never saw the disconnect it expects, a later PS press failed to
+  wake the host as well. The bridge now drops the Bluetooth link itself, which is
+  a command to its own radio and cannot be refused. Battery saving is unaffected in
+  practice: a disconnected DualSense still powers down on its own idle timeout.
+  This matches the fix upstream made for the same intermittent failure.
+
 ## [1.18.2] — 2026-07-26
 
 ### Changed

@@ -22,6 +22,8 @@
   .tcolhead { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub);
               padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid var(--line,#333); }
   .tcell { min-width:0; }
+  .subdiv-light { margin:12px 0 2px; padding-top:8px; border-top:1px solid var(--line,#333);
+                  font-size:11px; color:var(--sub); }
   .tshared { margin-top:12px; padding-top:8px; border-top:1px solid var(--line,#333); }
   .tabbar { display:flex; gap:4px; flex-wrap:wrap; margin:10px 0 14px; }
   .tab { appearance:none; border:1px solid var(--line,#333); background:transparent; color:var(--sub);
@@ -603,7 +605,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.2) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.4) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -764,7 +766,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.18.2): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.18.4): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -1144,6 +1146,42 @@ function ceActiveWindows(list){
   }
   return win;
 }
+// Read the firmware's wake diagnostics (cmd 0x16). The wake failure is
+// intermittent, so this reports what the device actually observed across the
+// sleeps since it was last powered up, rather than leaving us to guess.
+async function readWakeDiag(){
+  const box = document.getElementById('wakediag');
+  if (box) box.innerHTML = 'Reading…';
+  try {
+    const r = await hidLocked(async () => {
+      await sendCmd(0x16, []);
+      return await readCmdReplyOn(SLOT_REPORT, 0x16, undefined, 12);
+    });
+    if (!r || r[2] !== 0x00) throw new Error('device did not answer');
+    const u16 = i => r[i] | (r[i+1] << 8);
+    const d = { cb: u16(3), recSusp: u16(5), recRes: u16(7), disc: u16(9),
+                wakes: u16(11), dcd: u16(13), rwEn: r[15], discOk: r[16],
+                tudOk: r[17], wakeSusp: r[18], nowSusp: r[19] };
+    const warn = [];
+    if (d.recSusp) warn.push(`${d.recSusp} suspend${d.recSusp===1?'':'s'} were missed by the USB callback and only caught by polling — that is the failure mode this build guards against.`);
+    if (d.cb && !d.rwEn) warn.push('The host did NOT permit remote wakeup on the last suspend. Enable "Allow this device to wake the computer" for the dongle in Device Manager.');
+    if (d.disc && !d.discOk) warn.push('The last disconnect found no live Bluetooth link — the controller was already gone.');
+    if (d.wakes && !d.tudOk && !d.dcd) warn.push('Wake attempts were made but the USB bus was not suspended at the time.');
+    let h = `<table style="font-size:12px"><tr><td style="padding-right:10px">Suspends seen (callback)</td><td><b>${d.cb}</b></td></tr>`
+      + `<tr><td>…recovered by polling</td><td><b>${d.recSusp}</b></td></tr>`
+      + `<tr><td>Resumes recovered by polling</td><td>${d.recRes}</td></tr>`
+      + `<tr><td>Controller disconnects</td><td>${d.disc} (last ${d.discOk ? 'had a live link' : 'found none'})</td></tr>`
+      + `<tr><td>Wake requests</td><td>${d.wakes} (last: TinyUSB ${d.tudOk ? 'accepted' : 'refused'}${d.dcd ? `, forced ${d.dcd}x` : ''})</td></tr>`
+      + `<tr><td>Host permitted remote wakeup</td><td><b>${d.rwEn ? 'yes' : 'NO'}</b></td></tr>`
+      + `<tr><td>Suspended right now</td><td>${d.nowSusp ? 'yes' : 'no'}</td></tr></table>`;
+    if (warn.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ ${warn.join('<br>⚠ ')}</div>`;
+    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">Counters reset when the dongle loses power. Read this <b>after</b> a sleep that failed to wake.</div>`;
+    if (box) box.innerHTML = h;
+  } catch(e){
+    if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+  }
+}
+
 async function ceReadTrigger(trig){
   const name = trig === 0 ? 'R2' : 'L2';
   const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
@@ -1833,7 +1871,12 @@ function ceGateWarning(key){
 // field, to visually split a long card into its distinct halves. Keyed by field
 // so it survives fields being reordered around it.
 const SUB_DIVIDERS = {
-  'effect_leak_volume': 'Speaker Effect Leak',
+  // bold: true  -> the heavy rule used to split a long card in half
+  // otherwise   -> the subtle rule, matching the "Shared by both triggers"
+  //                separator above Kick follows
+  'effect_leak_volume': { label: 'Speaker Effect Leak', bold: true },
+  'ce_r2_enable':       { label: 'Custom captured effect' },
+  'ce_l2_enable':       { label: 'Custom captured effect' },
 };
 
 // One settings row. Extracted from render() so the side-by-side trigger view can
@@ -1841,7 +1884,8 @@ const SUB_DIVIDERS = {
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
   let html = '';
-  if (SUB_DIVIDERS[key]) html += `<div class="subdiv">${SUB_DIVIDERS[key]}</div>`;
+  const _d = SUB_DIVIDERS[key];
+  if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
   html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
   if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
@@ -1913,7 +1957,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.2</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.4</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -2003,7 +2047,12 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
     </div></div>` : '') + `
   ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>` : '') + `
+    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
+      <span style="font-size:12px;color:var(--sub)">Wake troubleshooting — what the dongle observed across sleeps since it was powered up:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">Read wake diagnostics</button>
+      <div id="wakediag" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+    </div></div>` : '') + `
   `;
   app.innerHTML=html;
   // Only sweep the slots when their list is actually on screen. render() runs on
