@@ -21,6 +21,8 @@
   .tcolhead { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub);
               padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid var(--line,#333); }
   .tcell { min-width:0; }
+  .subdiv-light { margin:12px 0 2px; padding-top:8px; border-top:1px solid var(--line,#333);
+                  font-size:11px; color:var(--sub); }
   .tshared { margin-top:12px; padding-top:8px; border-top:1px solid var(--line,#333); }
   .tabbar { display:flex; gap:4px; flex-wrap:wrap; margin:10px 0 14px; }
   .tab { appearance:none; border:1px solid var(--line,#333); background:transparent; color:var(--sub);
@@ -46,10 +48,10 @@
 </style>
 </head>
 <body>
-<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.5</span></h1>
+<div class="wrap" id="app"><h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.4</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot on"></div>
-      <span style="flex:1">Connected — DualSense Edge · FW v1.17.5 · config v18</span>
+      <span style="flex:1">Connected — DualSense Edge · FW v1.18.4 · config v18</span>
       <button class="btn btn-outline" onclick="disconnect()">Disconnect</button>
     </div><div class="tabbar"><button class="tab " onclick="setTab('device')">Device</button><button class="tab " onclick="setTab('haptics')">Haptics</button><button class="tab " onclick="setTab('triggers')">Triggers</button><button class="tab " onclick="setTab('gyro')">Gyro</button><button class="tab active" onclick="setTab('slots')">Slots</button></div><div class="actions">
     <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
@@ -154,9 +156,9 @@
       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotActivate(17)">Activate</button>
     </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
       <span style="width:52px;color:var(--sub)">Slot 19</span>
-      <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
+      <span style="flex:1"><b>Shadow_Tomb</b></span>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(18)">Save current</button>
-      <button class="btn btn-outline" style="padding:2px 10px" disabled="" onclick="uiSlotActivate(18)">Activate</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotActivate(18)">Activate</button>
     </div><div style="display:flex;gap:8px;align-items:center;margin:4px 0">
       <span style="width:52px;color:var(--sub)">Slot 20</span>
       <span style="flex:1"><span style="color:var(--sub)">empty</span></span>
@@ -746,7 +748,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.5) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.4) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -817,9 +819,57 @@ function onMonPick(trig){
   }
 }
 // Write the ticked states into the live config as a custom effect on this trigger.
+// A mechanical set only sequences if every state starts at a DIFFERENT trigger
+// zone. Assign one that doesn't and the firmware silently falls back to rapid
+// A/B cycling — which, with a weapon break in the set, is heard as constant
+// clicking. Games routinely return to an earlier state (ready -> fired -> ready),
+// so a timeline capture very often contains the same state twice; that repeat is
+// not a third effect. Drop exact repeats automatically, and refuse anything still
+// ambiguous rather than assigning something that will misbehave.
+function ceValidateStates(list, getBytes){
+  const isMech = b => [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]);
+  // Only MECHANICAL repeats are dropped. Their durations are discarded by the
+  // firmware (position decides everything), so two byte-identical mechanical
+  // states really are interchangeable and the first is kept. A VIBRATION set is
+  // driven by TIME, so the same bytes held for a different length is a different
+  // beat of the rhythm - deduplicating those would quietly destroy the pattern
+  // the timeline recorder went to the trouble of capturing.
+  const seen = [], kept = [], dropped = [];
+  for (const item of list){
+    const b = getBytes(item);
+    if (isMech(b) && seen.some(x => x.every((v,i) => v === b[i]))) { dropped.push(b); continue; }
+    if (isMech(b)) seen.push(b);
+    kept.push(item);
+  }
+  const startZone = b => {
+    const zb = b[1] | ((b[2] & 0x03) << 8);
+    for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
+    return 0;
+  };
+  let clash = null;
+  const mechKept = kept.map(getBytes).filter(isMech);
+  if (mechKept.length > 1){
+    const zs = mechKept.map(startZone);
+    zs.forEach((z,i) => { if (clash === null && zs.indexOf(z) !== i) clash = z; });
+  }
+  return { kept, dropped, clash };
+}
+
+const CE_ZONE_CLASH_MSG = zone =>
+  `Two of the ticked states begin at the same trigger position (zone ${zone}).\n\n` +
+  `A multi-stage effect is ordered by where each stage starts, so every stage must ` +
+  `start at a different position. Assigning these would fall back to rapid A/B ` +
+  `cycling instead — with a weapon break in the set that is heard as constant clicking.\n\n` +
+  `Untick one of them and assign again.`;
+
 async function assignCustom(trig){
-  const picks = getMonPicks(trig);
+  let picks = getMonPicks(trig);
   if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  {
+    const v = ceValidateStates(picks, b => b);
+    if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+    if (v.dropped.length) picks = v.kept;
+  }
   try {
     await hidLocked(async () => {
       // write state A (and B if present) via cmd 0x11
@@ -859,7 +909,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.17.5): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.18.4): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -927,8 +977,16 @@ function tlPicks(trig){
   return picks.slice(0,5);
 }
 async function tlAssign(trig){
-  const picks = tlPicks(trig);
+  let picks = tlPicks(trig);
   if (!picks.length){ alert('Tick 1-5 timeline entries first.'); return; }
+  {
+    const v = ceValidateStates(picks, e => e.bytes);
+    if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+    if (v.dropped.length){
+      picks = v.kept;
+      alert(`${v.dropped.length} ticked entr${v.dropped.length===1?'y was':'ies were'} an exact repeat of another — the game returning to a state it had already used, not a separate effect. ${v.dropped.length===1?'It has':'They have'} been skipped; assigning ${picks.length} state${picks.length===1?'':'s'}.`);
+    }
+  }
   try {
     await hidLocked(async () => {
       for (let i = 0; i < picks.length; i++){
@@ -1014,6 +1072,20 @@ function cebStartZone(b){ // lowest set zone, matching the firmware's ordering
   for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
   return 0;
 }
+// Force is a 3-bit field: 8 levels, not 101. Show which level a typed percentage
+// actually lands on, so a value read back later (10% -> level 1 -> 14%) is not a
+// surprise. The buckets are 0-7, 8-21, 22-35, 36-49, 50-64, 65-78, 79-92, 93-100.
+function cebShowLevels(){
+  const fmt = (id, out) => {
+    const el = document.getElementById(id), sp = document.getElementById(out);
+    if (!el || !sp) return;
+    const w = cebWire100(+el.value || 0);
+    sp.textContent = ` = level ${w}/7 (${Math.round(w*100/7)}%)` + (w === 0 ? ' — may not be felt' : '');
+  };
+  fmt('ceb_str', 'ceb_strlvl');
+  fmt('ceb_snap', 'ceb_snaplvl');
+}
+
 function cebTypeChanged(){
   const t = document.getElementById('ceb_type').value;
   document.getElementById('ceb_endlbl').firstChild.textContent =
@@ -1022,6 +1094,7 @@ function cebTypeChanged(){
   document.getElementById('ceb_snaplbl').style.display = (t === 'bow') ? '' : 'none';
   document.getElementById('ceb_strlbl').firstChild.textContent =
     (t === 'bow') ? 'Draw strength % ' : 'Strength % ';
+  cebShowLevels();
 }
 function cebAddStage(){
   if (window._cebStages.length >= 5){ alert('5 stages maximum.'); return; }
@@ -1082,6 +1155,10 @@ function cebRender(){
   if (warn.length) html += '<div style="font-size:11px;color:#e0a030;margin-top:4px">⚠ ' + warn.join('<br>⚠ ') + '</div>';
   box.innerHTML = html;
 }
+// NOTE: no ceValidateStates() call here by design — cebAddStage() already refuses
+// a stage whose start zone matches one already in the list, so the builder cannot
+// produce a duplicate or clashing set. The other write paths take arbitrary
+// captured data and do need the guard.
 async function cebAssign(trig){
   const list = window._cebStages;
   if (!list.length){ alert('Add at least one stage first.'); return; }
@@ -1154,6 +1231,156 @@ async function ceClearDevice(trig){
   } catch(e){ alert('Clear failed: ' + (e && e.message ? e.message : e)); }
 }
 
+// ---- Reader: decode whatever is actually on a trigger -------------------------
+// Raw effect bytes are unreadable, and until now there was nowhere to see what a
+// captured or loaded effect actually IS. This decodes each stored state the same
+// way the builder describes one, and adds the ACTIVE POSITION WINDOW the firmware
+// will give it - which is the part you cannot work out by eye, and the thing that
+// explains a wall that never breaks or a stage that never fires.
+const CE_TYPE_NAMES = {0x21:'Resistance',0x01:'Resistance',0x25:'Weapon break',0x23:'Weapon break',
+                       0x22:'Bow / snap',0x02:'Bow / snap',0x26:'Vibration',0x06:'Vibration',
+                       0x05:'Off',0x00:'(empty)'};
+const cePct = w => Math.round((w & 7) * 100 / 7);
+const ceZpos = z => Math.floor(z * 51 / 2);   // exactly the firmware's integer (z*51)/2
+function ceZonesOfBytes(b){
+  const zb = b[1] | ((b[2] & 0x03) << 8);
+  const out = []; for (let z = 0; z < 10; z++) if (zb & (1 << z)) out.push(z);
+  return out;
+}
+function ceZoneForce(b, z){            // inverse of cebPackZones
+  const bits = b[3] | (b[4] << 8) | (b[5] << 16) | (b[6] << 24);
+  return (bits >>> (3 * z)) & 7;
+}
+// Force is a 3-bit level, 0-7, written straight through with no offset — the
+// firmware derives it as (strength% * 7 + 50) / 100 and refuses to engage a
+// slider effect at all when the strength is 0. So 0 is the WEAKEST level, not a
+// "use the hardware default" sentinel. Report the level rather than interpreting
+// it, and flag 0 since an effect at level 0 may be imperceptible.
+function ceForceLabel(b, z){
+  const w = ceZoneForce(b, z);
+  return w === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${w}/7 (${cePct(w)}%)`;
+}
+function ceIsMechBytes(b){ return [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]); }
+function ceDescribeState(b){
+  const t = b[0], z = ceZonesOfBytes(b);
+  const name = CE_TYPE_NAMES[t] !== undefined ? CE_TYPE_NAMES[t] : ('type 0x' + t.toString(16));
+  if (t === 0x05 || t === 0x00) return name;
+  if (!z.length) return `${name} — no zones set`;
+  const lo = z[0], hi = z[z.length - 1];
+  if (t === 0x25 || t === 0x23) return `${name} — wall ${lo}→${hi}, ${b[3] === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${b[3] & 7}/7 (${cePct(b[3])}%)`}`;
+  if (t === 0x22 || t === 0x02) return `${name} — draw ${lo}→${hi}, force ${b[3] & 7}/7, snap ${(b[3] >> 3) & 7}/7`;
+  if (t === 0x26 || t === 0x06) return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
+  return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
+}
+// Mirror of the firmware's sequencer: order mechanical stages by start zone and
+// hand each over at min(its own end, the next one's start - 12).
+function ceActiveWindows(list){
+  const mech = list.map((b,i) => ({b,i})).filter(x => ceIsMechBytes(x.b));
+  if (mech.length < 2) return null;
+  const ord = mech.map(x => ({...x, lo: ceZonesOfBytes(x.b)[0],
+                                    hi: ceZonesOfBytes(x.b).slice(-1)[0]}))
+                  .sort((a,c) => a.lo - c.lo);
+  const win = {};
+  for (let k = 0; k < ord.length; k++){
+    const from = k === 0 ? 0 : win[ord[k-1].i].to;
+    const to = (k === ord.length - 1) ? 255
+             : Math.min(ceZpos(ord[k].hi), ceZpos(ord[k+1].lo) - 12);
+    win[ord[k].i] = { from, to, order: k + 1 };
+  }
+  return win;
+}
+// Read the firmware's wake diagnostics (cmd 0x16). The wake failure is
+// intermittent, so this reports what the device actually observed across the
+// sleeps since it was last powered up, rather than leaving us to guess.
+async function readWakeDiag(){
+  const box = document.getElementById('wakediag');
+  if (box) box.innerHTML = 'Reading…';
+  try {
+    const r = await hidLocked(async () => {
+      await sendCmd(0x16, []);
+      return await readCmdReplyOn(SLOT_REPORT, 0x16, undefined, 12);
+    });
+    if (!r || r[2] !== 0x00) throw new Error('device did not answer');
+    const u16 = i => r[i] | (r[i+1] << 8);
+    const d = { cb: u16(3), recSusp: u16(5), recRes: u16(7), disc: u16(9),
+                wakes: u16(11), dcd: u16(13), rwEn: r[15], discOk: r[16],
+                tudOk: r[17], wakeSusp: r[18], nowSusp: r[19] };
+    const warn = [];
+    if (d.recSusp) warn.push(`${d.recSusp} suspend${d.recSusp===1?'':'s'} were missed by the USB callback and only caught by polling — that is the failure mode this build guards against.`);
+    if (d.cb && !d.rwEn) warn.push('The host did NOT permit remote wakeup on the last suspend. Enable "Allow this device to wake the computer" for the dongle in Device Manager.');
+    if (d.disc && !d.discOk) warn.push('The last disconnect found no live Bluetooth link — the controller was already gone.');
+    if (d.wakes && !d.tudOk && !d.dcd) warn.push('Wake attempts were made but the USB bus was not suspended at the time.');
+    let h = `<table style="font-size:12px"><tr><td style="padding-right:10px">Suspends seen (callback)</td><td><b>${d.cb}</b></td></tr>`
+      + `<tr><td>…recovered by polling</td><td><b>${d.recSusp}</b></td></tr>`
+      + `<tr><td>Resumes recovered by polling</td><td>${d.recRes}</td></tr>`
+      + `<tr><td>Controller disconnects</td><td>${d.disc} (last ${d.discOk ? 'had a live link' : 'found none'})</td></tr>`
+      + `<tr><td>Wake requests</td><td>${d.wakes} (last: TinyUSB ${d.tudOk ? 'accepted' : 'refused'}${d.dcd ? `, forced ${d.dcd}x` : ''})</td></tr>`
+      + `<tr><td>Host permitted remote wakeup</td><td><b>${d.rwEn ? 'yes' : 'NO'}</b></td></tr>`
+      + `<tr><td>Suspended right now</td><td>${d.nowSusp ? 'yes' : 'no'}</td></tr></table>`;
+    if (warn.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ ${warn.join('<br>⚠ ')}</div>`;
+    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">Counters reset when the dongle loses power. Read this <b>after</b> a sleep that failed to wake.</div>`;
+    if (box) box.innerHTML = h;
+  } catch(e){
+    if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+  }
+}
+
+async function ceReadTrigger(trig){
+  const name = trig === 0 ? 'R2' : 'L2';
+  const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
+  const box  = document.getElementById('ce_readout');
+  if (box) box.innerHTML = `Reading ${name}…`;
+  try {
+    const n = Math.min(5, +config[pfx + '_state_count'] || 0);
+    const on = +config[pfx + '_enable'] || 0;
+    if (!n){
+      if (box) box.innerHTML = `<b>${name}</b>: no custom effect assigned.`;
+      return;
+    }
+    const states = [];
+    await hidLocked(async () => {
+      for (let i = 0; i < n; i++){
+        await sendCmd(0x12, [trig, i]);
+        const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+        if (!r || r[2] !== 0x00) throw new Error('device did not return state ' + i);
+        states.push({ bytes: Array.from(r.slice(5, 16)), dt: r[16] | (r[17] << 8) });
+      }
+    });
+    const bytes = states.map(s => s.bytes);
+    const anyMech = bytes.some(ceIsMechBytes);
+    const mode = bytes.length === 1 ? 'single state'
+               : anyMech ? 'mechanical sequence — ordered by trigger position, durations ignored'
+                         : 'time-based — driven by the recorded durations';
+    const win = ceActiveWindows(bytes);
+    const COND = ['While held','On press','On release'];
+    const YIELD = ['custom effect always owns it','sliders while gated, custom otherwise','custom while gated, sliders otherwise'];
+    let h = `<div style="margin-bottom:6px"><b>${name}</b> — ${bytes.length} state${bytes.length===1?'':'s'}, `
+          + `${on ? 'enabled' : '<span style="color:#e0a030">assigned but DISABLED</span>'}`
+          + ` · ${COND[+config[pfx+'_condition']||0]} · re-arm zone ${+config[pfx+'_thresh']||0}`
+          + ` · ${YIELD[+config[pfx+'_yield']||0]}</div>`
+          + `<div style="margin-bottom:6px;color:var(--sub)">Playback: ${mode}</div>`;
+    states.forEach((st,i) => {
+      const w = win && win[i];
+      const where = w ? ` <span style="color:var(--sub)">(stage ${w.order}, active pos ${w.from}–${w.to})</span>`
+                      : (!anyMech && bytes.length > 1 ? ` <span style="color:var(--sub)">(${st.dt} ms)</span>` : '');
+      h += `<div style="margin:3px 0">${i+1}. ${ceDescribeState(st.bytes)}${where}<br>`
+        +  `<code style="font-size:11px;color:var(--sub)">${st.bytes.map(x=>x.toString(16).padStart(2,'0')).join(' ')}</code></div>`;
+    });
+    if (win){
+      const cut = states.map((st,i) => ({st,i,w:win[i]}))
+        .filter(x => x.w && ceIsMechBytes(x.st.bytes) &&
+                     x.w.to < ceZpos(ceZonesOfBytes(x.st.bytes).slice(-1)[0]));
+      if (cut.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ `
+        + cut.map(x => `state ${x.i+1} is handed over at pos ${x.w.to}, before its own span ends at `
+                     + `${ceZpos(ceZonesOfBytes(x.st.bytes).slice(-1)[0])}`).join('; ')
+        + ` — its ending (a wall breaking, a bow snapping) will not be reached.</div>`;
+    }
+    if (box) box.innerHTML = h;
+  } catch(e){
+    if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+  }
+}
+
 // Export the effect currently assigned to a trigger, read back from the device.
 // Profile exports carry only the 85 scalar settings, so an assigned effect could
 // be enabled in a profile yet impossible to get back out as a file - this is the
@@ -1209,10 +1436,22 @@ async function loadCustomFile(event, trig){
     const data = JSON.parse(await file.text());
     if (data.format !== 'ds5dongle-custom-effect') throw new Error('not a custom-effect file');
     if (!data.states || !data.states.length) throw new Error('no states in file');
-    const n = Math.min(5, data.states.length);
+    // Same guard as the monitor and timeline assign paths: a saved file is just a
+    // capture someone ticked, so it can carry the same state twice (the game
+    // returning to it) or two stages starting at the same trigger position.
+    let states = data.states;
+    {
+      const v = ceValidateStates(states, st => st.bytes);
+      if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
+      if (v.dropped.length){
+        states = v.kept;
+        alert(`${v.dropped.length} state${v.dropped.length===1?'':'s'} in this file ${v.dropped.length===1?'was an exact repeat':'were exact repeats'} of another — the game returning to a state it had already used, not a separate effect. Loading ${states.length} instead.`);
+      }
+    }
+    const n = Math.min(5, states.length);
     await hidLocked(async () => {
       for (let s = 0; s < n; s++){
-        const st = data.states[s];
+        const st = states[s];
         const t = st.bytes[0];
         const mech = (t===0x21||t===0x01||t===0x25||t===0x23||t===0x22||t===0x02); // bow is a force effect too
         // mechanical states never timeline-play - durations are game-state timing
@@ -1420,7 +1659,19 @@ async function writeEffectsToDevice(effects){
   if (!effects) return 0;
   let n = 0;
   for (const [trig,key] of [[0,'r2'],[1,'l2']]){
-    const list = effects[key] || [];
+    let list = effects[key] || [];
+    if (!list.length) continue;
+    // A profile or backup can carry a set that was captured with the same state
+    // twice. Drop exact repeats and correct the stored count to match, so a
+    // restore can't silently reinstate a set that falls back to A/B cycling.
+    const v = ceValidateStates(list, st => st.bytes);
+    if (v.dropped.length){
+      list = v.kept;
+      const base = trig === 0 ? 0x57 : 0x5c;
+      await sendCmd(0x01, [base + 4, Math.min(5, list.length)]);
+      const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
+      config[pfx + '_state_count'] = Math.min(5, list.length);
+    }
     for (let i = 0; i < Math.min(5, list.length); i++){
       const dt = Math.min(65535, (list[i].duration_ms|0) || 0);
       await sendCmd(0x11, [trig, i, ...list[i].bytes, dt & 0xFF, (dt >> 8) & 0xFF]);
@@ -1763,7 +2014,12 @@ function ceGateWarning(key){
 // field, to visually split a long card into its distinct halves. Keyed by field
 // so it survives fields being reordered around it.
 const SUB_DIVIDERS = {
-  'effect_leak_volume': 'Speaker Effect Leak',
+  // bold: true  -> the heavy rule used to split a long card in half
+  // otherwise   -> the subtle rule, matching the "Shared by both triggers"
+  //                separator above Kick follows
+  'effect_leak_volume': { label: 'Speaker Effect Leak', bold: true },
+  'ce_r2_enable':       { label: 'Custom captured effect' },
+  'ce_l2_enable':       { label: 'Custom captured effect' },
 };
 
 // One settings row. Extracted from render() so the side-by-side trigger view can
@@ -1771,7 +2027,8 @@ const SUB_DIVIDERS = {
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
   let html = '';
-  if (SUB_DIVIDERS[key]) html += `<div class="subdiv">${SUB_DIVIDERS[key]}</div>`;
+  const _d = SUB_DIVIDERS[key];
+  if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
   html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
   if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
@@ -1843,7 +2100,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.5</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.4</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1904,8 +2161,8 @@ function render(){
       </select>
       <label>Start zone <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
       <label id="ceb_endlbl">Break zone <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
-      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px"></label>
-      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px"></label>
+      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
       <label id="ceb_freqlbl" style="display:none">Frequency <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
     </div>
@@ -1922,12 +2179,23 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
+      <span style="font-size:12px;color:var(--sub)">See what is actually on a trigger right now — decoded, with the position window each stage will get:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">Read L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">Read R2</button>
+      <div id="ce_readout" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+    </div>
+    <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
     </div></div>` : '') + `
   ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div></div>` : '') + `
+    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
+      <span style="font-size:12px;color:var(--sub)">Wake troubleshooting — what the dongle observed across sleeps since it was powered up:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">Read wake diagnostics</button>
+      <div id="wakediag" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+    </div></div>` : '') + `
   `;
   app.innerHTML=html;
   // Only sweep the slots when their list is actually on screen. render() runs on
@@ -1940,6 +2208,7 @@ function render(){
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
   try { if (typeof cebRender === 'function') cebRender(); } catch(e){}
+  try { if (typeof cebShowLevels === 'function') cebShowLevels(); } catch(e){}
 }
 
 render();
@@ -1958,7 +2227,7 @@ portalSelfCheck();
 // make-autoapply-html.py), the profile JSON is stamped in here and auto-applies
 // the moment the page opens — no URL parameters needed, just open the file.
 // Left null in the master portal (which behaves normally / uses URL params).
-const EMBEDDED_PROFILE = {"name":"Calisto_protocol","version":2,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":100,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":15,"effect_leak_sensitivity":10,"effect_leak_decay":50,"effect_leak_attack":100,"effect_leak_output_hp_hz":300,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":8000,"effect_leak_max_burst":5,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":1,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":1,"at_strength":80,"at_threshold":255,"at_start_pos":0,"at_shape":3,"at_strength_b":20,"at_detent_pos":5,"at_deadzone":7,"at_pushback":0,"at_kick_style":1,"at_pushback_freq":35,"at_pushback_src":2,"ce_r2_enable":1,"ce_r2_condition":0,"ce_r2_thresh":0,"ce_r2_rate":40,"ce_r2_state_count":3,"ce_r2_yield":1,"at_l2_mode":2,"at_l2_strength":70,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":0,"at_l2_strength_b":70,"at_l2_detent_pos":5,"at_l2_deadzone":7,"at_l2_pushback":0,"at_l2_kick_style":0,"at_l2_pushback_freq":35,"ce_l2_enable":1,"ce_l2_condition":0,"ce_l2_thresh":0,"ce_l2_rate":40,"ce_l2_state_count":2,"ce_l2_yield":0,"gyro_mode":1,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0},"effects":{"r2":[{"bytes":[33,14,0,72,2,0,0,0,0,0,0],"duration_ms":0},{"bytes":[33,120,0,0,36,9,0,0,0,0,0],"duration_ms":0},{"bytes":[33,192,3,0,0,180,45,0,0,0,0],"duration_ms":0}],"l2":[{"bytes":[33,60,0,192,182,1,0,0,0,0,0],"duration_ms":0},{"bytes":[33,224,1,0,0,219,6,0,0,0,0],"duration_ms":0}]}}; /*EMBED_PROFILE_HOOK*/
+const EMBEDDED_PROFILE = {"name":"DS5 Profile","version":2,"settings":{"auto_haptics_enable":1,"auto_haptics_gain":100,"auto_haptics_smooth":40,"auto_haptics_gate":20,"mix_native_level":100,"auto_haptics_lowpass_hz":60,"ah_xover_hz":0,"ah_low_gain":100,"ah_high_gain":100,"auto_haptics_slope":12,"auto_mute_replace":1,"auto_mute_mix":1,"lightbar_off":1,"rumble_haptic_strength":50,"effect_leak_volume":15,"effect_leak_sensitivity":10,"effect_leak_decay":50,"effect_leak_attack":100,"effect_leak_output_hp_hz":300,"effect_leak_hp_hz":2500,"effect_leak_lp_hz":8000,"effect_leak_max_burst":5,"effect_leak_hold":20,"haptics_gain":1,"speaker_volume":100,"headset_volume":100,"speaker_gain":2,"sync_spk_headset_volume":1,"lock_volume":0,"disable_mic":0,"disable_speaker":0,"controller_mode":2,"polling_rate_mode":2,"audio_buffer_length":32,"inactive_time":15,"disable_inactive_disconnect":0,"disable_pico_led":0,"enable_wake":1,"haptics_aa":2,"r2t_mode":1,"r2t_on_press":1,"r2t_strength":50,"r2t_frequency":88,"synth_force":0,"at_mode":1,"at_strength":80,"at_threshold":255,"at_start_pos":0,"at_shape":3,"at_strength_b":20,"at_detent_pos":5,"at_deadzone":7,"at_pushback":0,"at_kick_style":1,"at_pushback_freq":35,"at_pushback_src":2,"ce_r2_enable":1,"ce_r2_condition":0,"ce_r2_thresh":0,"ce_r2_rate":40,"ce_r2_state_count":3,"ce_r2_yield":1,"at_l2_mode":2,"at_l2_strength":70,"at_l2_threshold":255,"at_l2_start_pos":0,"at_l2_shape":0,"at_l2_strength_b":70,"at_l2_detent_pos":5,"at_l2_deadzone":7,"at_l2_pushback":0,"at_l2_kick_style":0,"at_l2_pushback_freq":35,"ce_l2_enable":1,"ce_l2_condition":0,"ce_l2_thresh":0,"ce_l2_rate":40,"ce_l2_state_count":2,"ce_l2_yield":1,"gyro_mode":1,"gyro_sens":50,"gyro_axis":0,"gyro_invert":0,"bt_flush_timeout":0,"bt_qos_latency_us":0},"effects":{"r2":[{"bytes":[33,14,0,72,2,0,0,0,0,0,0],"duration_ms":0},{"bytes":[33,120,0,0,36,9,0,0,0,0,0],"duration_ms":0},{"bytes":[33,192,3,0,0,180,45,0,0,0,0],"duration_ms":0}],"l2":[{"bytes":[33,60,0,192,182,1,0,0,0,0,0],"duration_ms":0},{"bytes":[33,224,1,0,0,219,6,0,0,0,0],"duration_ms":0}]}}; /*EMBED_PROFILE_HOOK*/
 const EMBEDDED_AUTOSAVE = true; /*EMBED_AUTOSAVE_HOOK*/
 
 async function autoApply(){
