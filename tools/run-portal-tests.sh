@@ -15,4 +15,7 @@ node tools/portal-render-test.js
 node tools/portal-attr-test.js
 node tools/portal-align-test.js
 node tools/portal-validate-test.js
+node tools/portal-dedup-test.js
+node tools/portal-reader-test.js
+node tools/portal-force-test.js
 [ -f /mnt/user-data/uploads/R2_3x.json ] && node tools/portal-fileload-test.js || true
