@@ -36,7 +36,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 2;
+constexpr uint8_t FW_VER_PATCH = 4;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -660,6 +660,27 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(buf + 8, eff, 11);
                 }
             }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x16: {
+            // Read the wake diagnostics counters (RAM only, reset at boot).
+            // Reply: 0x66 0x16 0x00 then the counters, little-endian.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x16; buf[2] = 0x00;
+            const wake_diag_t &d = g_wake_diag;
+            auto put16 = [&](int at, uint16_t v){ buf[at] = (uint8_t)(v & 0xFF); buf[at+1] = (uint8_t)(v >> 8); };
+            put16(3,  d.suspend_cb_count);
+            put16(5,  d.recovered_suspends);
+            put16(7,  d.recovered_resumes);
+            put16(9,  d.disconnect_attempts);
+            put16(11, d.wake_attempts);
+            put16(13, d.dcd_forced);
+            buf[15] = d.last_remote_wakeup_en;
+            buf[16] = d.last_disconnect_ok;
+            buf[17] = d.last_wake_tud_ok;
+            buf[18] = d.last_wake_host_suspended;
+            buf[19] = wake_host_is_suspended() ? 1 : 0;
             feature_data[0x84].assign(buf, buf + sizeof(buf));
             break;
         }

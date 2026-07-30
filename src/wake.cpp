@@ -63,6 +63,12 @@ typedef enum {
 
 static critical_section_t wake_cs;
 static volatile bool host_suspended = false;
+
+// ---- Wake diagnostics -------------------------------------------------------
+// This failure is intermittent and cannot be reproduced on the bench, so record
+// what the device actually observed and let the portal read it back after a bad
+// sleep. Everything here is RAM only.
+wake_diag_t g_wake_diag{};
 // Read-only query for other subsystems: while the host is suspended there is
 // nothing to synthesize for, and extra BT output traffic competes with the
 // input reports wake-on-PS must observe.
@@ -88,6 +94,9 @@ static void enter_state(wake_state_t s) {
 
 static void request_host_wake(const char *reason) {
     bool ok = tud_remote_wakeup();
+    g_wake_diag.wake_attempts++;
+    g_wake_diag.last_wake_tud_ok = ok ? 1 : 0;
+    g_wake_diag.last_wake_host_suspended = host_suspended ? 1 : 0;
 
     // Linux quirk: Sometimes Linux fails to set the REMOTE_WAKEUP feature
     // flag before the second suspend, causing TinyUSB to refuse to wake.
@@ -95,6 +104,7 @@ static void request_host_wake(const char *reason) {
     if (!ok && host_suspended) {
         WAKE_DBG("%s: tud_remote_wakeup()=0 but suspended. Forcing DCD wake.", reason);
         dcd_remote_wakeup(0);
+        g_wake_diag.dcd_forced++;
         ok = true;
     }
 
@@ -131,6 +141,8 @@ void wake_note_usb_reconnect(void) {
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
     WAKE_DBG("tud_suspend_cb remote_wakeup_en=%d prev_state=%s",
              (int)remote_wakeup_en, wake_state_name(state));
+    g_wake_diag.suspend_cb_count++;
+    g_wake_diag.last_remote_wakeup_en = remote_wakeup_en ? 1 : 0;
     // A deliberate Reconnect USB (FUNC_RECONNECT) tears the bus down and back up, which looks
     // like a suspend but is not a host sleep -- ignore it so it cannot power off the controller.
     // See wake_note_usb_reconnect().
@@ -235,15 +247,53 @@ void wake_on_bt_disconnect(void) {
 void wake_task(void) {
     const uint64_t now = time_us_64();
 
+    // ---- Backstop: never trust the suspend EDGE alone ----
+    // Every part of the wake path is gated on host_suspended: the controller
+    // disconnect, the wake request on BT reconnect, and the DCD fallback inside
+    // request_host_wake(). So if tud_suspend_cb() is ever missed - a hub masking
+    // the signal downstream, or the edge landing while interrupts are masked -
+    // ALL THREE silently do nothing, which is exactly the reported failure: the
+    // controller stays on at sleep AND a later press does not wake the host.
+    // tud_suspended() is TinyUSB's own current state rather than an edge, so
+    // polling it recovers a missed callback.
+    {
+        const bool tu_susp = tud_suspended();
+        if (tu_susp && !host_suspended) {
+            host_suspended = true;
+            if (suspend_at_us == 0) suspend_at_us = now;
+            g_wake_diag.recovered_suspends++;
+            WAKE_DBG("tud_suspended()=1 but no suspend callback -> recovered");
+        } else if (!tu_susp && host_suspended) {
+            // Symmetric case: a missed RESUME would otherwise leave us convinced
+            // the host is asleep and keep disconnecting a controller in use.
+            host_suspended = false;
+            suspend_at_us = 0;
+            g_wake_diag.recovered_resumes++;
+            WAKE_DBG("tud_suspended()=0 but still flagged suspended -> recovered");
+        }
+    }
+
     // Commit the deferred controller power-off once we have stayed suspended past the debounce
     // window (a genuine host sleep/shutdown). Runs regardless of enable_wake -- it is a
     // battery-save, not part of the wake-UP path. A transient hub suspend will already have
     // been cancelled by tud_resume_cb / tud_mount_cb before this fires.
     if (suspend_at_us != 0 && host_suspended &&
         now - suspend_at_us >= WAKE_POWEROFF_DEBOUNCE_US) {
-        bt_power_off_controller();
+        // Drop the LINK rather than asking the controller to power itself off.
+        // bt_power_off_controller() queues a feature report that the DualSense has
+        // to receive and obey; if it is not delivered, or is ignored, the
+        // controller silently stays connected and awake - and with the link still
+        // up the wake FSM never sees the disconnect it expects, so a later PS
+        // press does not wake the host either. bt_disconnect() is an HCI command
+        // to our OWN radio, so it cannot be refused. A disconnected DualSense
+        // still powers down on its own idle timeout, so the battery saving is
+        // kept; it just happens a few minutes later.
+        // (Matches upstream's fix for the same intermittent failure.)
+        const bool dis = bt_disconnect();
+        g_wake_diag.disconnect_attempts++;
+        g_wake_diag.last_disconnect_ok = dis ? 1 : 0;
         suspend_at_us = 0;
-        WAKE_DBG("suspend debounce elapsed -> bt_power_off_controller()");
+        WAKE_DBG("suspend debounce elapsed -> bt_disconnect()=%d", (int)dis);
     }
 
     // The wake-UP FSM below only runs when wake is enabled.
