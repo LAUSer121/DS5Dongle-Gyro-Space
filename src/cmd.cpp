@@ -35,8 +35,8 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 17;
-constexpr uint8_t FW_VER_PATCH = 8;
+constexpr uint8_t FW_VER_MINOR = 18;
+constexpr uint8_t FW_VER_PATCH = 2;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
