@@ -422,8 +422,6 @@ rumble/haptics burst momentarily switches the kicking trigger(s) to a low-freque
 that knocks the trigger back against your finger, then resistance resumes as the
 burst fades (hysteresis prevents chatter at the threshold).
 
-| Setting | Range | Default | Notes |
-|---|---|---|---|
 The R2 and L2 triggers each have their own independent section in the portal
 with the full set of settings below. The only shared control is **Kick follows**
 (the kick's envelope source), since it's a single signal both triggers listen to.
