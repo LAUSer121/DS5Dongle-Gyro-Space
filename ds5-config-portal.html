@@ -603,7 +603,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.17.8) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.2) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -764,7 +764,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.17.8): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.18.2): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -927,6 +927,20 @@ function cebStartZone(b){ // lowest set zone, matching the firmware's ordering
   for (let z = 0; z < 10; z++) if (zb & (1 << z)) return z;
   return 0;
 }
+// Force is a 3-bit field: 8 levels, not 101. Show which level a typed percentage
+// actually lands on, so a value read back later (10% -> level 1 -> 14%) is not a
+// surprise. The buckets are 0-7, 8-21, 22-35, 36-49, 50-64, 65-78, 79-92, 93-100.
+function cebShowLevels(){
+  const fmt = (id, out) => {
+    const el = document.getElementById(id), sp = document.getElementById(out);
+    if (!el || !sp) return;
+    const w = cebWire100(+el.value || 0);
+    sp.textContent = ` = level ${w}/7 (${Math.round(w*100/7)}%)` + (w === 0 ? ' — may not be felt' : '');
+  };
+  fmt('ceb_str', 'ceb_strlvl');
+  fmt('ceb_snap', 'ceb_snaplvl');
+}
+
 function cebTypeChanged(){
   const t = document.getElementById('ceb_type').value;
   document.getElementById('ceb_endlbl').firstChild.textContent =
@@ -935,6 +949,7 @@ function cebTypeChanged(){
   document.getElementById('ceb_snaplbl').style.display = (t === 'bow') ? '' : 'none';
   document.getElementById('ceb_strlbl').firstChild.textContent =
     (t === 'bow') ? 'Draw strength % ' : 'Strength % ';
+  cebShowLevels();
 }
 function cebAddStage(){
   if (window._cebStages.length >= 5){ alert('5 stages maximum.'); return; }
@@ -1069,6 +1084,120 @@ async function ceClearDevice(trig){
     render();
     alert(`${name} cleared — the trigger is back on its slider settings. Save to a slot to keep it that way.`);
   } catch(e){ alert('Clear failed: ' + (e && e.message ? e.message : e)); }
+}
+
+// ---- Reader: decode whatever is actually on a trigger -------------------------
+// Raw effect bytes are unreadable, and until now there was nowhere to see what a
+// captured or loaded effect actually IS. This decodes each stored state the same
+// way the builder describes one, and adds the ACTIVE POSITION WINDOW the firmware
+// will give it - which is the part you cannot work out by eye, and the thing that
+// explains a wall that never breaks or a stage that never fires.
+const CE_TYPE_NAMES = {0x21:'Resistance',0x01:'Resistance',0x25:'Weapon break',0x23:'Weapon break',
+                       0x22:'Bow / snap',0x02:'Bow / snap',0x26:'Vibration',0x06:'Vibration',
+                       0x05:'Off',0x00:'(empty)'};
+const cePct = w => Math.round((w & 7) * 100 / 7);
+const ceZpos = z => Math.floor(z * 51 / 2);   // exactly the firmware's integer (z*51)/2
+function ceZonesOfBytes(b){
+  const zb = b[1] | ((b[2] & 0x03) << 8);
+  const out = []; for (let z = 0; z < 10; z++) if (zb & (1 << z)) out.push(z);
+  return out;
+}
+function ceZoneForce(b, z){            // inverse of cebPackZones
+  const bits = b[3] | (b[4] << 8) | (b[5] << 16) | (b[6] << 24);
+  return (bits >>> (3 * z)) & 7;
+}
+// Force is a 3-bit level, 0-7, written straight through with no offset — the
+// firmware derives it as (strength% * 7 + 50) / 100 and refuses to engage a
+// slider effect at all when the strength is 0. So 0 is the WEAKEST level, not a
+// "use the hardware default" sentinel. Report the level rather than interpreting
+// it, and flag 0 since an effect at level 0 may be imperceptible.
+function ceForceLabel(b, z){
+  const w = ceZoneForce(b, z);
+  return w === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${w}/7 (${cePct(w)}%)`;
+}
+function ceIsMechBytes(b){ return [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]); }
+function ceDescribeState(b){
+  const t = b[0], z = ceZonesOfBytes(b);
+  const name = CE_TYPE_NAMES[t] !== undefined ? CE_TYPE_NAMES[t] : ('type 0x' + t.toString(16));
+  if (t === 0x05 || t === 0x00) return name;
+  if (!z.length) return `${name} — no zones set`;
+  const lo = z[0], hi = z[z.length - 1];
+  if (t === 0x25 || t === 0x23) return `${name} — wall ${lo}→${hi}, ${b[3] === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${b[3] & 7}/7 (${cePct(b[3])}%)`}`;
+  if (t === 0x22 || t === 0x02) return `${name} — draw ${lo}→${hi}, force ${b[3] & 7}/7, snap ${(b[3] >> 3) & 7}/7`;
+  if (t === 0x26 || t === 0x06) return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
+  return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
+}
+// Mirror of the firmware's sequencer: order mechanical stages by start zone and
+// hand each over at min(its own end, the next one's start - 12).
+function ceActiveWindows(list){
+  const mech = list.map((b,i) => ({b,i})).filter(x => ceIsMechBytes(x.b));
+  if (mech.length < 2) return null;
+  const ord = mech.map(x => ({...x, lo: ceZonesOfBytes(x.b)[0],
+                                    hi: ceZonesOfBytes(x.b).slice(-1)[0]}))
+                  .sort((a,c) => a.lo - c.lo);
+  const win = {};
+  for (let k = 0; k < ord.length; k++){
+    const from = k === 0 ? 0 : win[ord[k-1].i].to;
+    const to = (k === ord.length - 1) ? 255
+             : Math.min(ceZpos(ord[k].hi), ceZpos(ord[k+1].lo) - 12);
+    win[ord[k].i] = { from, to, order: k + 1 };
+  }
+  return win;
+}
+async function ceReadTrigger(trig){
+  const name = trig === 0 ? 'R2' : 'L2';
+  const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
+  const box  = document.getElementById('ce_readout');
+  if (box) box.innerHTML = `Reading ${name}…`;
+  try {
+    const n = Math.min(5, +config[pfx + '_state_count'] || 0);
+    const on = +config[pfx + '_enable'] || 0;
+    if (!n){
+      if (box) box.innerHTML = `<b>${name}</b>: no custom effect assigned.`;
+      return;
+    }
+    const states = [];
+    await hidLocked(async () => {
+      for (let i = 0; i < n; i++){
+        await sendCmd(0x12, [trig, i]);
+        const r = await readCmdReplyOn(SLOT_REPORT, 0x12, undefined, 12);
+        if (!r || r[2] !== 0x00) throw new Error('device did not return state ' + i);
+        states.push({ bytes: Array.from(r.slice(5, 16)), dt: r[16] | (r[17] << 8) });
+      }
+    });
+    const bytes = states.map(s => s.bytes);
+    const anyMech = bytes.some(ceIsMechBytes);
+    const mode = bytes.length === 1 ? 'single state'
+               : anyMech ? 'mechanical sequence — ordered by trigger position, durations ignored'
+                         : 'time-based — driven by the recorded durations';
+    const win = ceActiveWindows(bytes);
+    const COND = ['While held','On press','On release'];
+    const YIELD = ['custom effect always owns it','sliders while gated, custom otherwise','custom while gated, sliders otherwise'];
+    let h = `<div style="margin-bottom:6px"><b>${name}</b> — ${bytes.length} state${bytes.length===1?'':'s'}, `
+          + `${on ? 'enabled' : '<span style="color:#e0a030">assigned but DISABLED</span>'}`
+          + ` · ${COND[+config[pfx+'_condition']||0]} · re-arm zone ${+config[pfx+'_thresh']||0}`
+          + ` · ${YIELD[+config[pfx+'_yield']||0]}</div>`
+          + `<div style="margin-bottom:6px;color:var(--sub)">Playback: ${mode}</div>`;
+    states.forEach((st,i) => {
+      const w = win && win[i];
+      const where = w ? ` <span style="color:var(--sub)">(stage ${w.order}, active pos ${w.from}–${w.to})</span>`
+                      : (!anyMech && bytes.length > 1 ? ` <span style="color:var(--sub)">(${st.dt} ms)</span>` : '');
+      h += `<div style="margin:3px 0">${i+1}. ${ceDescribeState(st.bytes)}${where}<br>`
+        +  `<code style="font-size:11px;color:var(--sub)">${st.bytes.map(x=>x.toString(16).padStart(2,'0')).join(' ')}</code></div>`;
+    });
+    if (win){
+      const cut = states.map((st,i) => ({st,i,w:win[i]}))
+        .filter(x => x.w && ceIsMechBytes(x.st.bytes) &&
+                     x.w.to < ceZpos(ceZonesOfBytes(x.st.bytes).slice(-1)[0]));
+      if (cut.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ `
+        + cut.map(x => `state ${x.i+1} is handed over at pos ${x.w.to}, before its own span ends at `
+                     + `${ceZpos(ceZonesOfBytes(x.st.bytes).slice(-1)[0])}`).join('; ')
+        + ` — its ending (a wall breaking, a bow snapping) will not be reached.</div>`;
+    }
+    if (box) box.innerHTML = h;
+  } catch(e){
+    if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+  }
 }
 
 // Export the effect currently assigned to a trigger, read back from the device.
@@ -1784,7 +1913,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.17.8</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.2</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -1845,8 +1974,8 @@ function render(){
       </select>
       <label>Start zone <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
       <label id="ceb_endlbl">Break zone <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
-      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px"></label>
-      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px"></label>
+      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
       <label id="ceb_freqlbl" style="display:none">Frequency <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
     </div>
@@ -1861,6 +1990,12 @@ function render(){
       <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(1)">Remove effect from L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
+    </div>
+    <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
+      <span style="font-size:12px;color:var(--sub)">See what is actually on a trigger right now — decoded, with the position window each stage will get:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">Read L2</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">Read R2</button>
+      <div id="ce_readout" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
@@ -1881,6 +2016,7 @@ function render(){
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
   try { if (typeof cebRender === 'function') cebRender(); } catch(e){}
+  try { if (typeof cebShowLevels === 'function') cebShowLevels(); } catch(e){}
 }
 
 render();

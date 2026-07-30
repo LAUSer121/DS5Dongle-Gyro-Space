@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.2] — 2026-07-26
+
+### Changed
+- **The effect builder now shows which force level a percentage lands on.** Force
+  is a 3-bit field — eight levels, not a hundred — so a typed value snaps to the
+  nearest one: 10% and 21% both become level 1, which reads back as 14%. The
+  Strength and Snap force fields now show `= level 1/7 (14%)` as you type, so the
+  value the device stores is visible before you assign it rather than being a
+  surprise when the effect is read back. Level 0 is additionally flagged as
+  possibly imperceptible.
+
+## [1.18.1] — 2026-07-26
+
+### Fixed
+- **The reader described a zero force field as "default force".** That was wrong:
+  force is a 3-bit level from 0 to 7, written straight through with no offset, and
+  the firmware refuses to engage a slider effect at all when its strength is 0 — so
+  0 is the weakest setting, not a "use the hardware default" sentinel. The reader
+  now reports the level itself (`force 3/7 (43%)`) and flags 0 as possibly
+  imperceptible instead of implying the controller will substitute something.
+
+## [1.18.0] — 2026-07-26
+
+### Added
+- **Read what is actually on a trigger.** The Build a Custom Effect panel can now
+  decode the effect currently stored on L2 or R2 and show it in plain language —
+  the same way the builder describes a stage you are authoring — instead of leaving
+  captured or loaded effects as unreadable bytes. For each state it gives the type
+  and parameters, the raw bytes, and the **position window that stage will actually
+  get**, which is the part that cannot be worked out by eye. It also names the
+  playback mode (single state, mechanical sequence, or time-based) and shows the
+  trigger's condition, re-arm zone and gate setting alongside.
+- The readout **warns when a stage is handed over before its own span finishes** —
+  the case where a wall never reaches its break point or a bow never snaps, which
+  until now could only be found by decoding the bytes by hand.
+
 ## [1.17.8] — 2026-07-26
 
 ### Fixed

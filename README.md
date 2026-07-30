@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.17.8**
+**Version 1.18.2**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.17.8-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.18.2-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -171,7 +171,7 @@ the PC is actually asleep (where wake needs it).
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.17.8.uf2` (Pico 2 W) or `ds5-v1.17.8-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.18.2.uf2` (Pico 2 W) or `ds5-v1.18.2-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -640,6 +640,15 @@ Notes:
   silent, naming the setting to change. For *sliders while gated*, a gated resistance mode lines up exactly.
   For *custom effect while gated*, set the resistance to **always on** — the
   custom effect takes over while the gate is held, and the sliders cover the rest.
+- **Force has eight levels, not a hundred.** It is a 3-bit field, so a strength
+  percentage snaps to the nearest of eight steps — 10% and 21% both store level 1,
+  which reads back as 14%. The builder shows the level as you type. Level 0 is the
+  weakest and may not be felt at all.
+- **Seeing what is on a trigger:** the same panel has *Read L2 / Read R2*, which
+  decodes the effect currently stored there — each state in plain language, its raw
+  bytes, and the position window it will actually be active for. Use it to check a
+  captured or loaded effect, and to spot a stage that hands over before its own
+  span finishes (a wall that never breaks).
 - **Removing an effect:** the Build a Custom Effect panel (Triggers tab) has *Remove effect from
   R2 / L2*, which wipes that trigger's stored states, switches the custom effect
   off and returns the trigger to its sliders. Everything else on that trigger —
@@ -648,6 +657,48 @@ Notes:
 - Silence on either side is just that side configured off (resistance off, kick
   0, R2T off), so "captured effect while aiming, nothing otherwise" is a valid
   setup.
+
+**Recipe: a custom effect *and* Rumble → Trigger on the same trigger**
+
+Only one effect can occupy a trigger at a time, so a custom effect and the
+rumble-driven vibration cannot both be present at once. They can **take turns**,
+though, and the hand-off is what schedules it. The result is a trigger that
+resists while you aim and buzzes when the shot lands:
+
+| Setting | Value |
+|---|---|
+| Custom effect on L2 | your resistance, enabled |
+| **Custom effect vs sliders on L2** | **Sliders while gated, custom effect otherwise** |
+| L2 resistance mode | **Off** |
+| L2 threshold | the R2 depth at which the swap happens |
+| Rumble → Trigger mode | **Left trigger only** (or Both) |
+
+Why it works: the trigger's order of precedence is *game effects → custom effect →
+slider resistance → rumble → trigger*. Rumble sits **below** the custom effect, so
+you don't gate the rumble at all — you gate the custom effect, and rumble becomes
+what L2 falls back to. With the L2 resistance mode off, there is nothing in
+between.
+
+In use: hold L2 and you feel your custom resistance. Pull R2 past the L2 threshold
+and L2 hands over to the rumble vibration, so the shot is felt in the hand that was
+holding the aim. Release R2 and the resistance comes back, ready for the next shot.
+Reverse the two triggers for the mirror-image setup.
+
+Two things make or break the feel:
+
+- **Keep the custom effect's strength low — around 10% (level 1/7).** A firm
+  resistance makes you press hard into the trigger, and a trigger held hard against
+  a stiff wall damps the vibration you are about to swap in. A light resistance is
+  still clearly felt while aiming and leaves the shot its impact.
+- **Set the L2 threshold just *below* the point where R2 actually fires.** The swap
+  and the shot then coincide, so the resistance letting go is masked by the
+  vibration arriving instead of being felt as a separate event a moment earlier.
+
+Worth knowing: because only one effect fits, you get one tactile event when the
+gate engages and another when it releases — not a click, buzz and click, since the
+resistance ending and the vibration starting are the same transition. How well the
+window is covered depends on how long the game's rumble lasts; a very short burst
+can leave a quiet gap before you release R2.
 
 **What works — and what doesn't — while a custom effect owns the trigger**
 
@@ -936,9 +987,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.17.8.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.17.8)
-- `ds5-v1.17.8-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.18.2.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.18.2)
+- `ds5-v1.18.2-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
