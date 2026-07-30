@@ -996,9 +996,8 @@ don't affect you.
   only when a release note says so, or to recover from clearly corrupted settings.
   Erases all settings and every profile slot.
 - `src/` — the modified source files
-- `ds5dongle-v1.0.9.patch` — unified diff against awalol v0.7.0 (up to fw 1.0.9)
 - `LICENSE` — MIT license
-- `README.md` — this file (docs version 1.13.2)
+- `README.md` — this file
 - `CHANGELOG.md` — version history
 - `automation/` — **optional** Playnite integration (see below)
 
