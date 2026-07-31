@@ -12,6 +12,8 @@
 #include "tusb.h"
 #include "device/dcd.h"
 #include "pico/sync.h"
+#include "hardware/structs/usb.h"
+#include "hardware/address_mapped.h"
 #include "pico/time.h"
 #include "ps_shortcut.h"
 #include "config.h"
@@ -69,6 +71,35 @@ static volatile bool host_suspended = false;
 // what the device actually observed and let the portal read it back after a bad
 // sleep. Everything here is RAM only.
 wake_diag_t g_wake_diag{};
+
+// USB resume signalling. dcd_remote_wakeup() on RP2 SETS SIE_CTRL.RESUME and
+// nothing in TinyUSB ever clears it, so the device keeps driving resume K
+// indefinitely. The USB spec allows 1-15 ms; drive it past that and a host may
+// disregard it entirely - and because the bit is already set, every LATER
+// attempt writes a 1 over a 1 and produces no fresh edge, so once a wake is
+// missed the port can never be woken again until something resets it. Terminate
+// the drive after RESUME_DRIVE_US and the signal becomes spec-legal AND
+// re-armable, which is what makes the retry below possible.
+#define RESUME_DRIVE_US     10000     // 10 ms, inside the spec's 1-15 ms window
+#define RESUME_RETRY_US    800000     // re-issue every 800 ms while still asleep
+#define RESUME_MAX_TRIES        6
+static uint64_t resume_drive_until = 0;
+static uint64_t resume_last_try    = 0;
+static uint8_t  resume_tries       = 0;
+static volatile bool poll_recovered_pending = false;
+
+static void resume_drive_start(void) {
+    dcd_remote_wakeup(0);
+    resume_drive_until = time_us_64() + RESUME_DRIVE_US;
+    resume_last_try    = time_us_64();
+    if (resume_tries < 255) resume_tries++;
+}
+static void resume_drive_service(uint64_t now) {
+    if (resume_drive_until && now >= resume_drive_until) {
+        hw_clear_alias(usb_hw)->sie_ctrl = USB_SIE_CTRL_RESUME_BITS;  // end the K-state
+        resume_drive_until = 0;
+    }
+}
 // Read-only query for other subsystems: while the host is suspended there is
 // nothing to synthesize for, and extra BT output traffic competes with the
 // input reports wake-on-PS must observe.
@@ -93,7 +124,10 @@ static void enter_state(wake_state_t s) {
 }
 
 static void request_host_wake(const char *reason) {
+    resume_tries = 0;                       // new wake episode
     bool ok = tud_remote_wakeup();
+    if (ok) { resume_drive_until = time_us_64() + RESUME_DRIVE_US;
+              resume_last_try = time_us_64(); resume_tries = 1; }
     g_wake_diag.wake_attempts++;
     g_wake_diag.last_wake_tud_ok = ok ? 1 : 0;
     g_wake_diag.last_wake_host_suspended = host_suspended ? 1 : 0;
@@ -103,7 +137,7 @@ static void request_host_wake(const char *reason) {
     // If we are suspended but ok is false, we force the wake signal.
     if (!ok && host_suspended) {
         WAKE_DBG("%s: tud_remote_wakeup()=0 but suspended. Forcing DCD wake.", reason);
-        dcd_remote_wakeup(0);
+        resume_drive_start();
         g_wake_diag.dcd_forced++;
         ok = true;
     }
@@ -142,6 +176,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
     WAKE_DBG("tud_suspend_cb remote_wakeup_en=%d prev_state=%s",
              (int)remote_wakeup_en, wake_state_name(state));
     g_wake_diag.suspend_cb_count++;
+    poll_recovered_pending = false;   // callback arrived: the poll merely beat it
     g_wake_diag.last_remote_wakeup_en = remote_wakeup_en ? 1 : 0;
     // A deliberate Reconnect USB (FUNC_RECONNECT) tears the bus down and back up, which looks
     // like a suspend but is not a host sleep -- ignore it so it cannot power off the controller.
@@ -184,6 +219,7 @@ void wake_on_bt_connect(void) {
 }
 
 extern "C" void tud_resume_cb(void) {
+    if (poll_recovered_pending) { g_wake_diag.recovered_suspends++; poll_recovered_pending = false; }
     WAKE_DBG("tud_resume_cb state=%s", wake_state_name(state));
     host_suspended = false;
     host_resumed_event = true;
@@ -246,6 +282,7 @@ void wake_on_bt_disconnect(void) {
 
 void wake_task(void) {
     const uint64_t now = time_us_64();
+    resume_drive_service(now);
 
     // ---- Backstop: never trust the suspend EDGE alone ----
     // Every part of the wake path is gated on host_suspended: the controller
@@ -261,13 +298,21 @@ void wake_task(void) {
         if (tu_susp && !host_suspended) {
             host_suspended = true;
             if (suspend_at_us == 0) suspend_at_us = now;
-            g_wake_diag.recovered_suspends++;
+            // Not necessarily a miss: TinyUSB sets its suspended flag in the
+            // INTERRUPT handler but dispatches tud_suspend_cb() later from
+            // tud_task(), so polling can legitimately win that race by a few
+            // hundred microseconds - and a busy main loop (a custom effect
+            // running its 8 ms tick) widens the window. Only count a genuine
+            // miss: flag it now, and clear the flag if the callback does turn
+            // up. Whatever is still flagged when the host resumes was real.
+            poll_recovered_pending = true;
             WAKE_DBG("tud_suspended()=1 but no suspend callback -> recovered");
         } else if (!tu_susp && host_suspended) {
             // Symmetric case: a missed RESUME would otherwise leave us convinced
             // the host is asleep and keep disconnecting a controller in use.
             host_suspended = false;
             suspend_at_us = 0;
+            if (poll_recovered_pending) { g_wake_diag.recovered_suspends++; poll_recovered_pending = false; }
             g_wake_diag.recovered_resumes++;
             WAKE_DBG("tud_suspended()=0 but still flagged suspended -> recovered");
         }
@@ -332,6 +377,14 @@ void wake_task(void) {
                     enter_state(WAKE_KEY_DOWN);
                     critical_section_exit(&wake_cs);
                 }
+            } else if (host_suspended && resume_tries && resume_tries < RESUME_MAX_TRIES &&
+                       now - resume_last_try >= RESUME_RETRY_US) {
+                // Still asleep and the host has not resumed. Now that the drive
+                // is terminated the bit can produce a fresh edge, so try again -
+                // a single resume pulse is easy for a host to miss.
+                resume_drive_start();
+                g_wake_diag.resume_reissues++;
+                WAKE_DBG("no resume yet -> re-issuing (try %u)", (unsigned)resume_tries);
             } else if (now - entered > WAKE_REQUEST_TIMEOUT_US) {
                 WAKE_DBG("REQUESTED timeout 5s -> DONE (no resume signaling; may have already woken)");
                 critical_section_enter_blocking(&wake_cs);

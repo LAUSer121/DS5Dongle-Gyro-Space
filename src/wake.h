@@ -24,6 +24,7 @@ struct wake_diag_t {
     uint16_t disconnect_attempts;    // bt_disconnect() calls at suspend
     uint16_t wake_attempts;          // request_host_wake() calls
     uint16_t dcd_forced;             // times the DCD fallback was used
+    uint16_t resume_reissues;        // resume pulses re-sent when the host didn't wake
     uint8_t  last_remote_wakeup_en;  // did the host PERMIT remote wakeup?
     uint8_t  last_disconnect_ok;     // did bt_disconnect() have a live handle?
     uint8_t  last_wake_tud_ok;       // tud_remote_wakeup() return
