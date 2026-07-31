@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.6] — 2026-07-27
+
+### Fixed
+- **The wake diagnostics reported missed suspend notifications that had not been
+  missed.** The USB stack raises its internal suspended flag inside the interrupt
+  handler but delivers the notification later, when the main loop next services
+  USB — so the bridge's safety poll can legitimately win that race by a fraction
+  of a millisecond and then see the notification arrive normally. A busy main loop
+  widens the window, which is why this showed up particularly after activating a
+  profile with a custom trigger effect. A suspend is now only counted as missed if
+  the notification never arrives at all, so the figure means what it says.
+
+## [1.18.5] — 2026-07-27
+
+### Fixed
+- **The USB wake-up signal was never terminated, so it could only ever work
+  once.** Sending a remote wake-up sets a hardware bit that makes the chip drive
+  the wake signal on the USB bus, and nothing in the USB stack ever clears it
+  again. The USB specification allows that signal to last between 1 and 15
+  milliseconds; ours was left on indefinitely, which a host may disregard — and
+  because the bit was already set, every later attempt wrote a 1 over a 1 and
+  produced no fresh signal at all. Once a wake was missed, no further press could
+  wake the machine. The bridge now ends the signal after 10 ms, which is both
+  within spec and leaves it able to fire again.
+- **A wake is now retried instead of attempted once.** A single wake pulse is easy
+  for a host to miss, and previously the bridge sent one and waited five seconds
+  for a resume that might never come. It now re-sends up to six times at 800 ms
+  intervals while the host is still asleep, which only became possible once the
+  signal was being terminated properly.
+
+### Added
+- The wake diagnostics report how many resume pulses had to be re-sent, which
+  distinguishes the host ignoring a correctly-sent signal from the dongle failing
+  to send one.
+
 ## [1.18.4] — 2026-07-27
 
 ### Fixed
