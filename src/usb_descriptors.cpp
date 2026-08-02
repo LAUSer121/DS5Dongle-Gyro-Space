@@ -136,8 +136,16 @@ tusb_desc_device_t desc_device =
 // keyboard always instance 1. That failure is arithmetically impossible, not
 // merely guarded against.
 static volatile bool s_idle_pid = false;
+// What the host was ACTUALLY given at its last GET_DESCRIPTOR. s_idle_pid is
+// the intent and can be changed at any moment by either core; this latch
+// only changes when the host really re-enumerates, so it is the truth about
+// what Windows currently believes is plugged in. Comparing the two detects
+// the stuck state where the intent says "full controller" but the host is
+// still showing the idle identity.
+static volatile bool s_served_idle_pid = false;
 void usb_set_idle_pid(bool on) { s_idle_pid = on; }
 bool usb_is_idle_pid(void)     { return s_idle_pid; }
+bool usb_served_idle_pid(void) { return s_served_idle_pid; }
 
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
@@ -147,6 +155,7 @@ uint8_t const *tud_descriptor_device_cb(void) {
     // because Sony's vendor id plus a gamepad interface is sufficient. So the
     // idle identity uses the Raspberry Pi vendor id (this IS an RP2350 board),
     // its own product id, and its own manufacturer and product strings.
+    s_served_idle_pid = s_idle_pid;   // record what this enumeration hands over
     if (s_idle_pid) {
         desc_device.idVendor  = 0x2E8A;   // Raspberry Pi — not Sony
         desc_device.idProduct = 0x0DE0;

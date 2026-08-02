@@ -356,6 +356,31 @@ void bt_inquiring_led() {
     }
 }
 
+#if !ENABLE_SERIAL
+// Bring the full controller identity back after the controller reconnects.
+//
+// A bare tud_connect() is NOT enough here. With wake enabled the bridge is
+// ALREADY attached (under the idle identity) - that is the whole point of
+// staying on the bus - and tud_connect() on an attached device does
+// nothing at all: the pull-up is already asserted, the host sees no change
+// and never re-reads the device descriptor. The intent flag flipped to
+// "full" while the host kept showing the idle product id, and because the
+// post-resume repair in wake_task() is itself gated on usb_is_idle_pid(),
+// clearing the flag also disarmed the one path that would have fixed it -
+// so it stayed stuck until the controller was power-cycled. A real detach
+// is required, with the same >100 ms port-debounce gap as the power-off
+// direction, otherwise the host may miss the change entirely.
+static void restore_full_usb_identity(void) {
+    usb_set_idle_pid(false);
+    wake_note_usb_reconnect();
+    if (usb_served_idle_pid()) {   // host currently holds the idle identity
+        tud_disconnect();
+        sleep_ms(250);             // > USB 100 ms debounce
+    }
+    tud_connect();
+}
+#endif
+
 static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     (void) channel;
 
@@ -699,14 +724,15 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     dse_on_connect();
 #if !ENABLE_SERIAL
                     // don't re-enumerate while the host is suspended -- it would wake a sleeping host
-                    if (!tud_suspended()) { usb_set_idle_pid(false); tud_connect(); }
+                    // (wake_task() performs the restore once the host is up again)
+                    if (!tud_suspended()) { restore_full_usb_identity(); }
 #endif
                 } else if (packet[0] == 0x02) {
                     printf("Connected DS5 Controller\n");
                     check_dse = false;
                     is_dse = false;
 #if !ENABLE_SERIAL
-                    if (!tud_suspended()) { usb_set_idle_pid(false); tud_connect(); }
+                    if (!tud_suspended()) { restore_full_usb_identity(); }
 #endif
                 }
             }

@@ -312,7 +312,19 @@ void wake_task(void) {
     // NOT re-enumerate (that would have disturbed a sleeping host), so we can be
     // left keyboard-only with a controller attached and no gamepad. Put the full
     // device back as soon as the host is up.
-    if (!host_suspended && usb_is_idle_pid() && bt_link_up && !tud_suspended()) {
+    // Repair BOTH forms of "host is showing the wrong identity":
+    //   - intent still idle (the reconnect happened while the host slept and
+    //     was deliberately not acted on), and
+    //   - intent already full but the host was never made to re-read it,
+    //     which is the state a missed re-enumeration leaves behind.
+    // The second case is what kept the idle product id on screen after a
+    // wake until the controller was power-cycled. usb_served_idle_pid() is
+    // latched at GET_DESCRIPTOR, so it reflects what Windows actually has.
+    static uint64_t last_restore_us = 0;
+    const bool identity_wrong = usb_is_idle_pid() || usb_served_idle_pid();
+    const bool cooled_down    = (last_restore_us == 0) || (now - last_restore_us > 3000000);
+    if (!host_suspended && identity_wrong && cooled_down && bt_link_up && !tud_suspended()) {
+        last_restore_us = now;
         usb_set_idle_pid(false);
         wake_note_usb_reconnect();
         tud_disconnect();

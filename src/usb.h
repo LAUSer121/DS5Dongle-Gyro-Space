@@ -14,3 +14,6 @@ extern float volume[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 // device it can be woken from without a phantom gamepad appearing.
 void usb_set_idle_pid(bool on);
 bool usb_is_idle_pid(void);
+// True if the identity the HOST currently has enumerated is the idle one
+// (latched at GET_DESCRIPTOR, unlike usb_is_idle_pid which is only intent).
+bool usb_served_idle_pid(void);
