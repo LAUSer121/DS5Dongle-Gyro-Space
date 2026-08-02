@@ -36,7 +36,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 6;
+constexpr uint8_t FW_VER_PATCH = 12;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -677,6 +677,10 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             put16(11, d.wake_attempts);
             put16(13, d.dcd_forced);
             put16(20, d.resume_reissues);
+            const wake_cycle_t &c = g_wake_cycle;      // last sleep cycle
+            buf[22] = c.requests; buf[23] = c.accepted; buf[24] = c.dcd;
+            buf[25] = c.reissues; buf[26] = c.resumed;  buf[27] = c.key_sent;
+            buf[28] = c.hid_waited; buf[29] = c.hid_timeout; buf[30] = c.end_state;
             buf[15] = d.last_remote_wakeup_en;
             buf[16] = d.last_disconnect_ok;
             buf[17] = d.last_wake_tud_ok;

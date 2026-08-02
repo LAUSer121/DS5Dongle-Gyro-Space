@@ -122,10 +122,38 @@ tusb_desc_device_t desc_device =
     .bNumConfigurations = 0x01
 };
 
+// IDLE IDENTITY. When the controller is away and wake is on we must stay on the
+// USB bus (or a later host sleep is invisible to us and waking is impossible),
+// but under our normal product ID that leaves DS4Windows showing a controller
+// that is switched off. So we re-enumerate under a DIFFERENT product ID instead.
+//
+// Deliberately NOT a different descriptor layout. The previous attempt presented
+// a keyboard-only configuration, which made "HID instance 0" mean the gamepad in
+// one state and the keyboard in the other — so any report written during a
+// transition went to the wrong interface, and 63-byte gamepad reports landed in
+// an 8-byte boot keyboard and were typed at the host. Here the interface layout
+// is byte-identical in both identities: the gamepad is always instance 0, the
+// keyboard always instance 1. That failure is arithmetically impossible, not
+// merely guarded against.
+static volatile bool s_idle_pid = false;
+void usb_set_idle_pid(bool on) { s_idle_pid = on; }
+bool usb_is_idle_pid(void)     { return s_idle_pid; }
+
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 uint8_t const *tud_descriptor_device_cb(void) {
-    desc_device.idProduct = ds_mode() ? 0x0CE6 : 0x0DF2;
+    // The idle identity must not look like a Sony controller in ANY respect.
+    // Changing only the product id was not enough: DS4Windows still claimed it,
+    // because Sony's vendor id plus a gamepad interface is sufficient. So the
+    // idle identity uses the Raspberry Pi vendor id (this IS an RP2350 board),
+    // its own product id, and its own manufacturer and product strings.
+    if (s_idle_pid) {
+        desc_device.idVendor  = 0x2E8A;   // Raspberry Pi — not Sony
+        desc_device.idProduct = 0x0DE0;
+    } else {
+        desc_device.idVendor  = 0x054C;   // Sony, for the real controller identity
+        desc_device.idProduct = ds_mode() ? 0x0CE6 : 0x0DF2;
+    }
     desc_device.iSerialNumber = get_config().disable_usb_sn ? 0x00 : 0x03;
     // USB 2.1 (so the host requests the BOS / MS OS 2.0 selective-suspend opt-in)
     // only when wake is enabled; plain USB 2.0 otherwise.
@@ -444,6 +472,8 @@ uint8_t descriptor_configuration[] = {
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
+// Set while the controller is away and wake is on: present only the keyboard.
+
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     (void) index; // for multiple configurations
     auto bInterval = 0x01;
@@ -470,6 +500,14 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     // Wake / Game Bar are runtime features. Advertise REMOTE_WAKEUP only when wake is
     // on, and include the keyboard interface (the LAST descriptor block) only when wake
     // OR the Game Bar shortcut is on. With both off this is byte-identical to the base.
+    // KEYBOARD-ONLY MODE. With wake on we must stay on the USB bus even after the
+    // controller is switched off, or there is nothing for the host to suspend and
+    // the bridge never learns the PC slept. But leaving the WHOLE device present
+    // means DS4Windows still sees a gamepad that isn't there. So in that state we
+    // present a cut-down configuration containing ONLY the wake keyboard: the host
+    // keeps a device it can be woken from, and no controller appears anywhere.
+    // The keyboard block is the last one in the array, so it can be lifted out
+    // whole; only its bInterfaceNumber has to be renumbered to 0.
     const bool wake = get_config().enable_wake;
     const bool kbd = wake || get_config().ps_shortcut_enabled;
     descriptor_configuration[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
@@ -873,6 +911,8 @@ _Static_assert(sizeof(desc_hid_report_kbd) == 45, "keyboard report descriptor le
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
+    // In keyboard-only mode the keyboard is the ONLY HID interface, so it is
+    // instance 0 rather than 1.
 #ifdef ENABLE_WAKE_HID
     // HID instance 1 is the wake-only boot keyboard added by ENABLE_WAKE_HID.
     if (itf == 1) return desc_hid_report_kbd;
@@ -908,9 +948,16 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void) langid;
     size_t chr_count;
 
-    if (ds_mode()) {
+    // Idle identity: nothing here may say "DualSense", or tools and Windows will
+    // keep presenting it as a controller however the numeric ids read.
+    if (usb_is_idle_pid()) {
+        string_desc_arr[1] = "DS5Dongle";
+        string_desc_arr[2] = "DS5Dongle (controller off)";
+    } else if (ds_mode()) {
+        string_desc_arr[1] = "Sony Interactive Entertainment";
         string_desc_arr[2] = "DualSense Wireless Controller";
-    }else {
+    } else {
+        string_desc_arr[1] = "Sony Interactive Entertainment";
         string_desc_arr[2] = "DualSense Edge Wireless Controller";
     }
 

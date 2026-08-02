@@ -31,6 +31,21 @@ struct wake_diag_t {
     uint8_t  last_wake_host_suspended;
 };
 extern wake_diag_t g_wake_diag;
+
+// A snapshot of the MOST RECENT suspend->resume cycle. Cumulative counters can't
+// tell you which sleep failed; this can.
+struct wake_cycle_t {
+    uint8_t requests;    // wake requests made while actually suspended
+    uint8_t accepted;    // ...that the USB stack accepted
+    uint8_t dcd;         // ...that fell back to driving the bus directly
+    uint8_t reissues;    // resume pulses re-sent
+    uint8_t resumed;     // did the bus come back?
+    uint8_t key_sent;    // was the wake keypress delivered?
+    uint8_t hid_waited;  // resumed but the keyboard endpoint was not ready
+    uint8_t hid_timeout; // ...and never became ready
+    uint8_t end_state;   // state machine state when the cycle ended
+};
+extern wake_cycle_t g_wake_cycle;
 bool wake_host_is_suspended(void);
 #else
 static inline void wake_init(void) {}

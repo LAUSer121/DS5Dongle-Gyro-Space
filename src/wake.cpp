@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "usb.h"
 #include "tusb.h"
 #include "device/dcd.h"
 #include "pico/sync.h"
@@ -19,6 +20,9 @@
 #include "config.h"
 
 
+// Always 1. The interface layout is identical in both identities, so this can
+// never shift underneath a sender — which is what made the previous approach
+// produce garbage keystrokes.
 #define WAKE_KBD_INSTANCE     1
 #define WAKE_KEYCODE_F15      0x68
 // Post-resume timings tuned for "wake-and-resleep" Windows behavior: the host
@@ -72,6 +76,12 @@ static volatile bool host_suspended = false;
 // sleep. Everything here is RAM only.
 wake_diag_t g_wake_diag{};
 
+// Cumulative counters cannot say WHICH sleep failed - "last wake refused" is
+// usually just a button press after the user gave up and woke the PC by hand.
+// So snapshot each suspend->resume cycle and keep the most recent one.
+wake_cycle_t g_wake_cycle{};
+static wake_cycle_t cur{};
+
 // USB resume signalling. dcd_remote_wakeup() on RP2 SETS SIE_CTRL.RESUME and
 // nothing in TinyUSB ever clears it, so the device keeps driving resume K
 // indefinitely. The USB spec allows 1-15 ms; drive it past that and a host may
@@ -83,10 +93,14 @@ wake_diag_t g_wake_diag{};
 #define RESUME_DRIVE_US     10000     // 10 ms, inside the spec's 1-15 ms window
 #define RESUME_RETRY_US    800000     // re-issue every 800 ms while still asleep
 #define RESUME_MAX_TRIES        6
+#define WAKE_HID_WAIT_US   3000000     // resumed but keyboard not ready: bounded wait
 static uint64_t resume_drive_until = 0;
 static uint64_t resume_last_try    = 0;
 static uint8_t  resume_tries       = 0;
 static volatile bool poll_recovered_pending = false;
+// bt.h declares bt_is_connected() but nothing defines it, so track the link here
+// from the connect/disconnect callbacks we already receive.
+static volatile bool bt_link_up = false;
 
 static void resume_drive_start(void) {
     dcd_remote_wakeup(0);
@@ -129,6 +143,8 @@ static void request_host_wake(const char *reason) {
     if (ok) { resume_drive_until = time_us_64() + RESUME_DRIVE_US;
               resume_last_try = time_us_64(); resume_tries = 1; }
     g_wake_diag.wake_attempts++;
+    if (host_suspended && cur.requests < 255) cur.requests++;
+    if (host_suspended && ok && cur.accepted < 255) cur.accepted++;
     g_wake_diag.last_wake_tud_ok = ok ? 1 : 0;
     g_wake_diag.last_wake_host_suspended = host_suspended ? 1 : 0;
 
@@ -138,6 +154,7 @@ static void request_host_wake(const char *reason) {
     if (!ok && host_suspended) {
         WAKE_DBG("%s: tud_remote_wakeup()=0 but suspended. Forcing DCD wake.", reason);
         resume_drive_start();
+        if (cur.dcd < 255) cur.dcd++;
         g_wake_diag.dcd_forced++;
         ok = true;
     }
@@ -177,6 +194,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
              (int)remote_wakeup_en, wake_state_name(state));
     g_wake_diag.suspend_cb_count++;
     poll_recovered_pending = false;   // callback arrived: the poll merely beat it
+    cur = wake_cycle_t{};             // new sleep: start a fresh record
     g_wake_diag.last_remote_wakeup_en = remote_wakeup_en ? 1 : 0;
     // A deliberate Reconnect USB (FUNC_RECONNECT) tears the bus down and back up, which looks
     // like a suspend but is not a host sleep -- ignore it so it cannot power off the controller.
@@ -207,6 +225,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
 }
 
 void wake_on_bt_connect(void) {
+    bt_link_up = true;                     // track regardless of the wake setting
     if (!get_config().enable_wake) return;
     critical_section_enter_blocking(&wake_cs);
     const bool should_wake = host_suspended &&
@@ -220,6 +239,9 @@ void wake_on_bt_connect(void) {
 
 extern "C" void tud_resume_cb(void) {
     if (poll_recovered_pending) { g_wake_diag.recovered_suspends++; poll_recovered_pending = false; }
+    cur.resumed = 1;
+    cur.end_state = (uint8_t)state;
+    g_wake_cycle = cur;               // close the record for this sleep
     WAKE_DBG("tud_resume_cb state=%s", wake_state_name(state));
     host_suspended = false;
     host_resumed_event = true;
@@ -273,6 +295,7 @@ void wake_on_bt_input(const uint8_t *hid_input, uint16_t len) {
 }
 
 void wake_on_bt_disconnect(void) {
+    bt_link_up = false;
     critical_section_enter_blocking(&wake_cs);
     state = WAKE_IDLE;
     prev_b7 = 0x08; prev_b8 = 0x00; prev_b9 = 0x00;
@@ -283,6 +306,20 @@ void wake_on_bt_disconnect(void) {
 void wake_task(void) {
     const uint64_t now = time_us_64();
     resume_drive_service(now);
+
+    // ---- Restore the full device once the host is awake again ----
+    // If the controller reconnected while the host was asleep we deliberately did
+    // NOT re-enumerate (that would have disturbed a sleeping host), so we can be
+    // left keyboard-only with a controller attached and no gamepad. Put the full
+    // device back as soon as the host is up.
+    if (!host_suspended && usb_is_idle_pid() && bt_link_up && !tud_suspended()) {
+        usb_set_idle_pid(false);
+        wake_note_usb_reconnect();
+        tud_disconnect();
+        sleep_ms(250);   // > the USB 100 ms port debounce, or the host may not see the disconnect at all
+        tud_connect();
+        WAKE_DBG("host awake + controller back -> restoring full USB device");
+    }
 
     // ---- Backstop: never trust the suspend EDGE alone ----
     // Every part of the wake path is gated on host_suspended: the controller
@@ -360,6 +397,20 @@ void wake_task(void) {
                 host_resumed_event = false;
                 if (now - entered < WAKE_SETTLE_US) return;
                 if (!tud_hid_n_ready(WAKE_KBD_INSTANCE)) {
+                    // The bus resumed but the keyboard endpoint is not accepting reports.
+                    // Without a bound here the machine waits in WAKE_REQUESTED forever —
+                    // and that state is not "armable", so NO later button press can request
+                    // another wake. A single failure would disable waking entirely until a
+                    // reconnect. Wait a bounded time, then fall back to DONE so a press retries.
+                    if (now - entered > WAKE_HID_WAIT_US) {
+                        g_wake_cycle.hid_timeout = 1;
+                        WAKE_DBG("REQUESTED: keyboard never ready -> DONE (retryable)");
+                        critical_section_enter_blocking(&wake_cs);
+                        enter_state(WAKE_DONE);
+                        critical_section_exit(&wake_cs);
+                        return;
+                    }
+                    g_wake_cycle.hid_waited = 1;
 #ifdef WAKE_DEBUG
                     static uint64_t last_log = 0;
                     if (now - last_log > 1000000) {
@@ -371,6 +422,7 @@ void wake_task(void) {
                 }
                 uint8_t rpt[8] = { 0, 0, WAKE_KEYCODE_F15, 0, 0, 0, 0, 0 };
                 const bool sent = tud_hid_n_report(WAKE_KBD_INSTANCE, 0, rpt, sizeof(rpt));
+                cur.key_sent = sent ? 1 : 0;
                 WAKE_DBG("REQUESTED: sent keydown 0x%02X -> %d", WAKE_KEYCODE_F15, (int)sent);
                 if (sent) {
                     critical_section_enter_blocking(&wake_cs);
@@ -384,6 +436,7 @@ void wake_task(void) {
                 // a single resume pulse is easy for a host to miss.
                 resume_drive_start();
                 g_wake_diag.resume_reissues++;
+                if (cur.reissues < 255) cur.reissues++;
                 WAKE_DBG("no resume yet -> re-issuing (try %u)", (unsigned)resume_tries);
             } else if (now - entered > WAKE_REQUEST_TIMEOUT_US) {
                 WAKE_DBG("REQUESTED timeout 5s -> DONE (no resume signaling; may have already woken)");

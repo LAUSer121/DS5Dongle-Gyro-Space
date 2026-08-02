@@ -17,6 +17,7 @@
 #include "bsp/board_api.h"
 #include "classic/sdp_server.h"
 #include "config.h"
+#include "usb.h"
 #include "state_mgr.h"
 #include "dse.h"
 #include "wake.h"
@@ -595,8 +596,39 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             // and a USB re-connect would wake a sleeping host; and wake needs the device present
             // to signal a wake). Wake-on no longer means "always stay on the bus" -- only "stay
             // during sleep".
+            // ...but NOT when wake is enabled. Hiding the device while the host is
+            // awake leaves nothing on the bus to suspend when the host later goes
+            // to sleep: tud_suspend_cb never fires, host_suspended stays false, and
+            // every wake path is gated on it - so turning the controller off and
+            // THEN sleeping the PC made waking impossible. (Diagnostics from that
+            // exact sequence: 0 suspends seen, 0 disconnects, wake refused.)
+            // With wake on we stay on the bus so a later sleep can still be woken
+            // from; with wake off we hide as before so the host and DS4Windows see
+            // a clean removal. Upstream OmniSense reached the same conclusion.
             if (!tud_suspended()) {
-                tud_disconnect();
+                if (get_config().enable_wake) {
+                    // Wake on: we must stay on the bus (or a later host sleep is
+                    // invisible to us), but under our normal product ID that
+                    // leaves DS4Windows showing a controller that is switched
+                    // off. Re-enumerate under our IDLE product ID: same
+                    // interfaces, different identity, so nothing recognises it
+                    // as a controller while none is attached.
+                    // Tell the wake module the link is gone FIRST. Without this
+                    // its bt_link_up flag stays set (wake_on_bt_disconnect was
+                    // declared but never called from anywhere, here or in the
+                    // upstream baseline), so wake_task immediately sees
+                    // "host awake + controller present + idle identity" and undoes
+                    // the switch — the device vanished and came straight back as a
+                    // DualSense, which is exactly what was observed.
+                    wake_on_bt_disconnect();
+                    usb_set_idle_pid(true);
+                    wake_note_usb_reconnect();
+                    tud_disconnect();
+                    sleep_ms(250);   // > the USB 100 ms port debounce, or the host may not see the disconnect at all
+                    tud_connect();
+                } else {
+                    tud_disconnect();     // wake off: leave the bus entirely
+                }
             }
 #endif
             gap_connectable_control(1);
@@ -667,14 +699,14 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     dse_on_connect();
 #if !ENABLE_SERIAL
                     // don't re-enumerate while the host is suspended -- it would wake a sleeping host
-                    if (!tud_suspended()) tud_connect();
+                    if (!tud_suspended()) { usb_set_idle_pid(false); tud_connect(); }
 #endif
                 } else if (packet[0] == 0x02) {
                     printf("Connected DS5 Controller\n");
                     check_dse = false;
                     is_dse = false;
 #if !ENABLE_SERIAL
-                    if (!tud_suspended()) tud_connect();
+                    if (!tud_suspended()) { usb_set_idle_pid(false); tud_connect(); }
 #endif
                 }
             }
