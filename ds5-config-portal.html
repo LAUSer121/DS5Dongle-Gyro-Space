@@ -605,7 +605,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
-// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.6) =====
+// ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.12) =====
 function effectTypeName(t){
   switch(t){
     case 0x00: return 'None';   case 0x05: return 'Off';
@@ -766,7 +766,7 @@ function saveCustomFile(trig){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
-// ===== Timeline capture (v1.18.6): record the real rhythm, replay verbatim =====
+// ===== Timeline capture (v1.18.12): record the real rhythm, replay verbatim =====
 async function tlSetArmed(on){
   await sendCmd(0x13, [on ? 1 : 0]);
   const r = await readCmdReplyOn(SLOT_REPORT, 0x13, undefined, 12);
@@ -1161,7 +1161,9 @@ async function readWakeDiag(){
     const u16 = i => r[i] | (r[i+1] << 8);
     const d = { cb: u16(3), recSusp: u16(5), recRes: u16(7), disc: u16(9),
                 wakes: u16(11), dcd: u16(13), rwEn: r[15], discOk: r[16],
-                tudOk: r[17], wakeSusp: r[18], nowSusp: r[19], reissue: u16(20) };
+                tudOk: r[17], wakeSusp: r[18], nowSusp: r[19], reissue: u16(20),
+                c: { req: r[22], acc: r[23], dcd: r[24], reiss: r[25], resumed: r[26],
+                     key: r[27], hidWait: r[28], hidTo: r[29], end: r[30] } };
     const warn = [];
     if (d.recSusp) warn.push(`${d.recSusp} suspend${d.recSusp===1?' was':'s were'} genuinely missed by the USB callback and only caught by polling — the backstop did its job, but it means the USB stack is dropping suspend notifications.`);
     if (d.cb && !d.rwEn) warn.push('The host did NOT permit remote wakeup on the last suspend. Enable "Allow this device to wake the computer" for the dongle in Device Manager.');
@@ -1177,7 +1179,25 @@ async function readWakeDiag(){
       + `<tr><td>Host permitted remote wakeup</td><td><b>${d.rwEn ? 'yes' : 'NO'}</b></td></tr>`
       + `<tr><td>Suspended right now</td><td>${d.nowSusp ? 'yes' : 'no'}</td></tr></table>`;
     if (warn.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ ${warn.join('<br>⚠ ')}</div>`;
-    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">Counters reset when the dongle loses power. Read this <b>after</b> a sleep that failed to wake.</div>`;
+    // The decisive part: what happened during the MOST RECENT sleep, rather than
+    // totals that mix in every button press since the dongle was powered up.
+    const c = d.c;
+    if (c.req || c.resumed){
+      const step = !c.req      ? 'no wake was ever requested — the controller never reconnected, or the bridge did not think the PC was asleep'
+                 : !c.acc && !c.dcd ? 'the wake request was refused and no fallback ran'
+                 : !c.resumed  ? 'the wake signal was sent but the PC never came back'
+                 : c.hidTo     ? 'the PC came back but its keyboard channel never opened, so the wake keypress could not be sent'
+                 : !c.key      ? 'the PC came back but the wake keypress was not sent'
+                 : 'the wake keypress was delivered — this sleep looks successful';
+      h += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--line,#333)">`
+        + `<b style="font-size:12px">Most recent sleep</b>`
+        + `<table style="font-size:12px"><tr><td style="padding-right:10px">Wake requests during it</td><td>${c.req} (${c.acc} accepted${c.dcd?`, ${c.dcd} forced`:''})</td></tr>`
+        + `<tr><td>Resume pulses re-sent</td><td>${c.reiss}</td></tr>`
+        + `<tr><td>PC came back</td><td><b>${c.resumed ? 'yes' : 'NO'}</b></td></tr>`
+        + `<tr><td>Wake keypress sent</td><td><b>${c.key ? 'yes' : 'no'}</b>${c.hidTo ? ' — keyboard channel never opened' : (c.hidWait ? ' (waited for the keyboard channel)' : '')}</td></tr></table>`
+        + `<div style="margin-top:4px;font-size:11px;color:#e0a030">Where it got to: ${step}.</div></div>`;
+    }
+    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">Totals reset when the dongle loses power, and include button presses made while awake. The <b>Most recent sleep</b> block is the one to read after a failed wake.</div>`;
     if (box) box.innerHTML = h;
   } catch(e){
     if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
@@ -1959,7 +1979,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.6</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.13</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>

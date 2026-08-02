@@ -2,6 +2,126 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.13] — 2026-08-02
+
+### Fixed
+- **After waking the PC, the bridge kept showing its idle identity until the
+  controller was switched off and on again.** When the controller reconnects
+  while the bridge is already on the bus under the idle identity, it asked the
+  USB stack to connect — but it was never disconnected, so that call does
+  nothing: the pull-up is already asserted, the host sees no change and never
+  re-reads the device descriptor. The identity therefore changed internally
+  while the host went on showing the idle product id. Worse, the post-wake
+  repair in the wake module is itself conditional on the identity still being
+  idle internally, so flipping it also disarmed the one path that would have
+  corrected this. The reconnect now performs a real detach first, with the same
+  250 ms gap as the power-off direction, so the host always re-reads the
+  descriptor.
+- **Belt and braces for any remaining timing window.** The bridge now records
+  which identity it actually handed the host at its last descriptor request,
+  rather than only which one it intends to present. If the host is awake, a
+  controller is attached and the host is still holding the idle identity, the
+  full identity is restored — whatever sequence of events led there. This
+  covers the race where a controller reconnects in the same instant the host
+  resumes, which no ordering of the individual steps can rule out.
+
+## [1.18.12] — 2026-07-28
+
+### Fixed
+- **The dongle switched to its idle identity and immediately switched back.** The
+  wake module was never told the controller had gone — the notification exists but
+  nothing has ever called it, in this fork or the code it is based on. So it still
+  believed a controller was attached, saw the idle identity appear, concluded that
+  was a mistake and restored the DualSense identity within a moment. That is why
+  the device was seen to disappear and come straight back as a DualSense Edge
+  despite the identity change being correct. It is now told, so the idle identity
+  stays until a controller genuinely returns.
+- The gap during a USB identity change was 60 ms, which is below the 100 ms a host
+  waits before believing a device has really gone. It is now 250 ms, so the change
+  is always noticed rather than sometimes being missed entirely.
+
+## [1.18.11] — 2026-07-28
+
+### Fixed
+- **The idle state still appeared as a DualSense Edge.** 1.18.10 gave it its own
+  product ID, but left everything else untouched — so it still carried Sony's
+  vendor ID and still called itself "DualSense Edge Wireless Controller", which is
+  enough for controller software to claim it whatever the product ID says. The
+  idle identity now uses a different vendor ID as well (the Raspberry Pi one, this
+  being an RP2350 board) and its own manufacturer and product names. Nothing about
+  it says DualSense any more. The interface layout remains deliberately identical
+  between the two identities, which is what keeps the phantom key presses
+  impossible.
+
+## [1.18.10] — 2026-07-28
+
+### Changed
+- **The controller-away state now uses a different product ID instead of a
+  different set of interfaces.** 1.18.9 presented a keyboard-only device when the
+  controller was switched off. That changed which interface each report channel
+  referred to, so a report written while the device was changing over could land
+  on the wrong one — a gamepad report arriving at a keyboard is read as
+  keystrokes, which is where the burst of phantom key presses at wake came from.
+  The bridge now keeps exactly the same interfaces in both states and changes only
+  the product ID, so the gamepad channel is always the gamepad and the keyboard
+  channel is always the keyboard. That failure is no longer possible rather than
+  merely guarded against. DS4Windows matches on product ID, so no controller
+  appears while none is attached, and the bridge stays present on USB so the PC
+  can still be woken.
+
+### Note
+- The idle state is a distinct USB device to Windows, so it has its own entry
+  under Device Manager with its own *Allow this device to wake the computer*
+  setting. Windows usually grants this to keyboards automatically; if a wake from
+  that state fails, the portal's wake diagnostics report whether the host
+  permitted it.
+
+## [1.18.9] — 2026-07-27
+
+### Fixed
+- **1.18.8 left a controller showing in DS4Windows after the controller was
+  switched off.** Staying on the USB bus is what makes waking possible, but
+  keeping the *whole* device present meant the host still saw a gamepad that
+  wasn't there. With wake enabled, the bridge now re-appears as a **keyboard-only
+  device** when the controller is switched off: the host keeps something it can be
+  woken from, and no controller appears in DS4Windows or anywhere else. The full
+  device returns as soon as the controller reconnects, or as soon as the PC is
+  awake again if it reconnected during sleep. With wake off, the bridge leaves the
+  bus entirely, exactly as before.
+
+## [1.18.8] — 2026-07-27
+
+### Fixed
+- **Turning the controller off and then sleeping the PC made waking impossible.**
+  When the controller disconnects while the PC is awake, the bridge removes itself
+  from USB so the host and DS4Windows see a clean removal. But if the PC was then
+  put to sleep, there was no longer any device on the bus to be suspended — so the
+  bridge never learned the PC had slept, and every part of the wake path is
+  conditional on knowing that. Pressing the controller's button reconnected it to
+  the dongle, exactly as observed, while the PC stayed asleep. The bridge now stays
+  on the bus when wake is enabled, and hides itself only when wake is off. This
+  matches the behaviour OmniSense settled on independently.
+
+## [1.18.7] — 2026-07-27
+
+### Fixed
+- **One failed wake could disable waking entirely until the controller
+  reconnected.** If the PC's USB bus came back but its keyboard channel never
+  opened, the bridge waited for it with no time limit. The five-second give-up
+  applied only to the case where the PC never came back at all, so the wake logic
+  parked in a state that ignores button presses — meaning the first failure was
+  permanent rather than something a second press could retry. It now gives that
+  wait three seconds and then returns to a state a further press can use.
+
+### Added
+- **The wake diagnostics now report the most recent sleep on its own**, instead of
+  only running totals. Totals mix in every button press made while the PC was
+  awake, so "last wake refused" was usually just a press after giving up and
+  waking the machine by hand — which said nothing about the failure. The new block
+  reports what happened during that one sleep and names the stage it reached: no
+  wake requested, request refused, signal sent but the PC never came back, came
+  back but the keyboard channel never opened, or the keypress was delivered.
+
 ## [1.18.6] — 2026-07-27
 
 ### Fixed

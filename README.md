@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.18.6**
+**Version 1.18.13**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.18.6-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.18.13-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -148,6 +148,43 @@ the PC is actually asleep (where wake needs it).
 > recognition — the haptics are synthesised from game audio — so wake can safely
 > stay **on** there.
 >
+> With wake **on**, the dongle stays present on USB even when the controller is
+> switched off — it has to, or there would be nothing on the bus for the PC to
+> suspend, and it could never tell the PC had slept. **This is what lets the PS
+> button wake the PC even when you switched the controller off before putting the
+> PC to sleep** — the usual case, and the one that fails outright if the dongle
+> leaves the bus. In that state it appears under a **different USB identity** —
+> different vendor and product IDs and its own name — so no controller shows up in
+> DS4Windows or anywhere else; its normal identity returns when the controller
+> reconnects.
+>
+> **What you will see while the controller is off.** Windows treats the idle
+> identity as its own device, listed as **DS5Dongle (controller off)**. It is
+> visible in `joy.cpl` (Game Controllers) and under **Settings → Bluetooth &
+> devices → Devices**. This is expected and is not a phantom controller: it is
+> the device the PC will be woken from. It also has its own *Allow this device to
+> wake the computer* setting — usually granted automatically, and the portal's
+> wake diagnostics will tell you if it was not.
+>
+> **First appearance switches your audio output.** Because the idle identity is a
+> new device carrying the same audio interfaces, Windows discovers it as a fresh
+> sound device and, by default, makes it the active output the first time it
+> appears — so PC audio goes silent (or to the wrong endpoint) until you switch
+> back. Set your normal output device again in the volume flyout or Sound
+> settings; Windows remembers the choice, so this is a one-time correction rather
+> than something that recurs.
+>
+> **DS4Windows does not pick it up, by design.** The idle identity does not match
+> the controller IDs DS4Windows looks for, so it is not captured — which means
+> DS4Windows stays free to auto-load profiles for any other controller you connect
+> while the DualSense is off. If you would rather not see it at all, it can be
+> hidden with **HidHide** like any other device, and it then disappears from games
+> as well. Hiding it does not affect waking, which is handled by Windows at the USB
+> level rather than by anything that reads the device.
+>
+> With wake **off** the dongle removes itself from USB entirely when the
+> controller disconnects.
+>
 > `Wake PC on PS Button` is an ordinary configuration field, so every profile and
 > every on-dongle slot carries its own value. The practical setup is:
 >
@@ -171,7 +208,7 @@ the PC is actually asleep (where wake needs it).
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.18.6.uf2` (Pico 2 W) or `ds5-v1.18.6-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.18.13.uf2` (Pico 2 W) or `ds5-v1.18.13-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -987,9 +1024,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.18.6.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.18.6)
-- `ds5-v1.18.6-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.18.13.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.18.12)
+- `ds5-v1.18.13-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
