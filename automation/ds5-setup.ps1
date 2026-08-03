@@ -130,7 +130,7 @@ function Normalize-Name([string]$s) {
 # First matching line wins; the profile file must be in profiles\. The optional
 # audio/noaudio flag forces the capture decision; when omitted, the native list
 # decides as usual. Matching uses the same mojibake-proof fold as native-games.
-$overrideProfile = $null; $overrideAudio = $null
+$overrideProfile = $null; $overrideAudio = $null; $overrideAudioArgs = @()
 $OverrideFile = Join-Path $DS5Dir "profile-overrides.txt"
 if (Test-Path -LiteralPath $OverrideFile) {
     $gof = Normalize-Name $gameName
@@ -140,17 +140,32 @@ if (Test-Path -LiteralPath $OverrideFile) {
         $kv = $t -split "=", 2
         if ($kv.Count -lt 2) { continue }
         $frag = $kv[0].Trim()
-        $file = $kv[1].Trim(); $flag = $null
-        $cm = $file -split ",", 2
-        if ($cm.Count -eq 2) { $file = $cm[0].Trim(); $flag = $cm[1].Trim().ToLower() }
+        # spec [, audio|noaudio] [, <ds5audio arguments>]
+        # Anything after the spec that is not the audio flag is passed straight
+        # to ds5audio.py, so a profile that needs a particular channel mapping
+        # (e.g. "--map front" for a game whose own haptics must stay on ch3/4)
+        # can carry it. $AudioArgs stays as the global default for every game.
+        $file = $kv[1].Trim(); $flag = $null; $xargs = @()
+        $cm = $file -split ","
+        if ($cm.Count -gt 1) {
+            $file = $cm[0].Trim()
+            foreach ($tok in $cm[1..($cm.Count - 1)]) {
+                $tv = "$tok".Trim()
+                if ($tv -eq "") { continue }
+                if ($tv.ToLower() -eq "audio" -or $tv.ToLower() -eq "noaudio") { $flag = $tv.ToLower() }
+                else { $xargs += ($tv -split '\s+' | Where-Object { $_ -ne "" }) }
+            }
+        }
         if (-not $frag -or -not $file) { continue }
         $fn = Normalize-Name $frag
         $hit = if ($fn) { $gof.Contains($fn) } else { $gameName -and $gameName.ToLower().Contains($frag.ToLower()) }
         if ($hit) {
             $overrideProfile = $file
             if ($flag -eq "audio" -or $flag -eq "noaudio") { $overrideAudio = $flag }
+            if ($xargs.Count) { $overrideAudioArgs = $xargs }
             $fl = if ($flag) { " ($flag)" } else { "" }
-            Log "matched override entry: '$frag' -> '$file'$fl"
+            $xa = if ($xargs.Count) { " args: " + ($xargs -join " ") } else { "" }
+            Log "matched override entry: '$frag' -> '$file'$fl$xa"
             break
         }
     }
@@ -393,6 +408,10 @@ try {
 } catch { }
 
 Apply-Profile $profileToApply $ApplyQuery
+# Global args first, then any the matched override added.
+$EffAudioArgs = @($AudioArgs) + @($overrideAudioArgs)
+if ($EffAudioArgs.Count) { Log ("ds5audio args: " + ($EffAudioArgs -join " ")) }
+
 if ($startAudio) {
     if (-not (Test-Path -LiteralPath $AudioScript)) {
         Log "WARN audio script not found: $AudioScript"
@@ -432,7 +451,7 @@ if ($startAudio) {
                     $inner = ""
                     if ((Split-Path -Leaf $exe) -ieq "py.exe") { $inner = "-3 " }
                     $inner = "`"$exe`" $inner`"$AudioScript`""
-                    foreach ($a in $AudioArgs) { $inner += " `"$a`"" }
+                    foreach ($a in $EffAudioArgs) { $inner += " `"$a`"" }
                     if ($ShowWindow) {
                         # Run inside cmd /k so the window stays open even if
                         # Python exits/crashes instantly - you SEE the error.
@@ -443,7 +462,7 @@ if ($startAudio) {
                         $argList = @()
                         if ((Split-Path -Leaf $exe) -ieq "py.exe") { $argList += "-3" }
                         $argList += "`"$AudioScript`""
-                        $argList += $AudioArgs
+                        $argList += $EffAudioArgs
                         $proc = Start-Process -FilePath $exe -ArgumentList $argList -WindowStyle Hidden -WorkingDirectory $DS5Dir -PassThru -ErrorAction Stop
                         Start-Sleep -Milliseconds 1500
                         if ($proc.HasExited) {
@@ -938,7 +957,9 @@ if (-not (Test-Path -LiteralPath $ovrList)) {
 #
 #   name fragment = slot N                      (dongle profile slot, fw 1.1.2+)
 #   name fragment = profile-file.html            (exported profile file)
-#   ... either form takes an optional ", audio" or ", noaudio" flag
+#   ... either form takes an optional ", audio" or ", noaudio" flag,
+#       and any further comma-separated text is passed to ds5audio, e.g.
+#   name fragment = slot N, audio, --map front
 #
 # - The fragment matches the Playnite game name (case-insensitive, partial,
 #   accent/encoding tolerant - same rules as native-games.txt).
@@ -946,7 +967,13 @@ if (-not (Test-Path -LiteralPath $ovrList)) {
 #   the portal's Profile Slots panel - a single instant command; preferred.
 # - The file form points at an exported .autoapply.html placed in profiles\.
 # - Optional flag: ", audio" also runs the ds5audio capture, ", noaudio" skips
-#   it. Without a flag, native-games.txt decides the capture as usual.
+#   it. Without a flag, native-games.txt decides the capture as usual. A game
+#   on the native list therefore needs an explicit ", audio" if its custom
+#   profile is meant to run the capture as well.
+# - Anything else after a comma is handed to ds5audio.py, so a profile can
+#   carry the channel mapping it needs (", --map front" for a game whose own
+#   haptics must stay on ch3/4, ", --map rear" to isolate native speaker
+#   audio). These are added to the global $AudioArgs in the start script.
 # - First matching line wins. Lines starting with # are ignored.
 # - On game exit the mix profile is restored automatically (unless the custom
 #   profile IS the mix profile).
@@ -954,6 +981,7 @@ if (-not (Test-Path -LiteralPath $ovrList)) {
 # Examples - replace with your own:
 #Cyberpunk = slot 3
 #Elden Ring = slot 4, noaudio
+#Resident Evil 4 = slot 5, audio, --map front
 #Doom = doom-recoil.autoapply.html, audio
 #Stray = stray-soft-triggers.autoapply.html
 '@

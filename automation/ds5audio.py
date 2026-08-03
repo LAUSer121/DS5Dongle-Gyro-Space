@@ -431,11 +431,39 @@ def run(args):
         in_channels = int(in_info.get("maxInputChannels", 2))
 
         # --- Resolve the dongle output device ---
-        out_index = args.out_index if args.out_index is not None else find_dongle_output(pa, debug=True)
+        # Wait for it rather than failing outright. Applying a profile that
+        # changes an enumeration-critical setting (wake, polling rate, audio
+        # buffer, mic/speaker) makes the dongle re-enumerate, so for a second or
+        # two after a profile is applied the audio endpoint does not exist. The
+        # automation starts this script right after applying a profile, which
+        # lost the race and looked like "the script will not start with this
+        # profile" - while starting it by hand later always worked, because
+        # enumeration had long since settled.
+        out_index = args.out_index
+        if out_index is None:
+            deadline = time.time() + max(0.0, args.wait_device)
+            announced = False
+            while True:
+                out_index = find_dongle_output(pa, debug=True)
+                if out_index is not None or time.time() >= deadline:
+                    break
+                if not announced:
+                    print(f"Dongle audio endpoint not present yet - waiting up to "
+                          f"{args.wait_device:.0f}s (re-enumeration after a profile change?)")
+                    announced = True
+                time.sleep(1.0)
+                # The device list is snapshotted when PyAudio is created, so a
+                # device that appears later is invisible until we re-create it.
+                try:
+                    pa.terminate()
+                except Exception:
+                    pass
+                pa = pyaudio.PyAudio()
         if out_index is None:
             sys.stderr.write(
                 "ERROR: couldn't find the dongle audio output "
-                "('Speakers — DualSense [Edge] Wireless Controller').\n"
+                "('Speakers — DualSense [Edge] Wireless Controller') after waiting "
+                f"{args.wait_device:.0f}s.\n"
                 "Make sure the controller is connected through the dongle, or run --list "
                 "and pass --out-index N.\n"
             )
@@ -633,6 +661,11 @@ def main():
                          "ch 2-3 are the native haptic actuators. 'rear' [0 0 L R] = "
                          "actuators only (speaker/leak/auto-haptics silent); 'front' = "
                          "speaker only (no native haptics).")
+    ap.add_argument("--wait-device", type=float, default=30.0, metavar="SEC",
+                    help="how long to wait for the dongle audio endpoint at startup "
+                         "(default 30). Applying a profile that changes wake, polling "
+                         "rate, audio buffer or mic/speaker re-enumerates the dongle, "
+                         "so the endpoint is briefly absent; 0 disables waiting")
     ap.add_argument("--verbose", action="store_true", help="print stream stats")
     return run(ap.parse_args())
 

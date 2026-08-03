@@ -119,7 +119,42 @@ pre-launch apply (one profile, one window, no focus loss), and the mix profile
 is restored automatically on game exit. Do NOT wire extra per-game scripts in
 Playnite for this: a second apply would race the first one mid-write.
 
+> **A game on the native list needs an explicit `, audio`.** Without a flag the
+> native list decides, and native games are exactly the ones it excludes from
+> capture - so a custom profile for a native game silently runs without
+> ds5audio unless you say so. This catches people out with titles like
+> Resident Evil 4, where the whole point of the custom profile is native
+> haptics *plus* auto-haptics.
+
+### Per-game ds5audio arguments
+
+Anything after a further comma is passed straight to `ds5audio.py`, so a
+profile can carry the channel mapping it needs:
+
+```
+Resident Evil 4 = slot 5, audio, --map front
+Ratchet = slot 6, audio, --map rear
+```
+
+These are appended to the global `$AudioArgs` in the start script, which stays
+the default for every other game. This matters because the mapping is a
+ds5audio launch argument rather than a dongle setting: a profile slot alone
+cannot change which channels the script writes to. See the firmware README
+("Which setup for which game") for which mapping suits which kind of game.
+
 ## Known issues
+
+**A profile that changes wake (or another enumeration-critical setting) briefly
+takes the audio device away.** Wake, polling rate, audio buffer length and the
+mic/speaker toggles all require the dongle to re-enumerate on USB, so for a
+second or two after such a profile is applied the audio endpoint does not
+exist. The start script launches ds5audio immediately after applying, so it
+used to lose that race and exit with "couldn't find the dongle audio output" -
+which looked like the script refusing to start for one specific profile, while
+starting it by hand later always worked. ds5audio now waits for the endpoint
+(up to 30 s, `--wait-device SEC`, 0 to disable) and re-scans while it waits, so
+no action is needed; if a profile of yours seems to start without haptics,
+check `ds5audio.log` for the waiting line.
 
 **Some games don't work with Playnite's global script.** A few titles never fire
 the global start/stop scripts, or fire them at the wrong moment, so the profile is
