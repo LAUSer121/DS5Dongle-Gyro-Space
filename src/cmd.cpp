@@ -36,7 +36,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 13;
+constexpr uint8_t FW_VER_PATCH = 17;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -212,6 +212,8 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x53: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.at_deadzone=v; break; }
         case 0x54: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.at_l2_deadzone=v; break; }
         case 0x55: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.mix_native_level=v; break; }
+        case 0x63: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.mix_native_filter=v; break; }
+        case 0x64: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ah_dsp_source=v; break; }
         case 0x56: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.effect_leak_max_burst=v; break; }
         case 0x57: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_enable=v; break; }
         case 0x58: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_condition=v; break; }
@@ -335,6 +337,18 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x53: return write_config_value(buffer, bufsize, config.at_deadzone);
         case 0x54: return write_config_value(buffer, bufsize, config.at_l2_deadzone);
         case 0x55: return write_config_value(buffer, bufsize, config.mix_native_level);
+        case 0x63: return write_config_value(buffer, bufsize, config.mix_native_filter);
+        case 0x64: return write_config_value(buffer, bufsize, config.ah_dsp_source);
+        // Read-only diagnostics: the rumble motor values the firmware is
+        // currently receiving from the host. Non-zero here while a game
+        // vibrates proves the rumble arrives as motor values (and is therefore
+        // available to the Mix blend); zero means the game is delivering its
+        // vibration some other way - as haptic audio on ch3/4, for instance.
+        case 0x3d: { extern volatile uint8_t g_rumble_peak_l; const uint8_t v = g_rumble_peak_l; g_rumble_peak_l = 0; return write_config_value(buffer, bufsize, v); }
+        case 0x3e: { extern volatile uint8_t g_rumble_peak_r; const uint8_t v = g_rumble_peak_r; g_rumble_peak_r = 0; return write_config_value(buffer, bufsize, v); }
+        // Rumble-related flags the host requested since the last read: bit0
+        // EnableRumbleEmulation, bit1 UseRumbleNotHaptics, bit2 Improved.
+        case 0x3f: { extern volatile uint8_t g_rumble_flags_seen; const uint8_t v = g_rumble_flags_seen; g_rumble_flags_seen = 0; return write_config_value(buffer, bufsize, v); }
         case 0x56: return write_config_value(buffer, bufsize, config.effect_leak_max_burst);
         case 0x57: return write_config_value(buffer, bufsize, config.ce_r2_enable);
         case 0x58: return write_config_value(buffer, bufsize, config.ce_r2_condition);

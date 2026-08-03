@@ -62,6 +62,16 @@ volatile uint8_t  g_diag_actual_ch  = 0;
 // actuator signal in Mix mode when auto-haptics is on.
 volatile uint8_t g_rumble_l = 0;
 volatile uint8_t g_rumble_r = 0;
+// Peak-hold copies for diagnostics. The portal polls once per second while a
+// rumble burst can last 100 ms, so an instantaneous reading misses most of
+// them and "zero" proves nothing. These latch the highest value seen and are
+// cleared when the portal reads them, so ANY rumble in the interval shows up.
+volatile uint8_t g_rumble_peak_l = 0;
+volatile uint8_t g_rumble_peak_r = 0;
+// Sticky OR of the host's rumble-related request flags (bit0 EnableRumble-
+// Emulation, bit1 UseRumbleNotHaptics), also cleared on read: shows what the
+// game ASKED for, independent of what it actually put in the motor bytes.
+volatile uint8_t g_rumble_flags_seen = 0;
 // Latest L2 (left trigger) analog position from the controller's input report,
 // used by the L2-gated R2 adaptive-trigger feature.
 volatile uint8_t g_l2_pos = 0;
@@ -427,8 +437,17 @@ void __not_in_flash_func(audio_loop)() {
         if (auto_mode > 0) {
             const float spk_l = raw[i * actual_ch    ] / 32768.0f;
             const float spk_r = raw[i * actual_ch + 1] / 32768.0f;
-            lp_l += lp_a * (spk_l - lp_l);
-            lp_r += lp_a * (spk_r - lp_r);
+            // DSP source select: ch0/1 (default) or ch2/3. The speaker and the
+            // effect leak always read ch0/1, so pointing the DSP at ch2/3 lets
+            // the script feed (ds5audio --map rear) drive auto-haptics while
+            // ch0/1 carries only the game's own native speaker audio - the one
+            // way to have derived haptics without the script's audio reaching
+            // the speaker or leaking through the effect leak.
+            const bool dsp_rear = (get_config().ah_dsp_source == 1) && (actual_ch == 4);
+            const float src_l = dsp_rear ? raw[i * actual_ch + 2] / 32768.0f : spk_l;
+            const float src_r = dsp_rear ? raw[i * actual_ch + 3] / 32768.0f : spk_r;
+            lp_l += lp_a * (src_l - lp_l);
+            lp_r += lp_a * (src_r - lp_r);
             // Cascade additional poles for steeper slopes. Each stage adds
             // 6 dB/oct. A single pole leaks male voice fundamentals (85-180 Hz)
             // when the cutoff is near there; more poles reject voice harder.
@@ -452,8 +471,8 @@ void __not_in_flash_func(audio_loop)() {
             float use_env_l = env_l, use_env_r = env_r;
             if (split_on) {
                 // Low band: 12 dB/oct LP at the crossover on the raw input.
-                xo1_l += xo_a * (spk_l - xo1_l); xo2_l += xo_a * (xo1_l - xo2_l);
-                xo1_r += xo_a * (spk_r - xo1_r); xo2_r += xo_a * (xo1_r - xo2_r);
+                xo1_l += xo_a * (src_l - xo1_l); xo2_l += xo_a * (xo1_l - xo2_l);
+                xo1_r += xo_a * (src_r - xo1_r); xo2_r += xo_a * (xo1_r - xo2_r);
                 const float lo_l = xo2_l,      lo_r = xo2_r;
                 // High band: everything the main LP kept, minus the low band
                 // (phase ripple from the subtraction is irrelevant - only the
@@ -496,6 +515,20 @@ void __not_in_flash_func(audio_loop)() {
             carrier_ph += 2.0f * (float)M_PI * 90.0f / 48000.0f;
             if (carrier_ph > 2.0f*(float)M_PI) carrier_ph -= 2.0f*(float)M_PI;
             const float carrier = sinf(carrier_ph);
+            // Separate carriers for CONVERTED RUMBLE. The two motor values a game
+            // sends are not interchangeable: left is the heavy/low-frequency
+            // motor, right the light/high-frequency one. Rendering both on the
+            // same 90 Hz tone threw away that distinction and sat between the two
+            // frequencies the actuators render most convincingly, which is a large
+            // part of why converted rumble felt thin next to the controller's own
+            // rumble emulation. 60 Hz reads as a heavy churn, 160 Hz as a sharp
+            // buzz - together they feel like actual dual-motor rumble.
+            static float rc_lo_ph = 0.0f, rc_hi_ph = 0.0f;
+            rc_lo_ph += 2.0f * (float)M_PI * 60.0f  / 48000.0f;
+            rc_hi_ph += 2.0f * (float)M_PI * 160.0f / 48000.0f;
+            if (rc_lo_ph > 2.0f*(float)M_PI) rc_lo_ph -= 2.0f*(float)M_PI;
+            if (rc_hi_ph > 2.0f*(float)M_PI) rc_hi_ph -= 2.0f*(float)M_PI;
+            const float rc_lo = sinf(rc_lo_ph), rc_hi = sinf(rc_hi_ph);
             float al = genv_l * carrier * auto_gain;
             float ar = genv_r * carrier * auto_gain;
             // Gentler limiting: the old al/(1+|al|) soft-clip crushed everything
@@ -515,6 +548,13 @@ void __not_in_flash_func(audio_loop)() {
                 // the same bass band keeps only the felt low-frequency content.
                 lp_h_l += lp_a * (h_l - lp_h_l);
                 lp_h_r += lp_a * (h_r - lp_h_r);
+                // ...unless the profile asks for raw passthrough. Native haptics
+                // from a game that renders them itself carry content well above
+                // the auto-haptics cutoff; filtering it removes the very effects
+                // the passthrough is there to keep.
+                const bool nat_filt = get_config().mix_native_filter != 0;
+                const float nat_l = nat_filt ? lp_h_l : h_l;
+                const float nat_r = nat_filt ? lp_h_r : h_r;
                 // Per-profile fader on the native contribution (v1.10.0): 0 mutes
                 // ch3/4 in Mix so the derived part (Intensity/split/gate) owns the
                 // actuators - the per-profile equivalent of ds5audio --map front.
@@ -524,11 +564,22 @@ void __not_in_flash_func(audio_loop)() {
                 // the same 90 Hz carrier and blend in, scaled by a configurable
                 // strength so native rumble doesn't overpower the audio haptics.
                 const float rumble_str = get_config().rumble_haptic_strength / 100.0f;
-                const float rl = (g_rumble_l / 255.0f) * carrier * rumble_str;
-                const float rr = (g_rumble_r / 255.0f) * carrier * rumble_str;
-                float m_l = lp_h_l * native_lvl + al + rl, m_r = lp_h_r * native_lvl + ar + rr;
-                h_l = m_l / (1.0f + (m_l < 0.0f ? -m_l : m_l));
-                h_r = m_r / (1.0f + (m_r < 0.0f ? -m_r : m_r));
+                const float rl = (g_rumble_l / 255.0f) * rc_lo * rumble_str;
+                const float rr = (g_rumble_r / 255.0f) * rc_hi * rumble_str;
+                // Limit the AUDIO content first, then add the rumble on top and
+                // hard-clamp. The rumble used to go through the m/(1+|m|) soft
+                // clip with everything else, which maps 1.0 to 0.5 - so even at
+                // full motor value and 100% strength it could never exceed half
+                // scale, and any auto-haptics playing at the same time pushed it
+                // further down. Injecting after the limiter keeps its amplitude
+                // intact; the clamp only trims where both are simultaneously
+                // loud, and a little clipping on a rumble tone reads as extra
+                // grunt rather than distortion.
+                float m_l = nat_l * native_lvl + al, m_r = nat_r * native_lvl + ar;
+                float s_l = m_l / (1.0f + (m_l < 0.0f ? -m_l : m_l)) + rl;
+                float s_r = m_r / (1.0f + (m_r < 0.0f ? -m_r : m_r)) + rr;
+                h_l = s_l < -1.0f ? -1.0f : (s_l > 1.0f ? 1.0f : s_l);
+                h_r = s_r < -1.0f ? -1.0f : (s_r > 1.0f ? 1.0f : s_r);
             }
         }
         // Anti-aliasing for the 48k->3k haptic decimation below (CONFIGURABLE —

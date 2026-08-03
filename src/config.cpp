@@ -133,7 +133,7 @@ void config_valid() {
     if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 40;
     if (body->bt_flush_timeout > 0x07FF) body->bt_flush_timeout = 0; // 0=off, max per BT spec
     if (body->bt_qos_latency_us > 50000) body->bt_qos_latency_us = 0; // 0=off
-    if (body->rumble_haptic_strength > 100) body->rumble_haptic_strength = 50;
+    if (body->rumble_haptic_strength > 200) body->rumble_haptic_strength = 50; // >100 = deliberate overdrive
     if (body->effect_leak_volume > 100) body->effect_leak_volume = 0; // 0=off
     if (body->effect_leak_hp_hz < 100 || body->effect_leak_hp_hz > 5000) body->effect_leak_hp_hz = 800;
     if (body->effect_leak_sensitivity > 100) body->effect_leak_sensitivity = 50;
@@ -176,6 +176,8 @@ void config_valid() {
     if (body->at_deadzone > 9) body->at_deadzone = 0;
     if (body->at_l2_deadzone > 9) body->at_l2_deadzone = 0;
     if (body->mix_native_level > 100) body->mix_native_level = 100; // 0 is valid (mute passthrough)
+    if (body->mix_native_filter > 1) body->mix_native_filter = 1;  // fresh flash (0xff) -> filtered, as before
+    if (body->ah_dsp_source > 1) body->ah_dsp_source = 0;         // fresh flash (0xff) -> ch0/1, as before
     if (body->effect_leak_max_burst > 100) body->effect_leak_max_burst = 0; // 0=off; covers fresh-flash 0xFF
     // Custom captured-effect action (v1.14.0): validate scalar controls; state
     // bytes are raw (any value valid). Fresh-flash 0xFF -> safe defaults.
