@@ -2,6 +2,77 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.17] — 2026-08-02
+
+### Fixed
+- **Converted rumble in Mix was inherently capped at half strength.** The
+  rumble was summed with the audio content and the result passed through the
+  `m/(1+|m|)` soft clip, which maps 1.0 to 0.5 — so even at a full motor value
+  and 100% strength it could never exceed half scale, and auto-haptics playing
+  at the same time pushed it further down. The audio content is now limited
+  first and the rumble added afterwards with a hard clamp, so it keeps its full
+  amplitude; the clamp only trims where both are loud at once, and slight
+  clipping of a rumble tone reads as extra grunt rather than distortion.
+- **Both motor values were rendered on the same 90 Hz tone.** A game's two
+  values are not interchangeable: left drives the heavy/low-frequency motor,
+  right the light/high-frequency one. Converted rumble now uses 60 Hz for the
+  heavy side and 160 Hz for the light side, which both restores the distinction
+  and puts the energy where the actuators render it most convincingly — a large
+  part of why converted rumble felt thin next to the controller's own rumble
+  emulation.
+
+### Changed
+- **Converted Rumble Strength now goes to 200.** Values above 100 deliberately
+  overdrive into the clamp for games whose motor values sit low.
+
+## [1.18.16] — 2026-08-02
+
+### Changed
+- **Rumble diagnostics are now peak-hold and report what the game asked for.**
+  The readout added in 1.18.14 showed the instantaneous motor values, but the
+  portal polls once per second while a rumble burst can be over in 100 ms — so
+  it missed most bursts and a zero reading proved nothing. It now latches the
+  highest value seen since the last read (cleared on read), so any rumble in
+  the interval registers, and it also shows which rumble flags the host
+  requested (EnableRumbleEmulation / UseRumbleNotHaptics / Improved). That
+  distinguishes a game that asks for rumble but sends no motor values from one
+  that never asks at all.
+
+## [1.18.15] — 2026-08-02
+
+### Added
+- **Auto-Haptics DSP Source** (Auto-Haptics section): choose whether the
+  auto-haptics DSP listens to **ch0/1** (default, previous behaviour) or
+  **ch2/3**. The speaker and the effect leak always read ch0/1, so until now
+  the script feed that drives auto-haptics and the audio that reaches the
+  speaker were forced to be the same signal — with a native game there was no
+  way to hear only the game's own speaker effects while still deriving haptics
+  from the script. Setting the DSP to ch2/3 and running `ds5audio --map rear`
+  separates them: the script feed drives auto-haptics on ch2/3, ch0/1 carries
+  nothing but the game's native speaker output, and the effect leak passes only
+  those native effects. Set Native Passthrough to 0 in this configuration,
+  since ch2/3 then carries raw script audio rather than native haptics.
+  Falls back to ch0/1 automatically on a 2-channel stream.
+
+## [1.18.14] — 2026-08-02
+
+### Added
+- **Filter Native Passthrough in Mix** (Auto-Haptics section). In Mix the ch3/4
+  native contribution has always been low-passed at the auto-haptics cutoff, to
+  stop VoiceMeeter-style 4-channel setups — where ch3/4 mirror the full-band
+  stereo — from leaking dialogue into the actuators. For a game that renders
+  its own DualSense haptics that filter is destructive: genuine haptic content
+  sits well above an 80 Hz cutoff, so mixing auto-haptics into a native game
+  removed the very effects the passthrough exists to preserve, with no way to
+  get them back. Set this to **Raw** to pass ch3/4 through untouched while the
+  derived haptics stay filtered. Default is Filtered, i.e. previous behaviour.
+- **Live rumble readout in Diagnostics.** Shows the motor values arriving from
+  the host right now, which distinguishes the two ways a game can deliver
+  vibration: non-zero while the game vibrates means it uses rumble motor values
+  (carried into Mix by Converted Rumble Strength), while zeroes mean the game
+  sends vibration as haptic audio on ch3/4 (carried by Native Passthrough, and
+  previously filtered away by the issue above).
+
 ## [1.18.13] — 2026-08-02
 
 ### Fixed

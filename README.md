@@ -1,6 +1,6 @@
 # DS5Dongle — Audio Auto-Haptics Edition
 
-**Version 1.18.13**
+**Version 1.18.17**
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +15,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.18.13-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.18.17-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -208,7 +208,7 @@ the PC is actually asleep (where wake needs it).
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.18.13.uf2` (Pico 2 W) or `ds5-v1.18.13-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.18.17.uf2` (Pico 2 W) or `ds5-v1.18.17-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -307,7 +307,7 @@ surprise; apply them in the portal and save.)
 | Setting | Value |
 |---|---|
 | Mode | Off (switch to Mix or Replace per game) |
-| Intensity (%) | 80 Scales the DERIVED auto-haptics only; in Mix mode native ch 2/3 pass through unscaled (see ds5audio `--map` note) |
+| Intensity (%) | 80 Scales the DERIVED auto-haptics only. Native passthrough and converted rumble have their own levels (see ds5audio `--map` note) |
 | Smoothness | 40 |
 | Noise Gate | 20 |
 | LP Cutoff (Hz) | 100 |
@@ -318,7 +318,7 @@ surprise; apply them in the portal and save.)
 | Auto-mute Speaker (Replace) | Yes |
 | Auto-mute Speaker (Mix) | Yes |
 | Lightbar Off in Replace Mode | Yes |
-| Converted Rumble Strength (Mix) | 50 |
+| Converted Rumble Strength (Mix) | 50 (range goes to 200; left/heavy renders at 60 Hz, right/light at 160 Hz) |
 | Effect Leak Volume (0=off) | 0 (raise to enable) |
 | Effect Leak Sensitivity | 50 |
 | Effect Leak Decay/Fade-out | 80 |
@@ -378,10 +378,12 @@ The portal groups settings into the sections below.
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Mode | Off / Mix / Replace | Off | Off = native/rumble passthrough; Mix = native + derived; Replace = derived only |
-| Intensity (%) | 0–200 | 100 | Strength of the audio-derived haptics (curved response) |
+| Intensity (%) | 0–200 | 100 | Strength of the audio-derived haptics only (curved response). It does NOT scale the native passthrough or converted rumble — those have their own levels, so the three components are set independently |
 | Smoothness | 0–100 | 40 | Higher = smoother/longer decay; lower = snappier |
 | Noise Gate | 0–100 | 20 | Suppresses quiet content (dialog/ambience) below a threshold |
 | Native Passthrough in Mix (%) | 0–100 | 100 | MIX MODE ONLY: level of the native ch3/4 haptic stream mixed under the derived haptics. See "Choosing the passthrough level" below |
+| Filter Native Passthrough in Mix | Filtered / Raw | Filtered | MIX MODE ONLY: whether the ch3/4 passthrough is low-passed at the LP Cutoff before mixing. See "Filtered or Raw?" below |
+| Auto-Haptics DSP Source | ch0/1 / ch2/3 | ch0/1 | Which channel pair the derived haptics are generated from. The speaker and effect leak always read ch0/1. See "Separating the script feed from game audio" below |
 | LP Cutoff (Hz) | 30–200 | 60 | Upper edge of the haptics band — only audio **below** this drives haptics (content above never reaches the actuators) |
 | Frequency Split Crossover (Hz) | 0 / 30–200 | 0 (off) | Divides the haptics band in two at this frequency; 0 = single-band (identical to pre-split firmware). Must sit **below** LP Cutoff |
 | Low Band Gain | 0–100 | 100 | Contribution of content **below** the crossover (impacts, explosions, engine weight) |
@@ -406,6 +408,77 @@ different setups:
 Rule of thumb: **the fader answers "is there anything REAL on ch3/4?"** Native
 game = yes, keep 100. Non-native = no (it's a duplicate), set 0.
 
+#### Filtered or Raw? (Filter Native Passthrough in Mix)
+
+The passthrough has always been low-passed at the LP Cutoff before mixing. That
+is right for a **duplicate** feed — in ds5audio's default mapping (and in
+VoiceMeeter-style routings) ch3/4 carry a copy of the full-band stereo, and
+passing that raw sends dialogue and treble straight to the actuators. It is
+wrong for a game that renders its **own** haptics, because real haptic content
+lives well above a typical 80 Hz cutoff: filtering removes exactly the effects
+the passthrough exists to carry, and no amount of passthrough level brings them
+back.
+
+| Your ch3/4 carries | Set to | Why |
+|---|---|---|
+| A game's own native haptics | **Raw** | Keeps the game's effects intact. Pair with `--map front` so the script does not also write to ch3/4 |
+| A duplicate of the game audio (default `--map duplicate`) | **Filtered** | Blocks dialogue/treble leaking to the actuators. Usually better still: set passthrough level to 0 |
+| The script feed, because DSP Source is ch2/3 | **Filtered** (or level 0) | ch3/4 is raw captured audio here, not haptics — see below |
+
+The derived haptics are always filtered by the LP Cutoff, split and gate
+regardless of this setting; it applies only to the passthrough component.
+
+#### Separating the script feed from game audio (Auto-Haptics DSP Source)
+
+The speaker and the effect leak always read **ch0/1**. With the default DSP
+source that pair must also carry the script feed the derived haptics are
+generated from — so anything ds5audio sends is also what the speaker plays and
+what the leak passes. For a game that outputs **its own audio effects through
+the controller speaker** (Ratchet & Clank: Rift Apart is the obvious example,
+with its weapon and gadget sounds sent to the pad), that means the game's
+speaker effects arrive mixed with the whole captured PC soundtrack, and there
+is no way to hear only the former.
+
+Setting DSP Source to **ch2/3** breaks that coupling:
+
+```
+ds5audio.py --map rear      # script capture -> ch2/3 only, ch0/1 left clear
+```
+
+| Component | Reads | Result |
+|---|---|---|
+| Derived auto-haptics | ch2/3 | Generated from the script feed, as before |
+| Controller speaker | ch0/1 | Only the game's own native speaker audio |
+| Effect leak | ch0/1 | Only the game's native effects pass through |
+
+Set **Native Passthrough to 0** in this configuration: ch3/4 now carries raw
+script audio rather than native haptics. On a 2-channel stream the DSP falls
+back to ch0/1 automatically.
+
+#### Which setup for which game
+
+| Game type | ds5audio `--map` | Mode | DSP Source | Passthrough | Filter | Rumble |
+|---|---|---|---|---|---|---|
+| Native haptics (e.g. Returnal, Ragnarök) | `front` | Mix | ch0/1 | 100 | **Raw** | as taste |
+| Native speaker audio you want isolated (e.g. Ratchet & Clank) | `rear` | Mix | **ch2/3** | 0 | (n/a) | as taste |
+| Non-native, DS4Windows / XB360 | `duplicate` | Mix | ch0/1 | 0 | (n/a at 0) | 50–100 |
+| Native haptics, no augmentation wanted | any | Off | — | (full) | (n/a) | (native) |
+
+Every one of these is an ordinary configuration field, so each row can live in
+its own dongle slot and be selected per game — but note the `--map` value is a
+ds5audio argument, not a dongle setting, so profiles that need a different
+mapping also need the matching launch argument.
+
+#### Is the game even sending rumble? (Diagnostics)
+
+The Device tab reports **Rumble from host** — the peak motor values seen since
+the last read, plus which rumble flags the game requested. Non-zero while a
+game vibrates means it sends motor values, which Mix re-creates through
+Converted Rumble Strength. Zeros while you can still feel vibration with
+auto-haptics Off mean the game delivers its vibration as haptic audio on ch3/4
+instead, which is the passthrough's job — set the filter to **Raw**. The values
+are peak-held, so a short burst between polls still registers.
+
 Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 
 | Setting | Range | Default | Notes |
@@ -413,7 +486,7 @@ Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 | Auto-mute Speaker (Replace) | on/off | on | Mute controller speaker in Replace mode |
 | Auto-mute Speaker (Mix) | on/off | off | Mute controller speaker in Mix mode |
 | Lightbar Off in Replace Mode | on/off | off | Kills the lightbar glow in Replace (e.g. blue in Xbox360 mode) |
-| Converted Rumble Strength (Mix) | 0–100 | 50 | Strength of blended DS4Windows rumble in Mix mode |
+| Converted Rumble Strength (Mix) | 0–200 | 50 | Strength of a game's rumble re-created on the actuators in Mix mode. Left/heavy renders at 60 Hz, right/light at 160 Hz. Above 100 deliberately overdrives into the limiter for games whose motor values sit low |
 | Effect Leak Volume | 0–100 | 0 (off) | Volume of the transient effect leak through the speaker when auto-muted |
 | Effect Leak Sensitivity | 0–100 | 50 | How sudden a level jump counts as an effect (higher = more leaks through) |
 | Effect Leak Decay/Fade-out | 0–100 | 40 | How gradually effects fade after triggering (~50 ms .. 500 ms) |
@@ -803,7 +876,6 @@ the motion feels sluggish; use invert if the direction feels backwards.
 |---|---|---|---|
 | Polling Rate | 250 / 500 / Real-time | Real-time | USB report rate |
 | Audio Buffer Length | 16–128 | 64 | Lower = snappier haptics/lower latency; higher = more audio stability |
-| Audio Buffer Length | 16–128 | 64 | Lower = snappier haptics/lower latency; higher = more audio stability |
 | Inactive Time (min) | 5–60 | 30 | Idle timeout before disconnect |
 | Disable Inactive Disconnect | on/off | off | Never auto-disconnect when idle |
 | Disable Pico LED | on/off | off | Turn off the Pico's onboard LED |
@@ -1024,9 +1096,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.18.13.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+- `ds5-v1.18.17.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
   reports version 1.18.12)
-- `ds5-v1.18.13-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.18.17-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
