@@ -467,7 +467,18 @@ back to ch0/1 automatically.
 Every one of these is an ordinary configuration field, so each row can live in
 its own dongle slot and be selected per game — but note the `--map` value is a
 ds5audio argument, not a dongle setting, so profiles that need a different
-mapping also need the matching launch argument.
+mapping also need the matching launch argument. With the optional Playnite
+automation this is handled per game in `profile-overrides.txt`, which passes
+anything after a further comma to the capture script:
+
+```
+Resident Evil 4 = slot 5, audio, --map front
+Ratchet = slot 6, audio, --map rear
+```
+
+A game listed in `native-games.txt` needs the explicit `, audio` shown above,
+or the capture is skipped — the native list excludes exactly those games by
+default. See `automation/AUTOMATION-README.md`.
 
 #### Is the game even sending rumble? (Diagnostics)
 

@@ -25,6 +25,27 @@ All notable changes to this project are documented here.
 - **Converted Rumble Strength now goes to 200.** Values above 100 deliberately
   overdrive into the clamp for games whose motor values sit low.
 
+### Automation
+- **ds5audio waits for the dongle audio endpoint at startup** instead of
+  exiting. Applying a profile that changes an enumeration-critical setting
+  (wake, polling rate, audio buffer, mic/speaker) makes the dongle re-enumerate,
+  so the endpoint is briefly absent - and the start script launches the capture
+  immediately after applying a profile. It lost that race and exited with
+  "couldn't find the dongle audio output", which looked like the script
+  refusing to start for one particular profile while a manual run always
+  worked. It now polls for up to 30 s (`--wait-device SEC`, 0 disables),
+  re-creating its audio instance each attempt because the device list is
+  snapshotted when the instance is created.
+- **Per-game ds5audio arguments in `profile-overrides.txt`.** Anything after a
+  further comma is passed to the capture script, so a profile can carry the
+  channel mapping it needs (`Resident Evil 4 = slot 5, audio, --map front`).
+  Previously the mapping could only be set globally, which made the per-game
+  setups in the firmware README impossible to automate. Global `$AudioArgs`
+  still applies to every game; these are appended to it.
+- Documented that a game on `native-games.txt` needs an explicit `, audio` in
+  its override line, since without a flag the native list decides the capture
+  and excludes exactly those games.
+
 ## [1.18.16] — 2026-08-02
 
 ### Changed
