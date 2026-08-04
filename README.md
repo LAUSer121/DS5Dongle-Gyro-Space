@@ -88,7 +88,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   The heavy and light motors are rendered at their own frequencies (60 Hz and
   160 Hz) and the rumble is injected after the limiter, so it keeps full
   authority instead of being squeezed out when the derived haptics are loud.
-- **Independent routing for every audio source** — the derived haptics can be
+- **Independent routing for every audio source** — "eat your cake and have it too" for native dualsense games + auto-haptics mix mode. The derived haptics can be
   generated from either channel pair, the native passthrough can be filtered or
   passed raw, and the speaker and effect leak always stay on ch0/1. That makes
   it possible to run auto-haptics from the capture script while the controller
