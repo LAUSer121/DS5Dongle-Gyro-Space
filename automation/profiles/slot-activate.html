@@ -53,7 +53,7 @@ function fail(msg){document.title='CONNECT NEEDED - DS5 Bridge Config';const b=d
 async function run(gesture){
   const slot=parseInt(new URLSearchParams(location.search).get('slot')||'0',10);
   const b=document.getElementById('b');
-  if(!(slot>=1&&slot<=24)){b.textContent='Bad or missing ?slot=1..24';return;}
+ if(!(slot>=1&&slot<=24)){b.textContent='Bad or missing ?slot=1..24';return;}
   try{
     device=pickDs5(await navigator.hid.getDevices());
     if(!device&&gesture){const p=await navigator.hid.requestDevice({filters:[{vendorId:SONY_VID,productId:DS5_PID},{vendorId:SONY_VID,productId:DSE_PID}]});device=pickDs5(p)||(p&&p[0]);}
