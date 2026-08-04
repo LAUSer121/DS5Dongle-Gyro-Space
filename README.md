@@ -57,12 +57,11 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Trigger-to-Rumble (R2T)](#trigger-to-rumble-r2t)
   - [Adaptive Triggers (Stage 1: resistance, Stage 2: push-back kick)](#adaptive-triggers-stage-1-resistance-stage-2-push-back-kick)
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
-  - [Gyro-to-Stick](#gyro-to-stick)
   - [Trigger effects — shared](#trigger-effects--shared)
+  - [Gyro-to-Stick](#gyro-to-stick)
   - [Device & Connection](#device--connection)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
 - [Modes explained](#modes-explained)
-- [How it works (brief)](#how-it-works-brief)
 - [Notes & known behavior](#notes--known-behavior)
 - [Building from source](#building-from-source)
   - [Modified files](#modified-files)
@@ -70,6 +69,10 @@ to RAM so native fine haptics and controller audio work without overclocking.
 - [Keeping up to date](#keeping-up-to-date)
 - [Files in this release](#files-in-this-release)
 - [Optional: Playnite automation](#optional-playnite-automation)
+- [Glossary](#glossary)
+  - [Haptics and audio](#haptics-and-audio)
+  - [Trigger effects](#trigger-effects)
+  - [Device and connection](#device-and-connection)
 
 ---
 
@@ -542,6 +545,22 @@ Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 | Effect Leak Max Burst (×5 ms) | 0–100 | 0 (off) | MAXIMUM gate-open time: cuts sustained sounds (dialogue, music) at the cap with a no-retrigger refractory — one short accent instead of duplicating the room audio; shots end within the cap naturally. Try 30 (150 ms) and raise leak volume: the leak becomes punctuation, not a second speaker |
 | Effect Leak Detection Band (Hz) | 100–5000 | 800 | Frequency band the transient detector listens to |
 
+#### How auto-haptics works (brief)
+
+The DualSense haptic actuator is a voice coil that cannot render a near-DC signal,
+so a naive low-pass of the audio produces no motion. This firmware instead uses the
+bass **envelope** of the game audio to amplitude-modulate a 90 Hz carrier that sits
+in the actuator's responsive band — turning "how much bass" into felt rumble. A
+noise gate and a steep, configurable low-pass keep dialog and music from triggering
+the haptics. Under DS4Windows, the firmware keeps the controller in actuator mode
+(rather than letting rumble reports force it into motor mode) so the derived
+haptics keep playing.
+
+The **effect leak** uses transient detection: it tracks fast and slow envelopes of
+the high-frequency content and opens the speaker only when the level jumps sharply
+(an onset), so discrete impacts pass while sustained sound stays muted. The output
+is high-passed to protect the small speaker from low-frequency popping.
+
 ### General Haptics & Audio
 | Setting | Range | Default | Notes |
 |---|---|---|---|
@@ -910,6 +929,11 @@ Trigger positions are expressed in the same nine zones used throughout the
 trigger sections, so a wall at zones 2-3 sits where the same numbers put it in a
 captured effect.
 
+### Trigger effects — shared
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
+
 ### Gyro-to-Stick
 Maps controller motion onto the right stick for motion aiming.
 
@@ -930,11 +954,6 @@ Maps controller motion onto the right stick for motion aiming.
 *Guide:* **L2-held + Yaw** is the most natural starting point for shooters — turn
 the controller to fine-tune aim only when aiming down sights. Raise sensitivity if
 the motion feels sluggish; use invert if the direction feels backwards.
-
-### Trigger effects — shared
-| Setting | Range | Default | Notes |
-|---|---|---|---|
-| Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
 
 ### Device & Connection
 | Setting | Range | Default | Notes |
@@ -964,24 +983,6 @@ the motion feels sluggish; use invert if the direction feels backwards.
   optional converted DS4Windows rumble. For games without native haptics where you
   also want emulated-controller rumble.
 - **Replace** — Audio-derived haptics only. Cleanest option for non-native games.
-
----
-
-## How it works (brief)
-
-The DualSense haptic actuator is a voice coil that cannot render a near-DC signal,
-so a naive low-pass of the audio produces no motion. This firmware instead uses the
-bass **envelope** of the game audio to amplitude-modulate a 90 Hz carrier that sits
-in the actuator's responsive band — turning "how much bass" into felt rumble. A
-noise gate and a steep, configurable low-pass keep dialog and music from triggering
-the haptics. Under DS4Windows, the firmware keeps the controller in actuator mode
-(rather than letting rumble reports force it into motor mode) so the derived
-haptics keep playing.
-
-The **effect leak** uses transient detection: it tracks fast and slow envelopes of
-the high-frequency content and opens the speaker only when the level jumps sharply
-(an onset), so discrete impacts pass while sustained sound stays muted. The output
-is high-passed to protect the small speaker from low-frequency popping.
 
 ---
 
@@ -1220,3 +1221,132 @@ Quick start:
 
 This is entirely optional — the firmware and config portal work on their own without
 it. The automation just removes the manual steps if you use Playnite.
+
+
+---
+
+## Glossary
+
+Terms used throughout this document and in the portal.
+
+### Haptics and audio
+
+**Actuator** — the voice coil in each grip of a DualSense. It replaces the
+rumble motors of older pads and can reproduce audio-rate signals, which is why
+haptics on this controller are delivered as sound rather than as motor speeds.
+
+**Derived (auto-)haptics** — haptic feedback this firmware *generates* from game
+audio, for games that have none of their own.
+
+**Native haptics** — haptic feedback a game renders itself and sends to the
+controller. Nothing is generated in that case; the firmware only passes it
+through.
+
+**Envelope** — how loud a signal is over time, ignoring the waveform itself.
+The bass envelope of the game audio is what drives the derived haptics.
+
+**Carrier** — a steady tone the envelope is applied to. The actuators cannot
+render very low frequencies, so "how much bass" is turned into felt motion by
+modulating a 90 Hz tone rather than sending the bass itself.
+
+**Noise gate** — a threshold below which the derived haptics stay silent, so
+room tone, dialogue and quiet music do not buzz continuously.
+
+**LP cutoff (low-pass)** — the frequency above which content is discarded when
+looking for bass. Lower = only deep rumble drives the haptics.
+
+**Crossover / split** — dividing the audio into a low band and a high band so
+each grip can be driven by a different part of the spectrum.
+
+**Effect leak** — with the speaker muted, letting sharp one-off sounds (shots,
+impacts, clinks) through to it anyway, while sustained dialogue and music stay
+muted.
+
+**Transient / onset** — a sudden jump in level, i.e. the start of a sound. What
+the effect leak detects.
+
+**Converted rumble** — a game's rumble instructions re-created on the actuators
+as vibration, used when the actuators are busy with haptics and cannot be handed
+to the controller's own rumble emulation.
+
+**Motor values** — the two numbers a game sends to request rumble. Left is the
+heavy/low-frequency motor, right the light/high-frequency one, a convention
+inherited from pads that really had two different motors.
+
+**ch0/1 and ch2/3** — the four audio channels the dongle receives. ch0/1 feed
+the controller speaker and are what the derived haptics are generated from by
+default; ch2/3 carry native haptics from a game that sends them.
+
+**Native passthrough** — how much of ch2/3 is passed to the actuators in Mix
+mode.
+
+**Loopback capture** — recording what the PC is playing (rather than a
+microphone), which is how `ds5audio.py` gets game audio to send to the dongle.
+
+### Trigger effects
+
+The DualSense triggers contain a motor and a clutch that can push back against
+your finger at chosen points in the pull. The vocabulary below describes what
+that mechanism is doing.
+
+**Zone** — a position along the trigger pull, numbered 0 (released) to 9 (fully
+pressed). Every trigger effect is defined by the zones it acts on.
+
+**Resistance** — constant opposing force across a range of zones. Feels like the
+trigger is stiffer, or like pulling through treacle.
+
+**Wall** — a point in the pull where the trigger suddenly resists much harder,
+so it feels like it has stopped. It may be a hard stop or something you can push
+past with more force.
+
+**Weapon break** — a wall you *do* push through, the way a real trigger breaks
+when the sear releases: resistance builds, then gives way suddenly. Defined by
+where it starts, where it gives, and how hard it holds.
+
+**Bow** — tension that rises the further you pull, then snaps back when
+released, like drawing and loosing a bowstring. Defined by a start and end zone
+and two force levels.
+
+**Vibration (trigger)** — a buzz felt in the trigger itself over a range of
+zones, at a chosen frequency and strength. Used for engines, chainsaws,
+automatic fire.
+
+**Push-back kick (Stage 2)** — a short vibration burst fired while resistance is
+engaged, so each shot knocks the trigger back against your finger before
+resistance resumes. Its "bow-snap" variant uses the bow mechanism for a more
+mechanical snap instead of a thump.
+
+**R2T (Trigger-to-Rumble)** — rumble generated *from* how far you pull a
+trigger, rather than sent by the game.
+
+**Force Override** — take control of the triggers even while a game is sending
+its own effects, instead of yielding to the game.
+
+**Custom captured effect** — a real effect recorded from a game that has one,
+stored as the exact bytes the game sent and replayed in a game that has none.
+
+**Timeline capture** — recording not just an effect but its rhythm, so a
+sequence of vibrations replays with the original timing.
+
+### Device and connection
+
+**Enumeration / re-enumeration** — the process where the PC discovers a USB
+device and reads what it is. Settings that change the device's description
+(wake, polling rate, audio buffer, mic/speaker) require the dongle to detach and
+re-attach so the PC re-reads it, which briefly disconnects the controller.
+
+**Idle identity** — the separate USB identity the dongle presents while the
+controller is switched off and wake is enabled: *DS5Dongle (controller off)*,
+with its own vendor and product IDs, so nothing appears to the PC as a
+controller that is not connected.
+
+**Remote wakeup** — the USB mechanism a device uses to wake a sleeping PC. It
+needs the device to still be attached, and needs permission in Windows Device
+Manager.
+
+**Profile slot** — a complete configuration stored on the dongle itself, so
+switching setups is one instant command rather than writing every setting.
+
+**Passthrough mode (DS4Windows)** — DS4Windows forwarding a game's rumble to the
+real controller rather than emulating a different pad.
+
