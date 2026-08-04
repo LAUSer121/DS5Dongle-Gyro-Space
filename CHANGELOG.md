@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.18] — 2026-08-04
+### Fixed
+- slot-activate script fixed to load slots 17-24, was broken and only loaded 1-16 with the previous release,
+  which reworked the automation scripts.
+
 ## [1.18.17] — 2026-08-02
 
 ### Fixed
