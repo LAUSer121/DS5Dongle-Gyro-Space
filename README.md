@@ -77,31 +77,29 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
+- **Extensive DSP tuning** — intensity, smoothness, noise gate, crossover cutoff,
+  and selectable filter slope (6/12/24 dB/oct) to get your auto-haptics as close as native as possible.
+- **Three operating modes** — Off (native passthrough), Mix
+  (native + derived), Replace (derived only)
 - **DS4Windows compatibility** — auto-haptics keep working under DS4Windows in
   passthrough, DualShock 4, and Xbox 360 emulation modes (the base firmware's
   rumble handling silenced the haptic actuators; this fixes it).
-- **Three operating modes** — Off (native passthrough / rumble conversion), Mix
-  (native + derived), Replace (derived only).
 - **Converted-rumble blending** — in Mix mode a game's rumble (whether from
   DS4Windows emulation or a native title sending motor values) is re-created on
   the actuators and blended with the audio haptics, with independent strength.
   The heavy and light motors are rendered at their own frequencies (60 Hz and
   160 Hz) and the rumble is injected after the limiter, so it keeps full
   authority instead of being squeezed out when the derived haptics are loud.
-- **Independent routing for every audio source** — "eat your cake and have it too" for native dualsense games + auto-haptics mix mode. The derived haptics can be
+- **Effect leak** — instead of fully muting the controller speaker, optionally
+  pass sharp transient effects (shots, clinks, impacts) through the speaker via
+  transient detection, so discrete effects come through while sustained dialog and
+  music stay muted — like native DualSense games.
+- **Independent routing for every audio source** — "eat your cake and have it too"   for native dualsense games + auto-haptics mix mode. The derived haptics can be
   generated from either channel pair, the native passthrough can be filtered or
   passed raw, and the speaker and effect leak always stay on ch0/1. That makes
   it possible to run auto-haptics from the capture script while the controller
   speaker plays only the game's own native effects, or to add auto-haptics to a
   game that renders its own haptics without either one destroying the other.
-- **Effect leak** — instead of fully muting the controller speaker, optionally
-  pass sharp transient effects (shots, clinks, impacts) through the speaker via
-  transient detection, so discrete effects come through while sustained dialog and
-  music stay muted — like native DualSense games.
-- **Extensive DSP tuning** — intensity, smoothness, noise gate, crossover cutoff,
-  and selectable filter slope (6/12/24 dB/oct).
-- **Lightbar control**, **live RSSI / signal display**, **reboot-to-bootloader**,
-  and **experimental BT latency controls** (flush timeout, QoS).
 - **Trigger-to-rumble (R2T)** — routes rumble into the trigger actuators as a
   tactile buzz, per trigger, with an "only while pressed" option, strength, and
   frequency. Useful for feeling rumble through the triggers in games that only
@@ -146,6 +144,8 @@ to RAM so native fine haptics and controller audio work without overclocking.
 - **Wake from sleep with no phantom controller** — see below; the bridge keeps
   a wakeable presence on USB while the controller is off, under a separate USB
   identity so nothing appears as a controller that is not there.
+- **Lightbar control**, **live RSSI / signal display**, **reboot-to-bootloader**,
+  and **experimental BT latency controls** (flush timeout, QoS).
 - **Live diagnostics** — signal strength, battery, audio stream state and
   channel count, push-back envelope, the rumble a game is actually sending
   (peak-held, with the rumble flags it requested), and a wake report covering
