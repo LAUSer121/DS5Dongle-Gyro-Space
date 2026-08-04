@@ -82,9 +82,18 @@ to RAM so native fine haptics and controller audio work without overclocking.
   rumble handling silenced the haptic actuators; this fixes it).
 - **Three operating modes** — Off (native passthrough / rumble conversion), Mix
   (native + derived), Replace (derived only).
-- **Converted-rumble blending** — in Mix mode, DS4Windows rumble (from emulated
-  controllers) is converted to actuator vibration and blended with the audio
-  haptics, with independent strength control.
+- **Converted-rumble blending** — in Mix mode a game's rumble (whether from
+  DS4Windows emulation or a native title sending motor values) is re-created on
+  the actuators and blended with the audio haptics, with independent strength.
+  The heavy and light motors are rendered at their own frequencies (60 Hz and
+  160 Hz) and the rumble is injected after the limiter, so it keeps full
+  authority instead of being squeezed out when the derived haptics are loud.
+- **Independent routing for every audio source** — the derived haptics can be
+  generated from either channel pair, the native passthrough can be filtered or
+  passed raw, and the speaker and effect leak always stay on ch0/1. That makes
+  it possible to run auto-haptics from the capture script while the controller
+  speaker plays only the game's own native effects, or to add auto-haptics to a
+  game that renders its own haptics without either one destroying the other.
 - **Effect leak** — instead of fully muting the controller speaker, optionally
   pass sharp transient effects (shots, clinks, impacts) through the speaker via
   transient detection, so discrete effects come through while sustained dialog and
@@ -114,6 +123,12 @@ to RAM so native fine haptics and controller audio work without overclocking.
   and played **in sequence as you pull** (e.g. wall → wall → end-resistance);
   vibrations can be captured **with their timing** and replayed to that rhythm.
   Effects can be saved and shared as JSON files.
+- **Manual effect builder** — author trigger effects by hand when there is
+  nothing to capture: stack weapon-break walls, bow snap-backs and vibrations,
+  set their trigger zones and strengths, and the portal encodes them into the
+  same bytes the firmware's own writers emit — so a hand-built effect is
+  byte-identical to one a game would have sent. Built effects live alongside
+  captured ones and save to the same JSON files.
 - **Profile slots** — up to 24 complete configurations stored on the dongle
   itself. Save your setups once in the portal; switching later is a single
   instant command instead of a full profile write — used by the automation for
@@ -125,15 +140,29 @@ to RAM so native fine haptics and controller audio work without overclocking.
   per-axis invert.
 - **Native-haptics anti-alias** — optional smoothing on the native haptic stream
   (off / light / strong) to tame gritty high-frequency actuator noise.
+- **Slot backup and restore** — download every stored profile slot, names
+  included, as one JSON file and write them all back later. Protects hard-won
+  tuning against a flash wipe or a bad flash.
+- **Wake from sleep with no phantom controller** — see below; the bridge keeps
+  a wakeable presence on USB while the controller is off, under a separate USB
+  identity so nothing appears as a controller that is not there.
+- **Live diagnostics** — signal strength, battery, audio stream state and
+  channel count, push-back envelope, the rumble a game is actually sending
+  (peak-held, with the rumble flags it requested), and a wake report covering
+  suspends, resumes, wake attempts and the current USB identity.
 - **Sectioned web configuration portal** with smart save (only reconnects when a
   setting that requires re-enumeration changed).
 
-The **Wake PC on PS Button** feature (USB remote wakeup) is part of the awalol
-v0.7.0 base and is exposed here as a portal toggle. It is **off by default**; enable
-it only if you want the controller's PS button to wake the PC from sleep. In this
-release the controller disconnects cleanly from the host (and DS4Windows) whenever
-the PC is awake, even with wake enabled — the device only stays on the USB bus while
-the PC is actually asleep (where wake needs it).
+The **Wake PC on PS Button** feature (USB remote wakeup) originates in the awalol
+v0.7.0 base and is exposed here as a portal toggle, substantially reworked. It is
+**off by default**; enable it only if you want the controller's PS button to wake
+the PC from sleep.
+
+With wake enabled the bridge **stays on the USB bus whenever the controller is
+switched off** — it has to, or it could never tell that the PC went to sleep — but
+it does so under a **separate USB identity**, so nothing appears as a controller
+that is not there. The details, and what you will see in Windows, are in the callout
+below.
 
 > **Wake is a per-profile setting — on for auto-haptics games, off for native
 > ones.** Enabling wake changes the controller's USB descriptor (it advertises USB
@@ -142,6 +171,11 @@ the PC is actually asleep (where wake needs it).
 > **games with native DualSense support can stop recognising it** — a game such as
 > *Ratchet & Clank* may fall back to Xbox-style rumble instead of native haptics,
 > and the controller's speaker audio can stop working.
+>
+> Because wake is one of the settings that requires re-enumeration, a profile
+> that switches it takes the dongle off USB for a second or two. Anything that
+> talks to the dongle right afterwards has to wait for it to come back — the
+> Playnite automation handles this, see `automation/AUTOMATION-README.md`.
 >
 > That only matters for games that use the controller natively. For **non-native
 > games driven by an auto-haptics profile**, nothing is relying on native
@@ -856,6 +890,26 @@ onto a trigger and sets enable and state count automatically. The portal's *Back
 custom-effect states as well as its settings, so a backup restores a slot
 complete. (Backups taken before 1.16.0 predate this and contain settings only.)
 
+**Building an effect by hand**
+
+When there is nothing to capture, the **Manual effect builder** authors the same
+kind of effect from scratch. Add stages one at a time and set each one up:
+
+| Stage | What it is | Set |
+|---|---|---|
+| Weapon break | A wall the trigger resists, then gives way past | Start and end zone, strength |
+| Bow | Rising tension that snaps back at the release point | Start and end zone, and the two force levels |
+| Vibration | A buzz over a range of the pull | Zones, frequency, strength |
+
+Stages are stacked in pull order and encoded exactly as the firmware's own
+writers would emit them, so a hand-built stage is byte-identical to what the
+sliders — or a game — would have sent for the same values. Built effects behave
+like captured ones everywhere else: they sit in the same list, play in sequence
+as you pull, save to the same JSON files, and are stored in slots the same way.
+Trigger positions are expressed in the same nine zones used throughout the
+trigger sections, so a wall at zones 2-3 sits where the same numbers put it in a
+captured effect.
+
 ### Gyro-to-Stick
 Maps controller motion onto the right stick for motion aiming.
 
@@ -987,12 +1041,18 @@ is high-passed to protect the small speaker from low-frequency popping.
   a few extra seconds (the controller's Bluetooth is powered off during sleep and
   must re-establish on wake); some variability here is inherent to the Bluetooth
   reconnect path.
-- **Wake and DS4Windows.** With wake enabled, the controller still disconnects
-  cleanly from the host (and DS4Windows) whenever the PC is awake — turning the
-  controller off no longer leaves a phantom USB device behind. The device is kept on
-  the USB bus only while the PC is actually suspended, so a button press can wake it;
-  once the PC is awake again, normal clean-disconnect behavior applies. (This
-  resolves the earlier limitation where wake kept the device permanently on the bus.)
+- **Wake and DS4Windows.** With wake enabled the bridge stays on the USB bus while
+  the controller is switched off, whether or not the PC is asleep — that presence is
+  exactly what makes waking possible, including the normal case where you switch the
+  controller off before putting the PC to sleep. It does not leave a phantom
+  controller behind: while the controller is off it presents a separate USB identity
+  (*DS5Dongle (controller off)*, its own vendor and product IDs), which DS4Windows
+  does not match and therefore ignores, leaving it free to auto-load profiles for
+  other controllers. The DualSense identity returns when the controller reconnects.
+  The idle identity is visible in `joy.cpl` and under Settings → Bluetooth & devices
+  → Devices, has its own *Allow this device to wake the computer* setting, and can be
+  hidden with HidHide without affecting waking. With wake **off**, the bridge leaves
+  the bus entirely when the controller disconnects, as before.
 - **Wake and native haptics (Steam Input).** Enabling wake alters the USB descriptor
   (USB 2.1 + BOS descriptor + an added keyboard interface — all required by remote
   wakeup). Because the device then no longer matches a plain DualSense fingerprint,
@@ -1108,7 +1168,7 @@ don't affect you.
 ## Files in this release
 
 - `ds5-v1.18.17.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.18.12)
+  reports version 1.18.17)
 - `ds5-v1.18.17-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
