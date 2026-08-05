@@ -35,8 +35,8 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 17;
+constexpr uint8_t FW_VER_MINOR = 19;
+constexpr uint8_t FW_VER_PATCH = 0;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -228,6 +228,12 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x61: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_yield=v; break; }
         case 0x62: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_l2_yield=v; break; }
         case 0x44: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.at_kick_style=v; break; }
+        // Gyro aiming space (v1.19.0).
+        case 0x65: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_space=v; break; }
+        case 0x66: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_fusion=v; break; }
+        case 0x67: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_x=v; break; }
+        case 0x68: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_y=v; break; }
+        case 0x69: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_z=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -363,6 +369,12 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x61: return write_config_value(buffer, bufsize, config.ce_r2_yield);
         case 0x62: return write_config_value(buffer, bufsize, config.ce_l2_yield);
         case 0x44: return write_config_value(buffer, bufsize, config.at_kick_style);
+        // Gyro aiming space (v1.19.0).
+        case 0x65: return write_config_value(buffer, bufsize, config.gyro_space);
+        case 0x66: return write_config_value(buffer, bufsize, config.gyro_fusion);
+        case 0x67: return write_config_value(buffer, bufsize, config.gyro_cal_x);
+        case 0x68: return write_config_value(buffer, bufsize, config.gyro_cal_y);
+        case 0x69: return write_config_value(buffer, bufsize, config.gyro_cal_z);
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }

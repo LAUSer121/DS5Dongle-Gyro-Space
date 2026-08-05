@@ -181,6 +181,17 @@ struct __attribute__((packed)) Config_body {
     //   2 = custom when gated   - gate engaged -> custom effect; otherwise sliders
     uint8_t  ce_r2_yield;
     uint8_t  ce_l2_yield;
+    // Gyro aiming space (v1.19.0): Steam-Input-style orientation-space mapping.
+    // The old pipeline (gyro raw -> gyro_axis horizontal source -> stick) is
+    // replaced by sensor fusion (gyro + accelerometer -> quaternion) followed by
+    // an orientation-space conversion. gyro_axis above is retained for config
+    // layout compatibility but is no longer used by the fusion pipeline.
+    uint8_t  gyro_space;    // GyroMode: 0=YAW, 1=ROLL, 2=YAW_ROLL, 3=LOCAL_SPACE,
+                            // 4=PLAYER_SPACE, 5=WORLD_SPACE, 6=LASER_POINTER
+    uint8_t  gyro_fusion;   // [0-100] gravity-correction (Mahony) gain; 50=default
+    int16_t  gyro_cal_x;    // static gyro offset calibration (raw LSB), subtracted
+    int16_t  gyro_cal_y;    //   before fusion. Runtime drift compensation makes
+    int16_t  gyro_cal_z;    //   these optional; they absorb unit-to-unit offsets.
 };
 
 struct __attribute__((packed)) Config {
