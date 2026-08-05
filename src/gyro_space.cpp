@@ -89,51 +89,57 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
         break;
 
     case GYRO_PLAYER_SPACE: {
-        // Axes locked to the grip captured at activation. Uses world-rate
-        // projections onto the captured controller frame so that yaw/pitch
-        // follow the initial grip, not the current controller orientation.
-        // When q_ref is the flat-grip identity-rotation quaternion, this
-        // reduces to: X = -omega[1] (world yaw), Y = -omega[0] (world pitch).
-        // Y sign matches artzox convention: nose-up → negative Y (invertable).
-        float up0[3], right0[3];
+        // Player Space: axes locked to the grip captured at activation.
+        // q_rel = conj(q_ref) * q maps current body → reference body.
+        // Applying quat_rotate(q_rel, gyro_body) expresses body-frame gyro
+        // in the reference body frame, then we extract yaw (Z) and pitch (X)
+        // from that reference-frame gyro.  Axes stay aligned with the initial
+        // grip regardless of how far the controller has rotated since capture.
         if (s->q_ref_valid) {
-            quat_rotate(s->q_ref, kAxisUp, up0);
-            quat_rotate(s->q_ref, kAxisRight, right0);
+            const Quat q_rel = quat_mult(quat_conjugate(s->q_ref), q);
+            float gyro_ref[3];
+            quat_rotate(q_rel, gyro, gyro_ref);
+            out->x = -gyro_ref[2];  // yaw in reference frame
+            out->y = -gyro_ref[0];  // pitch in reference frame
         } else {
-            // No reference yet — fall back to world axes (same as WORLD_SPACE).
-            up0[0] = 0.0f; up0[1] = 1.0f; up0[2] = 0.0f;    // world +Y = gravity
-            right0[0] = 1.0f; right0[1] = 0.0f; right0[2] = 0.0f; // world +X
+            // No reference yet — fall back to raw body-frame yaw/pitch.
+            out->x = -gyro[2];
+            out->y = -gyro[0];
         }
-        out->x = -(omega[0] * up0[0] + omega[1] * up0[1] + omega[2] * up0[2]);
-        out->y = -(omega[0] * right0[0] + omega[1] * right0[1] + omega[2] * right0[2]);
         break;
     }
 
     case GYRO_WORLD_SPACE: {
-        // Grip-independent. Horizontal = world yaw (about gravity). Vertical =
-        // rotation that sweeps the controller's forward vector up/down in the
-        // world-vertical plane. Works for any grip: flat, vertical, tilted,
-        // upside down.
-        out->x = -omega[1];
-        // Pitch axis: perpendicular to forward in the world horizontal plane.
-        // P = normalize(cross(fwd, worldUp)) = normalize(-fwd.z, 0, fwd.x)
-        //   (world +Y = up, so cross(fwd, {0,1,0}) → on the XZ plane).
-        const float ax = -fwd[2];
-        const float az =  fwd[0];
+        // Grip-independent World Space: horizontal = world yaw (about gravity);
+        // vertical = rotation about the body-right axis projected to the world
+        // horizontal plane.  Unlike cross(fwd, worldUp) which flips sign when
+        // the forward vector crosses the world-up direction (gimbal-like
+        // singularity), the body-right axis never flips — the projected axis
+        // stays continuous through all orientations.
+        out->x = -omega[1];                // world yaw
+
+        float right_w[3];
+        quat_rotate(q, kAxisRight, right_w);  // controller X axis in world
+
+        // Pitch axis = body right projected to the world horizontal (XZ) plane.
+        // This axis is the direction in the world that "pitch" sweeps the
+        // forward vector up/down, and it never reverses direction across any
+        // orientation (unlike a forward-vector cross-product).
+        const float ax = right_w[0];
+        const float az = right_w[2];
         const float al = std::sqrt(ax * ax + az * az);
         if (al > 0.05f) {
             out->y = -(omega[0] * ax + omega[2] * az) / al;
         } else {
-            // Controller pointing straight up/down: the sweep axis is degenerate.
-            // Fall back to controller-local pitch, same sign convention.
+            // Body right is nearly vertical (extreme roll): pitch about body X
+            // is effectively about world Y, which is already captured as yaw.
             out->y = -omega[0];
         }
+
         // Body-magnitude normalisation: in non-flat grips the world yaw axis
-        // and forward-sweep axis are not orthonormal in body-frame, which makes
-        // a controller-space circle map to an output ellipse (up to 3x gain
-        // variation at 60 deg roll, >5x at vertical).  Scale the output by
-        // |body_yaw+pitch| / |output| so the intended hand-speed magnitude is
-        // preserved regardless of grip angle — circles stay circles.
+        // and pitch axis are not orthonormal in body-frame, which makes a
+        // controller-space circle map to an output ellipse.  Scale output by
+        // |body_yaw+pitch| / |output| so hand-speed magnitude is preserved.
         const float bodyMag = std::sqrt(gyro[0] * gyro[0] + gyro[2] * gyro[2]);
         const float outMag  = std::sqrt(out->x * out->x + out->y * out->y);
         if (outMag > 0.001f && bodyMag > 0.001f) {
