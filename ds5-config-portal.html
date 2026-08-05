@@ -205,7 +205,11 @@ const SECTIONS = [
   { title: 'Gyro Aiming', fields: [
     [0x2f,'gyro_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Only while L2 (aim) held'],[5,'Only while R2 (fire) held'],[6,'Only while L1 held'],[7,'Only while R1 held'],[3,'Only while touchpad touched'],[4,'Always on — touch touchpad to pause (ratchet)']]],
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
-    [0x31,'gyro_axis','u8','Horizontal source','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
+    [0x65,'gyro_space','u8','Space (orientation mapping)','select',[[0,'Yaw — yaw to horizontal only'],[1,'Roll — roll to horizontal only'],[2,'Yaw + Roll — yaw to horizontal, roll to vertical'],[3,'Local Space — axes follow the controller'],[4,'Player Space — axes locked to initial grip (calibrates on activation)'],[5,'World Space — gravity-aligned, grip-independent (recommended)'],[6,'Laser Pointer — screen projection of the forward vector']]],
+    [0x66,'gyro_fusion','u8','Fusion gain (gravity correction)','number',[0,100]],
+    [0x67,'gyro_cal_x','i16','Gyro calibration offset X (raw)','number',[-32768,32767]],
+    [0x68,'gyro_cal_y','i16','Gyro calibration offset Y (raw)','number',[-32768,32767]],
+    [0x69,'gyro_cal_z','i16','Gyro calibration offset Z (raw)','number',[-32768,32767]],
     [0x32,'gyro_invert','u8','Invert axes (0=none, 1=X, 2=Y, 3=both)','number',[0,3]],
   ]},
   { title: 'Advanced — BT Latency (experimental)', fields: [
@@ -491,6 +495,7 @@ async function readField(fieldId, type){
     const dv = new DataView(raw.buffer, raw.byteOffset + base);
     if (type === 'u8')  return dv.getUint8(0);
     if (type === 'u16') return dv.getUint16(0, true);
+    if (type === 'i16') return dv.getInt16(0, true);
     if (type === 'f32') return dv.getFloat32(0, true);
     return 0;
   }
@@ -537,6 +542,7 @@ async function writeField(fieldId, type, value){
   let bytes;
   if (type === 'u8')  bytes = [value & 0xff];
   else if (type === 'u16'){ bytes = [value & 0xff, (value>>8)&0xff]; }
+  else if (type === 'i16'){ const v = value | 0; bytes = [v & 0xff, (v>>8)&0xff]; }
   else if (type === 'f32'){ const b=new Uint8Array(new Float32Array([value]).buffer); bytes=[...b]; }
   await sendCmd(0x01, [fieldId, ...bytes]);
 }
@@ -550,11 +556,13 @@ let bulkSupported = null; // null = unknown, probe on first use
 function encField(type, value){
   if (type === 'u8')  return [value & 0xff];
   if (type === 'u16') return [value & 0xff, (value>>8)&0xff];
+  if (type === 'i16'){ const v = value | 0; return [v & 0xff, (v>>8)&0xff]; }
   return [...new Uint8Array(new Float32Array([value]).buffer)]; // f32
 }
 function decField(type, bytes){
   if (type === 'u8')  return bytes[0];
   if (type === 'u16') return bytes[0] | (bytes[1]<<8);
+  if (type === 'i16') return (bytes[0] | (bytes[1]<<8)) << 16 >> 16;
   return new Float32Array(new Uint8Array(bytes.slice(0,4)).buffer)[0];
 }
 async function bulkWriteFields(entries){ // entries: [{fid,type,value}] -> true if ALL applied
@@ -603,7 +611,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   const r = await readCmdReplyOn(SLOT_REPORT, 0x0d, slot, 12); // slot field-read reply is on SLOT_REPORT (0x84)
   if (!r || r[2] !== 0x00) return null;
   // reply: 66 0d status slot fid <value bytes...>
-  const sz = fdef[2] === 'u16' ? 2 : (fdef[2] === 'f32' ? 4 : 1);
+  const sz = fdef[2] === 'u16' || fdef[2] === 'i16' ? 2 : (fdef[2] === 'f32' ? 4 : 1);
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 

@@ -115,6 +115,9 @@ add_executable(ds5-bridge
         src/cmd.cpp
         src/state_mgr.cpp
         src/ram_mem.c
+        src/quaternion.cpp
+        src/gyro_fusion.cpp
+        src/gyro_space.cpp
 )
 
 if (ENABLE_BATT_LED)

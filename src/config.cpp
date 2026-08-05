@@ -207,8 +207,15 @@ void config_valid() {
     if (body->gyro_sens < 1 || body->gyro_sens > 100) body->gyro_sens = 50;
     if (body->gyro_axis > 1) body->gyro_axis = 0;
     if (body->gyro_invert > 3) body->gyro_invert = 0;
-    // Gyro space mode: added for new aiming transforms. Keep backward compatible.
-    if (body->gyro_space_mode > 4) body->gyro_space_mode = 0;
+    // Gyro aiming space (v1.19.0): 0=YAW is the default space. Fresh flash
+    // (0xFF) maps to YAW, which matches the old yaw horizontal-source default.
+    if (body->gyro_space > 6) body->gyro_space = 0;
+    if (body->gyro_fusion > 100) body->gyro_fusion = 50;
+    // Fresh flash reads 0xFFFF for int16 -> indistinguishable from a -1 LSB
+    // calibration, so treat it as "no offset".
+    if (body->gyro_cal_x == (int16_t)0xFFFF) body->gyro_cal_x = 0;
+    if (body->gyro_cal_y == (int16_t)0xFFFF) body->gyro_cal_y = 0;
+    if (body->gyro_cal_z == (int16_t)0xFFFF) body->gyro_cal_z = 0;
     // Native-haptics smoothing: 0 is invalid so a fresh config defaults to Light (2).
     if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 2;
     if (body->synth_force > 1) body->synth_force = 0;

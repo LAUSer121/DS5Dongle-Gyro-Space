@@ -24,6 +24,9 @@
 #include "config.h"
 #include "cmd.h"
 #include "dse.h"
+#include "gyro_fusion.h"
+#include "gyro_space.h"
+#include "hardware/timer.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
 #endif
@@ -115,60 +118,116 @@ void __not_in_flash_func(interrupt_loop)() {
     }
 }
 
-// --- Gyro -> right-stick aiming ---------------------------------------------
-// Adds the controller's angular velocity onto the right stick in the input
-// report the PC sees, so ANY game gets gyro aiming with zero PC software
-// (DSX needs its app running for this; here it lives in the dongle).
-// Integer-only so it is safe inside the report critical section.
-// Report offsets: RightStickX=2, RightStickY=3, TriggerLeft=4,
-// AngularVelocityX(pitch)=15, Z(roll)=17, Y(yaw)=19 (int16 LE).
-volatile uint16_t g_diag_gyro = 0; // |horizontal gyro raw|, field 0x35
+// --- Gyro aiming space (v1.19.0) -------------------------------------------
+// Steam-Input-style pipeline. The old fixed-horizon mapping is gone:
+//
+//   gyro + accelerometer
+//        -> sensor fusion (Mahony complementary AHRS)
+//        -> quaternion orientation estimation
+//        -> orientation space conversion (YAW/ROLL/YAW_ROLL/LOCAL_SPACE/
+//           PLAYER_SPACE/WORLD_SPACE/LASER_POINTER)
+//        -> unified gyro_x / gyro_y
+//        -> right-stick output
+//
+// No fixed horizontal reference: the accelerometer's gravity vector aligns the
+// orientation to the world in ANY grip. Quaternion normalization, gyro drift
+// compensation and static calibration offsets live in the fusion module.
+// All state is RAM/static; runs inside the report critical section.
+volatile uint16_t g_diag_gyro = 0; // |gyro_x rate| diagnostic, field 0x35
+
+static GyroFusion g_fusion;
+static GyroSpace  g_space;
+static bool       g_gyro_ready = false;
+static uint64_t   g_gyro_last_us = 0;
 
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     const auto &cfg = get_config();
-    if (cfg.gyro_mode == 0) return;
-    // Activation schemes (industry set: ADS-gated, always-on, touch-enable, ratchet):
+    if (cfg.gyro_mode == 0) {
+        g_gyro_ready = false;
+        return;
+    }
+    // Activation schemes (industry set: ADS-gated, always-on, touch-enable,
+    // ratchet, shoulder/fire gates):
     //   1 = only while L2 (aim) held past ~12%
     //   2 = always on
     //   3 = only while the touchpad is touched (Steam 'touch to enable' style)
-    //   4 = always on, touching the touchpad PAUSES gyro (ratchet: re-center like
-    //       lifting a mouse)
+    //   4 = always on, touching the touchpad PAUSES gyro (ratchet)
+    //   5 = only while R2 (fire) held  6 = L1 held  7 = R1 held
     const bool touch = !(d[32] & 0x80);            // touchpad finger 1 down
-    if (cfg.gyro_mode == 1 && d[4] < 30) return;                 // L2 held (aim)
-    if (cfg.gyro_mode == 3 && !touch)    return;
-    if (cfg.gyro_mode == 4 && touch)     return;
-    // v1.11.0: additional gates for games that don't aim on L2. Same 30-count
-    // threshold for the R2 analog gate; shoulders are digital (bit0=L1, bit1=R1).
-    if (cfg.gyro_mode == 5 && d[5] < 30)         return;         // R2 held
-    if (cfg.gyro_mode == 6 && !(d[8] & 0x01))    return;         // L1 held
-    if (cfg.gyro_mode == 7 && !(d[8] & 0x02))    return;         // R1 held
+    bool active = true;
+    if (cfg.gyro_mode == 1 && d[4] < 30) active = false;              // L2
+    if (cfg.gyro_mode == 3 && !touch)    active = false;
+    if (cfg.gyro_mode == 4 && touch)     active = false;
+    if (cfg.gyro_mode == 5 && d[5] < 30) active = false;              // R2
+    if (cfg.gyro_mode == 6 && !(d[8] & 0x01)) active = false;         // L1
+    if (cfg.gyro_mode == 7 && !(d[8] & 0x02)) active = false;         // R1
+
     auto rd16 = [&](int off) -> int32_t {
         return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
     };
-    int32_t pitch = rd16(15);
-    // Hardware-verified axis mapping (v1.0.6): on the DualSense the horizontal
-    // "turn the controller" motion shows up on the int16 at byte 17, NOT byte 19
-    // as the wiki field names suggested — user testing showed 19 gives no
-    // horizontal response while 17 tracks turning. So: yaw = 17, roll = 19.
-    int32_t horiz = (cfg.gyro_axis == 1) ? rd16(19) /* roll */ : rd16(17) /* yaw */;
-    // Live diagnostic (portal): |horiz| raw magnitude, pre-deadzone, whenever gyro
-    // is enabled — lets sensitivity be calibrated against real numbers.
+    // Hardware-verified IMU layout: AngularVelocityX(pitch)=15, Z(yaw)=17,
+    // Y(roll)=19; AccelerometerX=21, Y=23, Z=25 (all int16 LE).
+    float gyro[3] = {
+        (float)rd16(15) * GYRO_DEG_PER_LSB,  // pitch rate (deg/s)
+        (float)rd16(19) * GYRO_DEG_PER_LSB,  // roll rate (deg/s)
+        (float)rd16(17) * GYRO_DEG_PER_LSB,  // yaw rate (deg/s)
+    };
+    const float accel[3] = {(float)rd16(21), (float)rd16(23), (float)rd16(25)};
+
+    // Static calibration offsets (raw LSB) - unit-to-unit zero-offset trimming.
+    gyro[0] -= (float)cfg.gyro_cal_x * GYRO_DEG_PER_LSB;
+    gyro[1] -= (float)cfg.gyro_cal_y * GYRO_DEG_PER_LSB;
+    gyro[2] -= (float)cfg.gyro_cal_z * GYRO_DEG_PER_LSB;
+
+    // Timestep for the integration (clamped to sane bounds).
+    const uint64_t now_us = time_us_64();
+    float dt = (float)(now_us - g_gyro_last_us) * 1e-6f;
+    g_gyro_last_us = now_us;
+    if (dt < 0.0005f) dt = 0.0005f;
+    if (dt > 0.05f)   dt = 0.05f;
+
+    if (!g_gyro_ready) {
+        gyro_fusion_init(&g_fusion, accel);
+        gyro_space_init(&g_space, (GyroMode)cfg.gyro_space);
+        g_gyro_ready = true;
+    } else if ((uint8_t)g_space.mode != cfg.gyro_space) {
+        // Mode changed live: re-arm the space (keeps fusion state).
+        gyro_space_init(&g_space, (GyroMode)cfg.gyro_space);
+    }
+
+    // Sensor fusion: gyro + accelerometer -> orientation quaternion.
+    gyro_fusion_update(&g_fusion, gyro, accel, dt, cfg.gyro_fusion);
+
+    // PLAYER_SPACE reference capture on activation edge (Steam-style).
+    gyro_space_tick(&g_space, active, g_fusion.q);
+
+    // Orientation space conversion -> unified aim output (+x = right, +y = up).
+    GyroOutput out;
+    gyro_space_output(&g_space, g_fusion.q, gyro, &out);
+
+    // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
+    // sensitivity be calibrated against real numbers (0 = inactive).
     { extern volatile uint16_t g_diag_gyro;
-      int32_t ah = horiz < 0 ? -horiz : horiz;
-      g_diag_gyro = (ah > 65535) ? 65535 : (uint16_t)ah; }
-    // Small deadzone against sensor noise/bias at rest.
-    if (horiz > -12 && horiz < 12) horiz = 0;
-    if (pitch > -12 && pitch < 12) pitch = 0;
-    if (horiz == 0 && pitch == 0) return;
-    // Scale: sens 1-100, divisor 200 (v1.0.6: 10x more range after "100 felt too
-    // low" on hardware — the old maximum now sits around slider value 10).
-    const int32_t s = cfg.gyro_sens;
-    int32_t dx = -horiz * s / 200;    // turn controller right -> aim right
-    int32_t dy = -pitch * s / 200;    // tilt up -> aim up (flip via invert if wrong)
+      float h = out.x < 0.0f ? -out.x : out.x;
+      g_diag_gyro = (h > 65535.0f) ? 65535 : (uint16_t)h; }
+
+    if (!active) return;
+
+    // Small deadzone against residual sensor noise at rest.
+    if (out.x > -0.5f && out.x < 0.5f) out.x = 0.0f;
+    if (out.y > -0.5f && out.y < 0.5f) out.y = 0.0f;
+
+    // Scale: deg/s -> right-stick counts, TIME-based so aim speed is identical
+    // at any polling rate (250/500 Hz or real-time). sens 1-100.
+    // ~0.05 counts per (deg/s) per 100 sens per second -> sens 50, 100 deg/s
+    // gives ~250 counts/s (about 2 s full-deflection, a sane FPS default).
+    const float s = cfg.gyro_sens * 0.05f;
+    float dx = out.x * s * dt;
+    float dy = out.y * s * dt;
     if (cfg.gyro_invert & 1) dx = -dx;
     if (cfg.gyro_invert & 2) dy = -dy;
-    int32_t rx = (int32_t)d[2] + dx;
-    int32_t ry = (int32_t)d[3] + dy;
+    int32_t rx = (int32_t)d[2] + (int32_t)(dx > 0 ? dx + 0.5f : dx - 0.5f);
+    int32_t ry = (int32_t)d[3] + (int32_t)(dy > 0 ? dy + 0.5f : dy - 0.5f);
     d[2] = (uint8_t)(rx < 0 ? 0 : (rx > 255 ? 255 : rx));
     d[3] = (uint8_t)(ry < 0 ? 0 : (ry > 255 ? 255 : ry));
 }
