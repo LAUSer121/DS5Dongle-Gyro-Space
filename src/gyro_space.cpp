@@ -26,6 +26,9 @@ void gyro_space_init(GyroSpace *s, GyroMode mode) {
     s->was_active = false;
     s->lp_sx = s->lp_sy = 0.0f;
     s->lp_valid = false;
+    s->ws_pitch_ax = 1.0f;  // default: world +X = pitch right
+    s->ws_pitch_az = 0.0f;
+    s->ws_pitch_valid = false;
 }
 
 void gyro_space_capture_reference(GyroSpace *s, const Quat &q) {
@@ -89,43 +92,68 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
         break;
 
     case GYRO_PLAYER_SPACE: {
-        // Axes locked to the grip captured at activation. Uses world-rate
-        // projections onto the captured controller frame so that yaw/pitch
-        // follow the initial grip, not the current controller orientation.
-        // When q_ref is the flat-grip identity-rotation quaternion, this
-        // reduces to: X = -omega[1] (world yaw), Y = -omega[0] (world pitch).
-        // Y sign matches artzox convention: nose-up → negative Y (invertable).
-        float up0[3], right0[3];
+        // Axes locked to the grip captured at activation. Projects body-frame
+        // gyro onto the captured controller axes expressed in body space.
+        // This avoids using the potentially drifted current quaternion for the
+        // omega (world-frame angular velocity) conversion — the raw gyro is
+        // always in body frame and the captured axes (inverse-rotated from
+        // world to body via q_ref_inv) are computed once at capture time.
+        float up_body[3];   // captured world-up axis, expressed in body frame
+        float rt_body[3];   // captured right axis, expressed in body frame
         if (s->q_ref_valid) {
-            quat_rotate(s->q_ref, kAxisUp, up0);
-            quat_rotate(s->q_ref, kAxisRight, right0);
+            const Quat qref_inv = quat_conjugate(s->q_ref);
+            quat_rotate(qref_inv, kAxisUp, up_body);
+            quat_rotate(qref_inv, kAxisRight, rt_body);
         } else {
-            // No reference yet — fall back to world axes (same as WORLD_SPACE).
-            up0[0] = 0.0f; up0[1] = 1.0f; up0[2] = 0.0f;    // world +Y = gravity
-            right0[0] = 1.0f; right0[1] = 0.0f; right0[2] = 0.0f; // world +X
+            // No reference yet — fall back to body Z/Y (flat-grip yaw/roll).
+            up_body[0] = 0.0f; up_body[1] = 0.0f; up_body[2] = 1.0f;   // body Z
+            rt_body[0] = 1.0f; rt_body[1] = 0.0f; rt_body[2] = 0.0f;   // body X
         }
-        out->x = -(omega[0] * up0[0] + omega[1] * up0[1] + omega[2] * up0[2]);
-        out->y = -(omega[0] * right0[0] + omega[1] * right0[1] + omega[2] * right0[2]);
+        // X = yaw (about captured up)  → dot(gyro, up_body)
+        // Y = pitch (about captured right) → dot(gyro, rt_body)
+        out->x = -(gyro[0]*up_body[0]  + gyro[1]*up_body[1]  + gyro[2]*up_body[2]);
+        out->y = -(gyro[0]*rt_body[0] + gyro[1]*rt_body[1] + gyro[2]*rt_body[2]);
         break;
     }
 
     case GYRO_WORLD_SPACE: {
-        // Grip-independent. Horizontal = world yaw (about gravity). Vertical =
-        // rotation that sweeps the controller's forward vector up/down in the
-        // world-vertical plane. Works for any grip: flat, vertical, tilted,
-        // upside down.
+        // Grip-independent aiming. Horizontal = world yaw (rotation about
+        // gravity, world +Y). Vertical = the rate at which the controller's
+        // forward vector moves up or down in the world (d(fwd.y)/dt).
+        //
+        // Physics: d(fwd)/dt = ω × fwd, so d(fwd.y)/dt = ωz·fx - ωx·fz.
+        // Using cross(fwd, worldUp) = (-fwd.z, 0, fwd.x) = (ax, 0, az),
+        // this equals dot(ω, (ax, 0, az)) = ωx·ax + ωz·az.
+        //
+        // We do NOT divide by |ax,az| (sin of the angle between fwd and
+        // worldUp). The raw dot product is the physically correct rate; it
+        // naturally decreases as the controller tilts away from horizontal
+        // because the same body pitch produces less world-Y movement of fwd.
+        // Division would both amplify noise at extreme tilt and introduce a
+        // singularity when fwd aligns with worldUp (al → 0).
+        //
+        // The persistent axis prevents rare 180° flips when the controller
+        // passes through orientations where fwd sweeps in the opposite
+        // hemisphere (e.g. >90° yaw from the initial forward direction).
         out->x = -omega[1];
-        // Pitch axis: perpendicular to forward in the world horizontal plane.
-        // P = normalize(cross(fwd, worldUp)) = normalize(-fwd.z, 0, fwd.x)
-        //   (world +Y = up, so cross(fwd, {0,1,0}) → on the XZ plane).
         const float ax = -fwd[2];
         const float az =  fwd[0];
         const float al = std::sqrt(ax * ax + az * az);
         if (al > 0.05f) {
-            out->y = -(omega[0] * ax + omega[2] * az) / al;
+            float px = ax / al;
+            float pz = az / al;
+            if (s->ws_pitch_valid) {
+                if (px * s->ws_pitch_ax + pz * s->ws_pitch_az < 0.0f) {
+                    px = -px;
+                    pz = -pz;
+                }
+            }
+            s->ws_pitch_ax = px;
+            s->ws_pitch_az = pz;
+            s->ws_pitch_valid = true;
+            // d(fwd.y)/dt = ω·(ax, 0, az), with artzox sign convention
+            out->y = -(omega[0] * ax + omega[2] * az);
         } else {
-            // Controller pointing straight up/down: the sweep axis is degenerate.
-            // Fall back to controller-local pitch, same sign convention.
             out->y = -omega[0];
         }
         break;
