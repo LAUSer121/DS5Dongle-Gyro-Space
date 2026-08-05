@@ -134,6 +134,11 @@ void __not_in_flash_func(interrupt_loop)() {
 // compensation and static calibration offsets live in the fusion module.
 // All state is RAM/static; runs inside the report critical section.
 volatile uint16_t g_diag_gyro = 0; // |gyro_x rate| diagnostic, field 0x35
+// Live IMU diagnostics for the portal curves (fields 0x6a-0x6f), raw int16 LSB.
+// Updated on every BT input report so the curves show real sensor data even
+// while gyro aiming is off.
+volatile int16_t g_diag_imu_gx = 0, g_diag_imu_gy = 0, g_diag_imu_gz = 0;
+volatile int16_t g_diag_imu_ax = 0, g_diag_imu_ay = 0, g_diag_imu_az = 0;
 
 static GyroFusion g_fusion;
 static GyroSpace  g_space;
@@ -141,9 +146,26 @@ static bool       g_gyro_ready = false;
 static uint64_t   g_gyro_last_us = 0;
 
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
+    auto rd16 = [&](int off) -> int32_t {
+        return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
+    };
+    // Live IMU diagnostics for the portal curves (fields 0x6a-0x6f). Captured
+    // even when gyro aiming is off so the curves always show real sensor data.
+    { extern volatile int16_t g_diag_imu_gx, g_diag_imu_gy, g_diag_imu_gz,
+             g_diag_imu_ax, g_diag_imu_ay, g_diag_imu_az;
+      g_diag_imu_gx = (int16_t)rd16(15); g_diag_imu_gy = (int16_t)rd16(19); g_diag_imu_gz = (int16_t)rd16(17);
+      g_diag_imu_ax = (int16_t)rd16(21); g_diag_imu_ay = (int16_t)rd16(23); g_diag_imu_az = (int16_t)rd16(25); }
+
+    // Float accumulator for the stick output: at high report rates the per-frame
+    // gyro increment is a fraction of one stick count, and rounding each frame
+    // to an integer silently ate slow movements (the stick barely moved). The
+    // fractional remainder carries over to the next frame instead.
+    static float g_gyro_acc_x = 0.0f, g_gyro_acc_y = 0.0f;
+
     const auto &cfg = get_config();
     if (cfg.gyro_mode == 0) {
         g_gyro_ready = false;
+        g_gyro_acc_x = g_gyro_acc_y = 0.0f;
         return;
     }
     // Activation schemes (industry set: ADS-gated, always-on, touch-enable,
@@ -162,9 +184,6 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (cfg.gyro_mode == 6 && !(d[8] & 0x01)) active = false;         // L1
     if (cfg.gyro_mode == 7 && !(d[8] & 0x02)) active = false;         // R1
 
-    auto rd16 = [&](int off) -> int32_t {
-        return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
-    };
     // Hardware-verified IMU layout: AngularVelocityX(pitch)=15, Z(yaw)=17,
     // Y(roll)=19; AccelerometerX=21, Y=23, Z=25 (all int16 LE).
     float gyro[3] = {
@@ -219,15 +238,21 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Scale: deg/s -> right-stick counts, TIME-based so aim speed is identical
     // at any polling rate (250/500 Hz or real-time). sens 1-100.
-    // ~0.05 counts per (deg/s) per 100 sens per second -> sens 50, 100 deg/s
-    // gives ~250 counts/s (about 2 s full-deflection, a sane FPS default).
-    const float s = cfg.gyro_sens * 0.05f;
+    // ~0.5 counts per (deg/s) per 100 sens per second -> sens 50, 100 deg/s
+    // gives ~2500 counts/s (full deflection in ~100 ms, a responsive FPS feel).
+    const float s = cfg.gyro_sens * 0.5f;
     float dx = out.x * s * dt;
     float dy = out.y * s * dt;
     if (cfg.gyro_invert & 1) dx = -dx;
     if (cfg.gyro_invert & 2) dy = -dy;
-    int32_t rx = (int32_t)d[2] + (int32_t)(dx > 0 ? dx + 0.5f : dx - 0.5f);
-    int32_t ry = (int32_t)d[3] + (int32_t)(dy > 0 ? dy + 0.5f : dy - 0.5f);
+    g_gyro_acc_x += dx;
+    g_gyro_acc_y += dy;
+    const int32_t ix = (int32_t)g_gyro_acc_x;   // float accumulator prevents
+    const int32_t iy = (int32_t)g_gyro_acc_y;   // fractional loss at high rates
+    g_gyro_acc_x -= (float)ix;
+    g_gyro_acc_y -= (float)iy;
+    int32_t rx = (int32_t)d[2] + ix;
+    int32_t ry = (int32_t)d[3] + iy;
     d[2] = (uint8_t)(rx < 0 ? 0 : (rx > 255 ? 255 : rx));
     d[3] = (uint8_t)(ry < 0 ? 0 : (ry > 255 ? 255 : ry));
 }
