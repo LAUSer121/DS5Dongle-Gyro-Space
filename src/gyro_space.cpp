@@ -7,11 +7,9 @@
 //   - At the neutral flat grip the controller +Y (forward) points along
 //     world -Z, so rotating "right" (positive yaw) maps to +world X.
 //   - WORLD_SPACE output is grip-independent: it uses the world yaw axis for
-//     horizontal and the forward-vector sweep for vertical.
+//     horizontal and the fixed world right axis for vertical.
 //
 #include "gyro_space.h"
-
-#include <cmath>
 
 namespace {
 constexpr float kAxisUp[3]    = {0.0f, 0.0f, 1.0f};
@@ -26,9 +24,6 @@ void gyro_space_init(GyroSpace *s, GyroMode mode) {
     s->was_active = false;
     s->lp_sx = s->lp_sy = 0.0f;
     s->lp_valid = false;
-    s->ws_pitch_ax = 1.0f;  // default: world +X = pitch right
-    s->ws_pitch_az = 0.0f;
-    s->ws_pitch_valid = false;
 }
 
 void gyro_space_capture_reference(GyroSpace *s, const Quat &q) {
@@ -116,48 +111,23 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
         break;
     }
 
-    case GYRO_WORLD_SPACE: {
-        // Grip-independent aiming. Horizontal = world yaw (rotation about
-        // gravity, world +Y). Vertical = the rate at which the controller's
-        // forward vector moves up or down in the world (d(fwd.y)/dt).
+    case GYRO_WORLD_SPACE:
+        // Grip-independent aiming (Steam Input World Space / GamepadMotionHelpers
+        // TransformToWorldSpace). Horizontal = world yaw (rotation about gravity,
+        // world +Y). Vertical = world pitch (rotation about the fixed world right
+        // axis, world +X). Both axes are world-frame angular velocities of the
+        // controller.
         //
-        // Physics: d(fwd)/dt = ω × fwd, so d(fwd.y)/dt = ωz·fx - ωx·fz.
-        // Using cross(fwd, worldUp) = (-fwd.z, 0, fwd.x) = (ax, 0, az),
-        // this equals dot(ω, (ax, 0, az)) = ωx·ax + ωz·az.
-        //
-        // We do NOT divide by |ax,az| (sin of the angle between fwd and
-        // worldUp). The raw dot product is the physically correct rate; it
-        // naturally decreases as the controller tilts away from horizontal
-        // because the same body pitch produces less world-Y movement of fwd.
-        // Division would both amplify noise at extreme tilt and introduce a
-        // singularity when fwd aligns with worldUp (al → 0).
-        //
-        // The persistent axis prevents rare 180° flips when the controller
-        // passes through orientations where fwd sweeps in the opposite
-        // hemisphere (e.g. >90° yaw from the initial forward direction).
+        // The fixed world right axis is used instead of the dynamic axis
+        // (cross(fwd, worldUp) = (-fwd.z, 0, fwd.x)) because the dynamic axis
+        // flips sign when the forward vector sweeps through world-up: a
+        // continuous upward sweep would suddenly report downward motion (the
+        // "boundary" flip). The fixed axis is also linear — its magnitude does
+        // not shrink as the controller tilts away from horizontal, so circles
+        // stay round at any grip orientation.
         out->x = -omega[1];
-        const float ax = -fwd[2];
-        const float az =  fwd[0];
-        const float al = std::sqrt(ax * ax + az * az);
-        if (al > 0.05f) {
-            float px = ax / al;
-            float pz = az / al;
-            if (s->ws_pitch_valid) {
-                if (px * s->ws_pitch_ax + pz * s->ws_pitch_az < 0.0f) {
-                    px = -px;
-                    pz = -pz;
-                }
-            }
-            s->ws_pitch_ax = px;
-            s->ws_pitch_az = pz;
-            s->ws_pitch_valid = true;
-            // d(fwd.y)/dt = ω·(ax, 0, az), with artzox sign convention
-            out->y = -(omega[0] * ax + omega[2] * az);
-        } else {
-            out->y = -omega[0];
-        }
+        out->y = -omega[0];
         break;
-    }
 
     case GYRO_LASER_POINTER: {
         // Perspective projection of the controller's forward vector onto a
