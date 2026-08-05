@@ -35,11 +35,6 @@ struct GyroSpace {
     // laser pointer projection state
     float    lp_sx, lp_sy;
     bool     lp_valid;
-    // WORLD_SPACE persistent pitch axis (normalized, in XZ world plane).
-    // Prevents the cross-product axis from flipping 180° when the controller
-    // forward vector crosses the world-up direction.
-    float    ws_pitch_ax, ws_pitch_az;
-    bool     ws_pitch_valid;
 };
 
 void gyro_space_init(GyroSpace *s, GyroMode mode);
