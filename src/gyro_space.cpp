@@ -128,6 +128,19 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
             // Fall back to controller-local pitch, same sign convention.
             out->y = -omega[0];
         }
+        // Body-magnitude normalisation: in non-flat grips the world yaw axis
+        // and forward-sweep axis are not orthonormal in body-frame, which makes
+        // a controller-space circle map to an output ellipse (up to 3x gain
+        // variation at 60 deg roll, >5x at vertical).  Scale the output by
+        // |body_yaw+pitch| / |output| so the intended hand-speed magnitude is
+        // preserved regardless of grip angle — circles stay circles.
+        const float bodyMag = std::sqrt(gyro[0] * gyro[0] + gyro[2] * gyro[2]);
+        const float outMag  = std::sqrt(out->x * out->x + out->y * out->y);
+        if (outMag > 0.001f && bodyMag > 0.001f) {
+            const float scale = bodyMag / outMag;
+            out->x *= scale;
+            out->y *= scale;
+        }
         break;
     }
 
