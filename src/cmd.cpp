@@ -377,6 +377,14 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x69: return write_config_value(buffer, bufsize, config.gyro_cal_z);
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
+        // Live IMU telemetry for the portal curves (read-only, raw int16 LSB):
+        // 0x6a-0x6c = gyro X/Y/Z, 0x6d-0x6f = accel X/Y/Z. Refresh is per-sample.
+        case 0x6a: { extern volatile int16_t g_diag_imu_gx; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gx); }
+        case 0x6b: { extern volatile int16_t g_diag_imu_gy; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gy); }
+        case 0x6c: { extern volatile int16_t g_diag_imu_gz; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gz); }
+        case 0x6d: { extern volatile int16_t g_diag_imu_ax; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ax); }
+        case 0x6e: { extern volatile int16_t g_diag_imu_ay; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ay); }
+        case 0x6f: { extern volatile int16_t g_diag_imu_az; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_az); }
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }
         case 0x37: { extern volatile uint16_t g_diag_ch01_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch01_peak); }
         case 0x38: { extern volatile uint16_t g_diag_ch23_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch23_peak); }
@@ -791,6 +799,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                         case 0x00: case 0x14: case 0x1b: case 0x1c:
                         case 0x1f: case 0x26: case 0x40: case 0x4a: len = 2; break;
                         case 0x01: len = 4; break; // haptics_gain f32
+                        // i16 live IMU telemetry (fields 0x6a-0x6f)
+                        case 0x6a: case 0x6b: case 0x6c: case 0x6d:
+                        case 0x6e: case 0x6f: len = 2; break;
                         default: len = 1; break;
                     }
                     if ((uint16_t)(out + 2 + len) > sizeof(buf)) { ok = false; break; }

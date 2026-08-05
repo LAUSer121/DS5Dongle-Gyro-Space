@@ -1822,6 +1822,99 @@ async function refreshDiag(){
 }
 setInterval(()=>{ if(!saving && !slotsBusy && device && device.opened && document.getElementById('diagbox')) hidLocked(refreshDiag); }, 1000);
 
+// ===== Gyro/Accel live curves (fw 1.19.0, fields 0x6a-0x6f) =====
+// Two canvases on the Gyro tab: 3-axis gyroscope and 3-axis accelerometer, fed
+// from read-only firmware diagnostics at ~10 Hz so the sensor wave can be seen
+// while tuning gyro aiming. Polling only runs while the Gyro tab is on screen.
+const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Accelerometer Live Curves <span style="font-size:11px;color:var(--sub)">(raw LSB · ~10 Hz · fields 0x6A-0x6F)</span></div>
+  <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Move the controller to see the sensor wave. Top: gyroscope 3 axes (rate, raw int16). Bottom: accelerometer 3 axes (raw int16). Curves stream only while this tab is open.</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:6px">
+    <span><span style="color:#ff4d6d;font-weight:bold">—</span> GX (pitch)</span>
+    <span><span style="color:#4dc3ff;font-weight:bold">—</span> GY (roll)</span>
+    <span><span style="color:#ffd166;font-weight:bold">—</span> GZ (yaw)</span>
+    <span style="margin-left:12px"><span style="color:#06d6a0;font-weight:bold">—</span> AX</span>
+    <span><span style="color:#b388ff;font-weight:bold">—</span> AY</span>
+    <span><span style="color:#ff8fab;font-weight:bold">—</span> AZ</span>
+  </div>
+  <div id="imuCurveBox">
+    <div style="font-size:11px;color:var(--sub);margin-bottom:2px">Gyroscope (raw int16 LSB)</div>
+    <canvas id="gyroCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
+    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">Accelerometer (raw int16 LSB)</div>
+    <canvas id="accelCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
+  </div>
+  <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">waiting for sensor stream…</div>
+</div>`;
+
+const IMU_KEYS = [[0x6a,'gx','i16'],[0x6b,'gy','i16'],[0x6c,'gz','i16'],
+                  [0x6d,'ax','i16'],[0x6e,'ay','i16'],[0x6f,'az','i16']];
+const imuHist = { gx:[],gy:[],gz:[],ax:[],ay:[],az:[] };
+const IMU_MAX_PTS = 300; // ~30 s of history at 10 Hz
+let _imuBusy = false;
+
+function imuPush(v){
+  for (const k in imuHist){
+    imuHist[k].push(v[k]);
+    if (imuHist[k].length > IMU_MAX_PTS) imuHist[k].shift();
+  }
+}
+function drawImuCurve(canvasId, keys, colors){
+  const cv = document.getElementById(canvasId);
+  if (!cv || !cv.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.max(1, Math.round(w*dpr));
+  cv.height = Math.max(1, Math.round(h*dpr));
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#0c0c0e'; ctx.fillRect(0,0,w,h);
+  // auto range across all three series
+  let lo = Infinity, hi = -Infinity;
+  for (const k of keys){
+    const arr = imuHist[k];
+    for (const v of arr){ if (v < lo) lo = v; if (v > hi) hi = v; }
+  }
+  if (!isFinite(lo) || !isFinite(hi) || hi - lo < 1){ lo = -1; hi = 1; }
+  const pad = (hi - lo) * 0.1;
+  lo -= pad; hi += pad; const rng = hi - lo;
+  // grid: zero line + mid ticks
+  ctx.strokeStyle = '#2a2a2e'; ctx.lineWidth = 1;
+  const zero = (0 - lo) / rng;
+  ctx.beginPath(); ctx.moveTo(0, h - zero*h); ctx.lineTo(w, h - zero*h); ctx.stroke();
+  ctx.strokeStyle = '#1a1a1e';
+  ctx.beginPath(); ctx.moveTo(0, h*0.25); ctx.lineTo(w, h*0.25);
+  ctx.moveTo(0, h*0.75); ctx.lineTo(w, h*0.75); ctx.stroke();
+  // series
+  const n = imuHist[keys[0]].length;
+  if (n < 2) return;
+  keys.forEach((k, si) => {
+    const arr = imuHist[k];
+    ctx.strokeStyle = colors[si]; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let i = 0; i < n; i++){
+      const x = (i / (n - 1)) * w;
+      const y = h - ((arr[i] - lo) / rng) * h;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+  });
+  // axis labels
+  ctx.fillStyle = '#666'; ctx.font = '10px monospace';
+  ctx.fillText(hi.toFixed(0), w - 44, 10);
+  ctx.fillText(lo.toFixed(0), w - 44, h - 4);
+}
+async function pollImu(){
+  if (_imuBusy || saving || slotsBusy || !device || !device.opened) return;
+  _imuBusy = true;
+  try {
+    const got = await bulkReadFields(IMU_KEYS);
+    if (got){ imuPush(got); drawImuCurve('gyroCurve', ['gx','gy','gz'], ['#ff4d6d','#4dc3ff','#ffd166']);
+              drawImuCurve('accelCurve', ['ax','ay','az'], ['#06d6a0','#b388ff','#ff8fab']);
+              const el = document.getElementById('imuLive');
+              if (el) el.innerHTML = `GX=${got.gx} GY=${got.gy} GZ=${got.gz} · AX=${got.ax} AY=${got.ay} AZ=${got.az}`; }
+  } catch(_){ /* transient HID contention: skip this tick */ }
+  finally { _imuBusy = false; }
+}
+setInterval(()=>{ if(!_imuBusy && !saving && !slotsBusy && device && device.opened && window._tab === 'gyro' && document.getElementById('gyroCurve')) hidLocked(pollImu); }, 100);
+
 // ===== Tabbed navigation =====
 // Sections keep their existing definitions; tabs are a RENDER-TIME partition, so
 // no field entry moves and no binding changes. Custom-effect fields (ce_*) live
@@ -2021,6 +2114,7 @@ function render(){
     for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
   }
+  if (tab === 'gyro') html += IMU_CARD_HTML;
   html += `<div class="actions">
     <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
     <button class="btn btn-outline" onclick="readAll().then(render)">Re-read</button>
