@@ -222,7 +222,7 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Orientation space conversion -> unified aim output (+x = right, +y = up).
     GyroOutput out;
-    gyro_space_output(&g_space, g_fusion.q, gyro, &out);
+    gyro_space_output(&g_space, g_fusion.q, gyro, cfg.gyro_axis, &out);
 
     // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
     // sensitivity be calibrated against real numbers (0 = inactive).

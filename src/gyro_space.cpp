@@ -43,11 +43,12 @@ void gyro_space_tick(GyroSpace *s, bool active, const Quat &q) {
 }
 
 void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
-                       GyroOutput *out) {
+                       uint8_t gyro_axis, GyroOutput *out) {
     out->x = 0.0f;
     out->y = 0.0f;
 
-    // World-frame angular velocity (body -> world).
+    // World-frame angular velocity (body -> world) — computed for modes that
+    // need quaternion-space projections; skipped for raw body-frame modes.
     float omega[3];
     quat_rotate(q, gyro, omega);
 
@@ -56,68 +57,88 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
     quat_rotate(q, kAxisFwd, fwd);
 
     switch (s->mode) {
-    case GYRO_YAW:
-        // Yaw only: world rotation about the vertical axis. Roll and pitch
-        // do not contribute, so tilting the controller sideways does nothing.
-        out->x = -omega[1];
+    case GYRO_YAW: {
+        // Traditional mode (matches artzox original). gyro_axis=0 selects yaw
+        // (body Z) for horizontal, gyro_axis=1 selects roll (body Y). Both
+        // output pitch (body X) to vertical. Raw body-frame — no quaternion.
+        const float horiz = (gyro_axis == 0) ? gyro[2] : gyro[1];
+        out->x = -horiz;
+        out->y = -gyro[0];
         break;
+    }
 
     case GYRO_ROLL:
-        // Roll only: rotation about the controller's forward axis.
-        out->x = -(omega[0] * fwd[0] + omega[1] * fwd[1] + omega[2] * fwd[2]);
+        // Traditional mode: roll (body Y) → horizontal, pitch (body X) → vertical.
+        // Raw body-frame — no quaternion, matches artzox gyro_axis=1 behaviour.
+        out->x = -gyro[1];
+        out->y = -gyro[0];
         break;
 
     case GYRO_YAW_ROLL:
+        // World-frame: yaw (about world up) → X, roll (about controller forward) → Y.
         out->x = -omega[1];
         out->y = -(omega[0] * fwd[0] + omega[1] * fwd[1] + omega[2] * fwd[2]);
         break;
 
     case GYRO_LOCAL_SPACE:
-        // Raw sensor-frame rates: yaw (about controller up) -> X, pitch
-        // (about controller right) -> Y. The output follows the controller's
-        // own coordinates wherever it is pointing.
+        // Raw body-frame: yaw → X, pitch → Y. Signs match artzox exactly
+        // (dx = -horiz, dy = -pitch). Axes follow the controller wherever it
+        // points — no quaternion, no gravity correction.
         out->x = -gyro[2];
-        out->y =  gyro[0];
+        out->y = -gyro[0];
         break;
 
     case GYRO_PLAYER_SPACE: {
-        // Axes locked to the grip captured when the gyro activated. Uses
-        // world-rate projections onto the captured frame.
-        if (!s->q_ref_valid) { out->x = -omega[1]; break; }
+        // Axes locked to the grip captured at activation. Uses world-rate
+        // projections onto the captured controller frame so that yaw/pitch
+        // follow the initial grip, not the current controller orientation.
+        // When q_ref is the flat-grip identity-rotation quaternion, this
+        // reduces to: X = -omega[1] (world yaw), Y = -omega[0] (world pitch).
+        // Y sign matches artzox convention: nose-up → negative Y (invertable).
         float up0[3], right0[3];
-        quat_rotate(s->q_ref, kAxisUp, up0);
-        quat_rotate(s->q_ref, kAxisRight, right0);
+        if (s->q_ref_valid) {
+            quat_rotate(s->q_ref, kAxisUp, up0);
+            quat_rotate(s->q_ref, kAxisRight, right0);
+        } else {
+            // No reference yet — fall back to world axes (same as WORLD_SPACE).
+            up0[0] = 0.0f; up0[1] = 1.0f; up0[2] = 0.0f;    // world +Y = gravity
+            right0[0] = 1.0f; right0[1] = 0.0f; right0[2] = 0.0f; // world +X
+        }
         out->x = -(omega[0] * up0[0] + omega[1] * up0[1] + omega[2] * up0[2]);
-        out->y =  (omega[0] * right0[0] + omega[1] * right0[1] + omega[2] * right0[2]);
+        out->y = -(omega[0] * right0[0] + omega[1] * right0[1] + omega[2] * right0[2]);
         break;
     }
 
     case GYRO_WORLD_SPACE: {
-        // Grip-independent. Horizontal = world yaw. Vertical = rotation in the
-        // world-vertical plane that sweeps the controller's forward vector up
-        // and down. Works however the controller is held (flat, vertical,
-        // tilted 45 deg, upside down).
+        // Grip-independent. Horizontal = world yaw (about gravity). Vertical =
+        // rotation that sweeps the controller's forward vector up/down in the
+        // world-vertical plane. Works for any grip: flat, vertical, tilted,
+        // upside down.
         out->x = -omega[1];
-        // Pitch axis in the horizontal world plane, perpendicular to forward:
-        //   P = normalize(cross(fwd, worldUp)) = normalize(-fwd.z, 0, fwd.x)
+        // Pitch axis: perpendicular to forward in the world horizontal plane.
+        // P = normalize(cross(fwd, worldUp)) = normalize(-fwd.z, 0, fwd.x)
+        //   (world +Y = up, so cross(fwd, {0,1,0}) → on the XZ plane).
         const float ax = -fwd[2];
         const float az =  fwd[0];
         const float al = std::sqrt(ax * ax + az * az);
         if (al > 0.05f) {
-            out->y = (omega[0] * ax + omega[2] * az) / al;
+            out->y = -(omega[0] * ax + omega[2] * az) / al;
         } else {
-            // Controller pointing straight up/down: the sweep axis is degenerate,
-            // fall back to the controller's local pitch.
-            out->y = omega[0];
+            // Controller pointing straight up/down: the sweep axis is degenerate.
+            // Fall back to controller-local pitch, same sign convention.
+            out->y = -omega[0];
         }
         break;
     }
 
     case GYRO_LASER_POINTER: {
         // Perspective projection of the controller's forward vector onto a
-        // virtual screen plane (VR-controller-pointer style). The pointer moves
-        // on the screen; its velocity becomes the aim rate.
-        const float depth = -fwd[2]; // forward along world -Z
+        // virtual screen plane (VR-controller-pointer style). Frame-to-frame
+        // screen deltas are ~500× smaller than deg/s gyro rates at 500 Hz
+        // (because the delta comes from forward-vector dp not angular rate).
+        // kPointerScale compensates for this discretization so the pointer
+        // velocity lands in the same stick-scaling range as other modes.
+        const float depth = -fwd[2]; // forward component along world -Z (toward screen)
         if (depth > 0.1f) {
             const float sx = fwd[0] / depth;
             const float sy = fwd[1] / depth;
@@ -126,7 +147,10 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
                 s->lp_sy = sy;
                 s->lp_valid = true;
             }
-            constexpr float kPointerScale = 100.0f; // screen units -> aim rate
+            // ~28 600 converts a 1-rad/s screen delta at 500 Hz into a ~100 deg/s
+            // equivalent (500 Hz * 57.3 deg/rad) so the per-report stick offset
+            // matches the magnitude other modes produce from direct gyro rates.
+            constexpr float kPointerScale = 28600.0f;
             out->x = (sx - s->lp_sx) * kPointerScale;
             out->y = (sy - s->lp_sy) * kPointerScale;
             s->lp_sx = sx;
