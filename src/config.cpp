@@ -207,9 +207,12 @@ void config_valid() {
     if (body->gyro_sens < 1 || body->gyro_sens > 100) body->gyro_sens = 50;
     if (body->gyro_axis > 1) body->gyro_axis = 0;
     if (body->gyro_invert > 3) body->gyro_invert = 0;
-    // Gyro aiming space (v1.19.0): 0=YAW is the default space. Fresh flash
-    // (0xFF) maps to YAW, which matches the old yaw horizontal-source default.
-    if (body->gyro_space > 6) body->gyro_space = 0;
+    // Gyro aiming space (v1.19.0): 3=LOCAL_SPACE is the default. It maps yaw
+    // to horizontal and pitch to vertical in the controller frame - the same
+    // axes the original artzox DS5Dongle used - so every rotation produces a
+    // strong stick response regardless of grip. Single-axis YAW (0) is still
+    // selectable but it drops pitch/roll motion entirely.
+    if (body->gyro_space > 6) body->gyro_space = 3;
     if (body->gyro_fusion > 100) body->gyro_fusion = 50;
     // Fresh flash reads 0xFFFF for int16 -> indistinguishable from a -1 LSB
     // calibration, so treat it as "no offset".
