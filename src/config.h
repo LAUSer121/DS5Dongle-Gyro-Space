@@ -133,7 +133,16 @@ struct __attribute__((packed)) Config_body {
     // game audio, drowning the adjustable derived part. This fader scales the
     // passthrough per profile: 100 = classic native Mix, 0 = derived+rumble only
     // (auto-haptics own the actuators; the ds5audio --map choice stops mattering).
+    // Mix-mode native passthrough level (v1.10.0)
     uint8_t  mix_native_level;  // [0-100] ch3/4 contribution in Mix (default 100)
+    // Native haptics compatibility (v1.10.x restore)
+    uint8_t  mix_native_filter;
+    // 0 = passthrough
+    // 1 = filtered
+    // Auto-haptics DSP source selector
+    uint8_t  ah_dsp_source;
+    // 0 = channel 0
+    // 1 = channel 1
     // Effect leak MAX BURST (v1.12.0): cap on how long one gate opening may last
     // (x5 ms, 0 = off/unlimited). Transients (gunshots, impacts) end within the
     // cap naturally; SUSTAINED content (dialogue, music) used to hold the gate
@@ -186,6 +195,7 @@ struct __attribute__((packed)) Config_body {
     // replaced by sensor fusion (gyro + accelerometer -> quaternion) followed by
     // an orientation-space conversion. gyro_axis above is retained for config
     // layout compatibility but is no longer used by the fusion pipeline.
+    // (The previously-dormant gyro_space_mode from master is superseded by this.)
     uint8_t  gyro_space;    // GyroMode: 0=YAW, 1=ROLL, 2=YAW_ROLL, 3=LOCAL_SPACE,
                             // 4=PLAYER_SPACE, 5=WORLD_SPACE, 6=LASER_POINTER
     uint8_t  gyro_fusion;   // [0-100] gravity-correction (Mahony) gain; 50=default
