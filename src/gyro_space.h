@@ -49,7 +49,9 @@ void gyro_space_tick(GyroSpace *s, bool active, const Quat &q);
 // Convert the fused orientation + body-frame angular velocity into aim-space
 // output for the configured mode. `gyro_degps` is used only where world-frame
 // rates matter; the quaternion is the authoritative state.
+// `gyro_axis` controls which body axis drives horizontal in GYRO_YAW mode
+// (0=yaw=body Z, 1=roll=body Y), matching the original artzox behaviour.
 void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro_degps[3],
-                       GyroOutput *out);
+                       uint8_t gyro_axis, GyroOutput *out);
 
 #endif // DS5_GYRO_SPACE_H
