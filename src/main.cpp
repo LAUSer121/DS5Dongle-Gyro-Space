@@ -236,19 +236,25 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (out.x > -0.5f && out.x < 0.5f) out.x = 0.0f;
     if (out.y > -0.5f && out.y < 0.5f) out.y = 0.0f;
 
-    // Scale: deg/s -> right-stick counts, TIME-based so aim speed is identical
-    // at any polling rate (250/500 Hz or real-time). sens 1-100.
-    // ~0.5 counts per (deg/s) per 100 sens per second -> sens 50, 100 deg/s
-    // gives ~2500 counts/s (full deflection in ~100 ms, a responsive FPS feel).
-    const float s = cfg.gyro_sens * 0.5f;
-    float dx = out.x * s * dt;
-    float dy = out.y * s * dt;
+    // Per-report stick offset (no dt multiplier). The stick position directly
+    // encodes camera angular velocity for the game — it is NOT a physical
+    // displacement to be integrated over time. Matching artzox behaviour:
+    //   dx = -raw_LSB * sens / 200      (where raw_LSB ≈ deg/s * 1638/100)
+    //   dx ≈ -deg/s * sens * 0.082      (our equivalent using deg/s from fusion)
+    //
+    // sens=50, 100°/s yaw → out.x ≈ -100 → dx ≈ -410 → stick pegged (same as
+    // artzox). Lower rates / lower sens produce proportionally smaller offsets.
+    // Float accumulators preserve sub-count remainder for very slow (<1°/s)
+    // movements so even tiny rotations produce a visible tick every few frames.
+    const float s = cfg.gyro_sens * 0.082f;
+    float dx = out.x * s;
+    float dy = out.y * s;
     if (cfg.gyro_invert & 1) dx = -dx;
     if (cfg.gyro_invert & 2) dy = -dy;
     g_gyro_acc_x += dx;
     g_gyro_acc_y += dy;
-    const int32_t ix = (int32_t)g_gyro_acc_x;   // float accumulator prevents
-    const int32_t iy = (int32_t)g_gyro_acc_y;   // fractional loss at high rates
+    const int32_t ix = (int32_t)g_gyro_acc_x;
+    const int32_t iy = (int32_t)g_gyro_acc_y;
     g_gyro_acc_x -= (float)ix;
     g_gyro_acc_y -= (float)iy;
     int32_t rx = (int32_t)d[2] + ix;
