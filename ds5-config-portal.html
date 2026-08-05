@@ -1841,13 +1841,20 @@ const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Acce
     <canvas id="gyroCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
     <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">Accelerometer (raw int16 LSB)</div>
     <canvas id="accelCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
+    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">Stick Output (deg/s ×100 · fields 0x70-0x71) <span style="color:#ff4d6d">—</span> X <span style="color:#4dc3ff">—</span> Y</div>
+    <canvas id="stickCurve" style="width:100%;height:120px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
   </div>
   <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">waiting for sensor stream…</div>
+  <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+    <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">● Record</button>
+    <span id="recStatus" style="font-size:12px;color:var(--sub)">Not recording</span>
+  </div>
 </div>`;
 
 const IMU_KEYS = [[0x6a,'gx','i16'],[0x6b,'gy','i16'],[0x6c,'gz','i16'],
-                  [0x6d,'ax','i16'],[0x6e,'ay','i16'],[0x6f,'az','i16']];
-const imuHist = { gx:[],gy:[],gz:[],ax:[],ay:[],az:[] };
+                  [0x6d,'ax','i16'],[0x6e,'ay','i16'],[0x6f,'az','i16'],
+                  [0x70,'sx','i16'],[0x71,'sy','i16']];
+const imuHist = { gx:[],gy:[],gz:[],ax:[],ay:[],az:[],sx:[],sy:[] };
 const IMU_MAX_PTS = 300; // ~30 s of history at 10 Hz
 let _imuBusy = false;
 
@@ -1908,12 +1915,61 @@ async function pollImu(){
     const got = await bulkReadFields(IMU_KEYS);
     if (got){ imuPush(got); drawImuCurve('gyroCurve', ['gx','gy','gz'], ['#ff4d6d','#4dc3ff','#ffd166']);
               drawImuCurve('accelCurve', ['ax','ay','az'], ['#06d6a0','#b388ff','#ff8fab']);
+              drawImuCurve('stickCurve', ['sx','sy'], ['#ff4d6d','#4dc3ff']);
               const el = document.getElementById('imuLive');
-              if (el) el.innerHTML = `GX=${got.gx} GY=${got.gy} GZ=${got.gz} · AX=${got.ax} AY=${got.ay} AZ=${got.az}`; }
+              if (el) el.innerHTML = `GX=${got.gx} GY=${got.gy} GZ=${got.gz} · AX=${got.ax} AY=${got.ay} AZ=${got.az} · Stick X=${got.sx} Y=${got.sy}`;
+              if (_recording) pushRecordFrame(got); }
   } catch(_){ /* transient HID contention: skip this tick */ }
   finally { _imuBusy = false; }
 }
 setInterval(()=>{ if(!_imuBusy && !saving && !slotsBusy && device && device.opened && window._tab === 'gyro' && document.getElementById('gyroCurve')) hidLocked(pollImu); }, 100);
+
+// ===== Gyro Debug Recording =====
+// Captures all IMU + stick data to a CSV file for offline analysis.
+// Press Record → move the controller → press Stop to download.
+let _recording = false;
+let _recordBuf = [];
+let _recordStart = 0;
+
+function pushRecordFrame(v){
+  const t = (Date.now() - _recordStart) / 1000.0;
+  _recordBuf.push({t, gx:v.gx, gy:v.gy, gz:v.gz, ax:v.ax, ay:v.ay, az:v.az, sx:v.sx, sy:v.sy});
+}
+
+function toggleRecord(){
+  if (!_recording){
+    _recording = true;
+    _recordBuf = [];
+    _recordStart = Date.now();
+    const btn = document.getElementById('recBtn');
+    if (btn){ btn.textContent = '\u23f9 Stop & Download'; btn.style.background = '#555'; }
+    const st = document.getElementById('recStatus');
+    if (st){ st.innerHTML = '<span style="color:#ff4d6d">● Recording…</span> move the controller, press Stop when done'; }
+  } else {
+    _recording = false;
+    downloadCSV();
+    const btn = document.getElementById('recBtn');
+    if (btn){ btn.textContent = '● Record'; btn.style.background = '#c41230'; }
+    const st = document.getElementById('recStatus');
+    if (st){ st.innerHTML = `Not recording (${_recordBuf.length} samples captured)`; }
+  }
+}
+
+function downloadCSV(){
+  if (!_recordBuf.length) return;
+  const hdr = 't_sec,gx_raw,gy_raw,gz_raw,ax_raw,ay_raw,az_raw,stick_x_dps100,stick_y_dps100\n';
+  let csv = hdr;
+  for (const f of _recordBuf){
+    csv += `${f.t.toFixed(3)},${f.gx},${f.gy},${f.gz},${f.ax},${f.ay},${f.az},${f.sx},${f.sy}\n`;
+  }
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gyro-debug-${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ===== Tabbed navigation =====
 // Sections keep their existing definitions; tabs are a RENDER-TIME partition, so
