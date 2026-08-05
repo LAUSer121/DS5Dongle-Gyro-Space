@@ -385,6 +385,10 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x6d: { extern volatile int16_t g_diag_imu_ax; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ax); }
         case 0x6e: { extern volatile int16_t g_diag_imu_ay; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ay); }
         case 0x6f: { extern volatile int16_t g_diag_imu_az; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_az); }
+        // Final gyro→stick output (fields 0x70-0x71): deg/s * 100, after
+        // space conversion and before accumulator truncation. Read-only.
+        case 0x70: { extern volatile int16_t g_diag_stick_x; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_x); }
+        case 0x71: { extern volatile int16_t g_diag_stick_y; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_y); }
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }
         case 0x37: { extern volatile uint16_t g_diag_ch01_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch01_peak); }
         case 0x38: { extern volatile uint16_t g_diag_ch23_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch23_peak); }
@@ -802,6 +806,8 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                         // i16 live IMU telemetry (fields 0x6a-0x6f)
                         case 0x6a: case 0x6b: case 0x6c: case 0x6d:
                         case 0x6e: case 0x6f: len = 2; break;
+                        // i16 stick output diagnostics (fields 0x70-0x71)
+                        case 0x70: case 0x71: len = 2; break;
                         default: len = 1; break;
                     }
                     if ((uint16_t)(out + 2 + len) > sizeof(buf)) { ok = false; break; }

@@ -139,6 +139,9 @@ volatile uint16_t g_diag_gyro = 0; // |gyro_x rate| diagnostic, field 0x35
 // while gyro aiming is off.
 volatile int16_t g_diag_imu_gx = 0, g_diag_imu_gy = 0, g_diag_imu_gz = 0;
 volatile int16_t g_diag_imu_ax = 0, g_diag_imu_ay = 0, g_diag_imu_az = 0;
+// Final gyro→stick outputs (fields 0x70/0x71) — mapped deg/s * 100, after
+// space conversion and sensitivity but before accumulator truncation.
+volatile int16_t g_diag_stick_x = 0, g_diag_stick_y = 0;
 
 static GyroFusion g_fusion;
 static GyroSpace  g_space;
@@ -226,9 +229,14 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
     // sensitivity be calibrated against real numbers (0 = inactive).
+    // Fields 0x70/0x71: final gyro→stick output (deg/s * 100) after space
+    // conversion but before accumulator truncation — for debugging mapping.
     { extern volatile uint16_t g_diag_gyro;
+      extern volatile int16_t g_diag_stick_x, g_diag_stick_y;
       float h = out.x < 0.0f ? -out.x : out.x;
-      g_diag_gyro = (h > 65535.0f) ? 65535 : (uint16_t)h; }
+      g_diag_gyro = (h > 65535.0f) ? 65535 : (uint16_t)h;
+      g_diag_stick_x = (int16_t)(out.x * 100.0f);
+      g_diag_stick_y = (int16_t)(out.y * 100.0f); }
 
     if (!active) return;
 
