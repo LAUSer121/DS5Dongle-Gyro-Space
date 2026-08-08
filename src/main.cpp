@@ -194,12 +194,24 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
         (float)rd16(19) * GYRO_DEG_PER_LSB,  // roll rate (deg/s)
         (float)rd16(17) * GYRO_DEG_PER_LSB,  // yaw rate (deg/s)
     };
-    const float accel[3] = {(float)rd16(21), (float)rd16(23), (float)rd16(25)};
+    float accel[3] = {(float)rd16(21), (float)rd16(23), (float)rd16(25)};
 
     // Static calibration offsets (raw LSB) - unit-to-unit zero-offset trimming.
     gyro[0] -= (float)cfg.gyro_cal_x * GYRO_DEG_PER_LSB;
     gyro[1] -= (float)cfg.gyro_cal_y * GYRO_DEG_PER_LSB;
     gyro[2] -= (float)cfg.gyro_cal_z * GYRO_DEG_PER_LSB;
+
+    // The DualSense IMU is mounted rotated 180 deg about Z relative to the body
+    // frame used by the aiming pipeline: sensor +X points left and +Y points
+    // back (raw pitch/roll report inverted signs; yaw matches). Rotate the
+    // sensor readings into the body frame (X=right, Y=forward, Z=up) so the
+    // fusion quaternion and every quaternion-based space mode see consistent
+    // axes. The raw body-frame modes (YAW/ROLL/LOCAL) are sign-corrected for
+    // body-frame input inside gyro_space.cpp, so their output is unchanged.
+    gyro[0] = -gyro[0];
+    gyro[1] = -gyro[1];
+    accel[0] = -accel[0];
+    accel[1] = -accel[1];
 
     // Timestep for the integration (clamped to sane bounds).
     const uint64_t now_us = time_us_64();
@@ -225,7 +237,7 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Orientation space conversion -> unified aim output (+x = right, +y = up).
     GyroOutput out;
-    gyro_space_output(&g_space, g_fusion.q, gyro, cfg.gyro_axis, &out);
+    gyro_space_output(&g_space, g_fusion.q, gyro, cfg.gyro_axis, dt, &out);
 
     // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
     // sensitivity be calibrated against real numbers (0 = inactive).
