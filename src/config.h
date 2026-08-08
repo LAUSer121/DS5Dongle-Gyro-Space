@@ -133,16 +133,29 @@ struct __attribute__((packed)) Config_body {
     // game audio, drowning the adjustable derived part. This fader scales the
     // passthrough per profile: 100 = classic native Mix, 0 = derived+rumble only
     // (auto-haptics own the actuators; the ds5audio --map choice stops mattering).
-    // Mix-mode native passthrough level (v1.10.0)
     uint8_t  mix_native_level;  // [0-100] ch3/4 contribution in Mix (default 100)
-    // Native haptics compatibility (v1.10.x restore)
+    // Mix-mode native passthrough FILTER (v1.18.14). The ch3/4 native
+    // contribution in Mix has always been low-passed at the auto-haptics LP
+    // cutoff. That exists for VoiceMeeter-style 4ch setups where ch3/4 mirror
+    // the full-band stereo and would leak dialogue to the actuators - but it
+    // also strips genuine native haptics, whose content usually sits well
+    // above an 80 Hz cutoff, so a native game mixed with auto-haptics lost
+    // exactly the effects the passthrough was meant to preserve.
+    //   1 = filtered (default, previous behaviour)
+    //   0 = raw      - pass ch3/4 through untouched, derived haptics still filtered
     uint8_t  mix_native_filter;
-    // 0 = passthrough
-    // 1 = filtered
-    // Auto-haptics DSP source selector
+    // Auto-haptics DSP SOURCE (v1.18.15). Which channel pair the auto-haptics
+    // DSP listens to. The speaker and the effect leak always stay on ch0/1, so
+    // moving the DSP to ch2/3 separates the two audio sources that previously
+    // had to share ch0/1: run ds5audio with --map rear (its capture goes to
+    // ch2/3 only) and ch0/1 then carries nothing but the game's own native
+    // speaker output. Auto-haptics is derived from the script feed while the
+    // speaker - and anything the effect leak passes - is purely the game's
+    // native effects. Set Native Passthrough to 0 in this configuration, since
+    // ch2/3 now carries the raw script audio rather than native haptics.
+    //   0 = ch0/1 (default, previous behaviour)
+    //   1 = ch2/3 (requires a 4-channel stream; falls back to ch0/1 on stereo)
     uint8_t  ah_dsp_source;
-    // 0 = channel 0
-    // 1 = channel 1
     // Effect leak MAX BURST (v1.12.0): cap on how long one gate opening may last
     // (x5 ms, 0 = off/unlimited). Transients (gunshots, impacts) end within the
     // cap naturally; SUSTAINED content (dialogue, music) used to hold the gate
