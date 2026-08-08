@@ -35,6 +35,25 @@
   .row:last-child { border-bottom:none; }
   .row .label { font-size:15px; }
   .row .hint { font-size:12px; color:var(--sub); margin-top:2px; }
+  /* Hover glossary for each setting. The marker sits after the label; the popover
+     is a CSS ::after so there is no per-field JS and nothing to wire into events.
+     No ancestor sets overflow:hidden, so the popover is never clipped. */
+  .desc { position:relative; display:inline-flex; align-items:center; justify-content:center;
+          width:15px; height:15px; margin-left:7px; border-radius:50%;
+          border:1px solid var(--sub); color:var(--sub);
+          font-size:10px; font-weight:700; font-style:normal; line-height:1;
+          cursor:help; vertical-align:middle; user-select:none; }
+  .desc:hover { border-color:var(--accent); color:var(--accent); }
+  .desc::after { content:attr(data-tip); position:absolute; left:50%; top:calc(100% + 9px);
+          transform:translateX(-50%); width:max-content; min-width:180px; max-width:300px;
+          background:var(--card); color:var(--text); border:1px solid var(--border);
+          border-radius:8px; padding:9px 11px; font-size:12.5px; font-weight:400; line-height:1.45;
+          text-align:left; white-space:normal; box-shadow:0 6px 22px rgba(0,0,0,.5);
+          opacity:0; visibility:hidden; transition:opacity .12s; pointer-events:none; z-index:60; }
+  .desc::before { content:''; position:absolute; left:50%; top:calc(100% + 3px);
+          transform:translateX(-50%); border:6px solid transparent; border-bottom-color:var(--border);
+          opacity:0; visibility:hidden; transition:opacity .12s; z-index:61; }
+  .desc:hover::after, .desc:hover::before { opacity:1; visibility:visible; }
   input[type=number], select { background:#11141a; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 10px; font-size:14px; width:150px; text-align:right; }
   select { text-align:left; }
   .btn { border:none; border-radius:8px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; }
@@ -215,6 +234,122 @@ const SECTIONS = [
 ];
 // Flat list derived from sections (for read/write loops).
 const FIELDS = SECTIONS.flatMap(s => s.fields);
+
+// Per-setting hover glossary, keyed by field key (NOT part of the FIELDS tuple,
+// so the coverage/render harness that parses those tuples is unaffected). A field
+// with no entry simply shows no marker. Wording mirrors the README Glossary.
+// Keep entries plain text - they are escaped into a data-tip attribute, but avoid
+// packing markup in. One or two sentences; note the sensible default where it helps.
+const DESCRIPTIONS = {
+  // Auto-Haptics & Speaker Effect Leak
+  auto_haptics_enable: "Whether audio-derived haptics are off, mixed with the game's native output, or fully replace it.",
+  auto_haptics_gain: "Overall strength of the audio-derived haptics.",
+  auto_haptics_smooth: "How gradually the derived haptics rise and fall - higher is smoother, lower is punchier.",
+  auto_haptics_gate: "The level below which derived haptics stay silent, so quiet audio doesn't buzz.",
+  mix_native_level: "How much of a game's own native haptics reaches the actuators in Mix mode.",
+  mix_native_filter: "Whether the native feed is low-passed before mixing, or passed through untouched.",
+  ah_dsp_source: "Which audio channels the derived haptics are generated from.",
+  auto_haptics_lowpass_hz: "The frequency above which audio is ignored when looking for bass to drive haptics.",
+  ah_xover_hz: "Splits the haptic band so each grip is driven by a different part of the spectrum.",
+  ah_low_gain: "Strength of the low half of the split - impacts and deep rumble.",
+  ah_high_gain: "Strength of the high half of the split - the music and voice range.",
+  auto_haptics_slope: "How sharply the low-pass cuts off the unwanted higher frequencies.",
+  auto_mute_replace: "Mutes the controller speaker automatically in Replace mode.",
+  auto_mute_mix: "Mutes the controller speaker automatically in Mix mode.",
+  lightbar_off: "Turns the lightbar off while Replace mode is active.",
+  rumble_haptic_strength: "Strength of a game's rumble re-created on the actuators when it can't be handed to native rumble.",
+  effect_leak_volume: "How loudly sharp one-off sounds leak to the speaker while it's muted.",
+  effect_leak_sensitivity: "How readily a sound counts as a sharp onset worth leaking.",
+  effect_leak_decay: "How quickly a leaked accent fades once the sound passes.",
+  effect_leak_attack: "How fast the leak opens when an onset is detected.",
+  effect_leak_output_hp_hz: "Trims low frequencies from the leaked sound to keep the accent crisp.",
+  effect_leak_hp_hz: "The low edge of the band the detector listens to for onsets.",
+  effect_leak_lp_hz: "The high edge of the leaked sound - the top of the leak window.",
+  effect_leak_max_burst: "Caps how long one leak lasts, turning a sustained sound into a short accent.",
+  effect_leak_hold: "Briefly keeps the leak open after a sound so it doesn't flutter.",
+  // General Haptics & Audio
+  haptics_gain: "Boosts the strength of a game's own native haptics.",
+  speaker_volume: "Volume of the controller's built-in speaker.",
+  headset_volume: "Volume of a headset plugged into the controller.",
+  speaker_gain: "Extra pre-amplification applied to the speaker signal.",
+  sync_spk_headset_volume: "Ties speaker and headset volume together so one control moves both.",
+  lock_volume: "Prevents the controller's volume buttons from changing the level.",
+  disable_mic: "Turns the controller microphone off.",
+  disable_speaker: "Turns the controller's built-in speaker off.",
+  // Device & Connection
+  controller_mode: "Which controller model the dongle presents itself as to the PC.",
+  polling_rate_mode: "How often the controller reports to the PC - higher is more responsive.",
+  audio_buffer_length: "Audio buffering size - lower is lower-latency, higher is steadier.",
+  inactive_time: "Idle minutes before the controller disconnects to save battery.",
+  disable_inactive_disconnect: "Keeps the controller connected even when left idle.",
+  disable_pico_led: "Turns off the Pico board's on-board LED.",
+  enable_wake: "Lets a PS-button press wake the PC from sleep (set per profile).",
+  // Native Haptics Filter
+  haptics_aa: "How much the native haptics are smoothed to remove digital grit.",
+  // Rumble to Trigger
+  r2t_mode: "Turns a game's rumble into trigger vibration, and on which trigger(s).",
+  r2t_on_press: "Only vibrate the trigger while it is actually being pressed.",
+  r2t_strength: "Strength of the rumble-driven trigger vibration.",
+  r2t_frequency: "Frequency of the trigger vibration - lower feels heavier.",
+  synth_force: "Forces trigger effects on even when a game or app sends its own.",
+  // Adaptive Triggers - R2
+  at_mode: "When R2's resistance is active - off, always, or gated by another input.",
+  at_strength: "How hard the R2 resistance pushes back.",
+  at_threshold: "How far the gating input must be pressed to arm R2's resistance.",
+  at_start_pos: "The trigger position where R2's resistance begins.",
+  at_shape: "The shape of R2's resistance - flat, ramping, a detent, or a breakable wall.",
+  at_strength_b: "The end or wall strength used by the ramp and detent shapes.",
+  at_detent_pos: "The trigger position of the detent or break point.",
+  at_deadzone: "Ignores the first part of the pull so the game only registers a press past this zone.",
+  at_pushback: "Strength of a recoil kick fired at the break point (0 = no kick).",
+  at_kick_style: "Whether the recoil kick is a buzz or a mechanical push-back.",
+  at_pushback_freq: "Frequency of the kick's thump - lower feels heavier.",
+  at_pushback_src: "What the recoil kick is driven from (shared by both triggers).",
+  ce_r2_enable: "Enables a captured custom effect on R2 (assigned in the monitor below).",
+  ce_r2_condition: "Whether the custom effect plays while held, on press, or on release.",
+  ce_r2_thresh: "The engage point, or for while-held walls the zone where the wall re-arms.",
+  ce_r2_rate: "How fast a two-state vibration effect toggles between its states.",
+  ce_r2_state_count: "How many states make up the custom effect (set automatically).",
+  ce_r2_yield: "Who owns R2 when gated - the custom effect or the resistance sliders.",
+  // Adaptive Triggers - L2
+  at_l2_mode: "When L2's resistance is active - off, always, or gated by another input.",
+  at_l2_strength: "How hard the L2 resistance pushes back.",
+  at_l2_threshold: "How far the gating input must be pressed to arm L2's resistance.",
+  at_l2_start_pos: "The trigger position where L2's resistance begins.",
+  at_l2_shape: "The shape of L2's resistance - flat, ramping, a detent, or a breakable wall.",
+  at_l2_strength_b: "The end or wall strength used by the ramp and detent shapes.",
+  at_l2_detent_pos: "The trigger position of the detent or break point.",
+  at_l2_deadzone: "Ignores the first part of the pull so the game only registers a press past this zone.",
+  at_l2_pushback: "Strength of a recoil kick fired at the break point (0 = no kick).",
+  at_l2_kick_style: "Whether the recoil kick is a buzz or a mechanical push-back.",
+  at_l2_pushback_freq: "Frequency of the kick's thump - lower feels heavier.",
+  ce_l2_enable: "Enables a captured custom effect on L2 (assigned in the monitor below).",
+  ce_l2_condition: "Whether the custom effect plays while held, on press, or on release.",
+  ce_l2_thresh: "The engage point, or for while-held walls the zone where the wall re-arms.",
+  ce_l2_rate: "How fast a two-state vibration effect toggles between its states.",
+  ce_l2_state_count: "How many states make up the custom effect (set automatically).",
+  ce_l2_yield: "Who owns L2 when gated - the custom effect or the resistance sliders.",
+  // Gyro Aiming
+  gyro_mode: "When gyro aiming is active - off, always, or only while a chosen button is held.",
+  gyro_sens: "How much aim movement the gyro produces.",
+  gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
+  gyro_invert: "Flips the gyro's horizontal and/or vertical direction.",
+  // Advanced - BT Latency
+  bt_flush_timeout: "Caps how long Bluetooth batches reports - lower cuts latency but can drop packets.",
+  bt_qos_latency_us: "Requests a Bluetooth latency target - aggressive is snappier but less reliable.",
+};
+
+// Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
+// HARD RULE #1: unescaped quotes close the attribute and silently break markup.
+function escAttr(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+                  .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// The marker HTML for a field key, or '' if the field has no description.
+function descMarker(key){
+  const d = DESCRIPTIONS[key];
+  return d ? `<span class="desc" data-tip="${escAttr(d)}" aria-label="${escAttr(d)}">i</span>` : '';
+}
 
 let device = null;
 let saving = false; // suspends background diagnostic polling during save/reconnect
@@ -497,15 +632,29 @@ async function readField(fieldId, type){
   throw new Error('field 0x'+fieldId.toString(16)+' read mismatch after retries');
 }
 
+// Post-wake connect robustness: the fast bulk read can miss a packet while the
+// BT link is still settling after a host wake. Retry it a few times with a short
+// backoff before dropping to the slow per-field path.
+const BULK_READ_TRIES = 3;
+const BULK_READ_BACKOFF_MS = 150;
 async function readAll(){
   const prev = {...config};
-  // Bulk fast path (fw >= 1.4.0): whole config in a few packets.
+  // Bulk fast path (fw >= 1.4.0): whole config in a few packets. Retry a few
+  // times before falling back — right after a host wake the link is settling and
+  // the first attempt often returns null; a short-backoff retry usually lands it.
   if (bulkSupported !== false){
-    try {
-      const got = await bulkReadFields(FIELDS);
-      if (got){ bulkSupported = true; config = got; savedSnapshot = {...got}; return; }
-    } catch(_){}
-    if (bulkSupported === null) bulkSupported = false; // old firmware: stop probing
+    let got = null;
+    for (let attempt = 0; attempt < BULK_READ_TRIES; attempt++){
+      try { got = await bulkReadFields(FIELDS); } catch(_){ got = null; }
+      if (got) break;
+      if (attempt < BULK_READ_TRIES - 1) await sleep(BULK_READ_BACKOFF_MS);
+    }
+    if (got){ bulkSupported = true; config = got; savedSnapshot = {...got}; return; }
+    // Bulk still didn't complete. Do NOT latch bulkSupported=false here: a
+    // wake-time link wobble makes bulk miss too, and disabling the fast path on a
+    // transient miss pinned the whole session onto the slow per-field path (which
+    // is why a close+reopen, once the link had settled, loaded faster). The real
+    // decision is made after the per-field pass below, from link health.
   }
   const fresh = {};
   let failures = 0;
@@ -530,6 +679,12 @@ async function readAll(){
     }
     if (!ok) toast('Some values could not be read — try Re-read', true);
   }
+  // Decide bulk support from link health: if the per-field pass read the whole
+  // config cleanly (healthy link) yet bulk had failed, bulk is genuinely
+  // unavailable (pre-1.4.0 firmware) -> stop probing it. If per-field ALSO
+  // dropped reads, the link was the problem, not bulk -> leave bulkSupported
+  // unset so the next (settled) connect re-probes the fast path.
+  if (bulkSupported === null && failures === 0) bulkSupported = false;
   config = fresh;
 }
 
@@ -1919,7 +2074,7 @@ function fieldRowHTML(f){
   let html = '';
   const _d = SUB_DIVIDERS[key];
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
-  html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
+  html += `<div class="row"><div><div class="label">${label}${descMarker(key)}</div></div><div>`;
   if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
       <option value="0" ${config[key]==0?'selected':''}>No</option>
@@ -1990,7 +2145,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.17</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.20</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>

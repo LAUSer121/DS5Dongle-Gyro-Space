@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.20] — 2026-08-09
+
+### Fixed
+- **The configuration portal loaded slowly after waking the PC, and stayed
+  slow until it was closed and reopened.** On connect the portal reads the
+  whole configuration in one bulk transfer, falling back to reading every
+  field one at a time if that fails. Right after a host wake the Bluetooth
+  link between the controller and dongle is still settling, so the bulk read
+  dropped a packet and returned nothing — and the portal took that transient
+  miss as "this firmware has no bulk support" and disabled the fast path for
+  the rest of the session, leaving every read on the slow per-field route.
+  Closing and reopening reset the flag, and by then the link had settled,
+  which is exactly why a reopen loaded quickly. The bulk read is now retried a
+  few times with a short backoff so it lands once the link is ready, and a
+  failed read no longer disables the fast path unless a full per-field pass
+  shows the link is healthy and bulk genuinely unavailable (pre-1.4.0
+  firmware). Connects after wake are fast on the first attempt; the healthy
+  case is unchanged, since a bulk read that succeeds immediately adds no delay.
+
+## [1.18.19] — 2026-08-09
+
+### Added
+- **Hover descriptions for every setting in the configuration portal.** Each
+  setting now shows a small "i" marker; hovering it brings up a one-line,
+  plain-language description of what that setting does, in the spirit of the
+  README glossary. Every setting is covered, across all tabs, including the
+  two-column Adaptive Triggers layout. It is implemented as plain markup and
+  CSS with no per-field scripting, so it adds nothing to portal load time or
+  runtime and there is nothing new to wire up.
+
 ## [1.18.18] — 2026-08-04
 ### Fixed
 - slot-activate script fixed to load slots 17-24, was broken and only loaded 1-16 with the previous release,
