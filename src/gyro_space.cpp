@@ -57,10 +57,6 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
     float omega[3];
     quat_rotate(q, gyro, omega);
 
-    // World-frame direction vectors of the controller.
-    float fwd[3];
-    quat_rotate(q, kAxisFwd, fwd);
-
     switch (s->mode) {
     case GYRO_YAW: {
         // Traditional mode (matches artzox original). gyro_axis=0 selects yaw
@@ -80,9 +76,14 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
         break;
 
     case GYRO_YAW_ROLL:
-        // World-frame: yaw (about world up) -> X, roll (about controller forward) -> Y.
-        out->x = -omega[1];
-        out->y = -(omega[0] * fwd[0] + omega[1] * fwd[1] + omega[2] * fwd[2]);
+        // Steam-style "Yaw + Roll": the controller's own yaw (about body Z,
+        // the face-normal/up axis) drives horizontal, and roll (about body Y,
+        // the forward axis) drives vertical. Both are raw body-frame rates, so
+        // response is full-strength and grip-independent - projecting yaw onto
+        // the world-up axis made horizontal depend on how the controller was
+        // tilted and leaked roll/pitch into it.
+        out->x = -gyro[2];
+        out->y = -gyro[1];
         break;
 
     case GYRO_LOCAL_SPACE:
