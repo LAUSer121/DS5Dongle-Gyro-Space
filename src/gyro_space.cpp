@@ -75,16 +75,19 @@ void gyro_space_output(GyroSpace *s, const Quat &q, const float gyro[3],
         out->y =  gyro[0];
         break;
 
-    case GYRO_YAW_ROLL:
-        // Steam-style "Yaw + Roll": the controller's own yaw (about body Z,
-        // the face-normal/up axis) drives horizontal, and roll (about body Y,
-        // the forward axis) drives vertical. Both are raw body-frame rates, so
-        // response is full-strength and grip-independent - projecting yaw onto
-        // the world-up axis made horizontal depend on how the controller was
-        // tilted and leaked roll/pitch into it.
-        out->x = -gyro[2];
-        out->y = -gyro[1];
+    case GYRO_YAW_ROLL: {
+        // Steam "Yaw + Roll" (GamepadMotionHelpers / Steam Deck 2023 rework):
+        // vertical = local pitch (as usual), horizontal = rotation about the
+        // gravity axis driven by local yaw AND roll. Grip-independent: flat
+        // grip reduces to raw yaw; tilted, roll contributes so horizontal
+        // aiming still tracks the world horizon instead of disappearing.
+        float up_body[3]; // world up (gravity) axis, expressed in body frame
+        quat_rotate(quat_conjugate(q), kWorldUp, up_body);
+        const float world_yaw = up_body[2] * gyro[2] + up_body[1] * gyro[1];
+        out->x = -world_yaw;
+        out->y =  gyro[0];
         break;
+    }
 
     case GYRO_LOCAL_SPACE:
         // Raw body-frame: yaw -> X, pitch -> Y. Signs match artzox exactly
