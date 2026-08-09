@@ -384,6 +384,7 @@ surprise; apply them in the portal and save.)
 | Disable Speaker | No |
 
 **Device & Connection**
+
 | Setting | Value |
 |---|---|
 | Polling Rate | Real-time |
