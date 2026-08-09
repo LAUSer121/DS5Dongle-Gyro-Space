@@ -36,7 +36,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 21;
+constexpr uint8_t FW_VER_PATCH = 24;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -703,6 +703,23 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[18] = d.last_wake_host_suspended;
             buf[19] = wake_host_is_suspended() ? 1 : 0;
             feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x67: {
+            // Read the currently-loaded profile (RAM only, set by slot_activate /
+            // slot_save - so it reflects loads from the portal AND the automation).
+            // Reply: 0x66 0x67 status active_slot(0xFF=none/unknown) edited name[16]
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x67; buf[2] = 0x00;
+            uint8_t slot; bool edited; uint8_t nm[SLOT_NAME_LEN];
+            active_profile_get(slot, edited, nm);   // slot=0xFF when nothing tracked
+            buf[3] = slot;
+            buf[4] = edited ? 1 : 0;
+            memcpy(buf + 5, nm, SLOT_NAME_LEN);
+            // Reply on 0x81 (the poll/GET buffer), NOT 0x84: this read is polled
+            // once a second, and 0x84 is reserved for slot commands (activate/save/
+            // info) precisely so a periodic poll can't consume their replies.
+            feature_data[0x81].assign(buf, buf + sizeof(buf));
             break;
         }
 

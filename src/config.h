@@ -239,6 +239,10 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current c
 uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage);
 bool slot_info(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], uint8_t &valid, uint8_t &cfg_version);
 bool slot_load_body(uint8_t idx, Config_body &out);
+// Currently-loaded profile (RAM only): slot_out=0xFF + returns false when nothing
+// is tracked; otherwise fills the source slot name and sets edited when the live
+// config has diverged from the slot as loaded.
+bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SLOT_NAME_LEN]);
 Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();

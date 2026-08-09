@@ -417,6 +417,56 @@ static bool slot_read(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], Config_body 
     return slot_read_ptr(p, name_out, body_out);
 }
 
+// --- Currently-loaded profile tracking (RAM only, v1.18.22) -----------------
+// slot_activate() and slot_save() below are the ONLY paths that make a slot the
+// live config, and BOTH the portal and the Playnite automation reach the device
+// through slot_activate() (HID cmd 0x09) - so recording the slot here means the
+// dongle knows which profile is live no matter who loaded it. RAM-only by design:
+// after a power cycle this reads back "unknown" until the next activation (a
+// config field would be wrong - it would get saved *into* every slot). The
+// snapshot is the config body as loaded; active_profile_get() reports "edited"
+// by comparing the live body to it, so any later field change flips the flag
+// without needing a hook on every write path.
+static int16_t     g_active_slot = -1;         // -1 = unknown / not from a slot
+static Config_body g_active_snapshot;          // config body as it was loaded
+static bool        g_active_snapshot_valid = false;
+
+static void active_profile_set(uint8_t idx) {
+    g_active_slot           = (int16_t)idx;
+    g_active_snapshot       = config.body;     // post-clamp, as it will be compared
+    g_active_snapshot_valid = true;
+}
+
+// slot_out = 0xFF and returns false when nothing is being tracked (fresh boot or
+// a config not loaded from a slot). Otherwise fills the source slot's name and
+// sets edited when the live config has diverged from the loaded snapshot.
+bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SLOT_NAME_LEN]) {
+    if (g_active_slot < 0 || !g_active_snapshot_valid) {
+        slot_out = 0xFF;
+        edited_out = false;
+        memset(name_out, 0, SLOT_NAME_LEN);
+        return false;
+    }
+    slot_out   = (uint8_t)g_active_slot;
+    // Compare the live config to the snapshot to decide "edited", but IGNORE the
+    // three fields the firmware syncs from hardware at runtime - speaker_volume,
+    // headset_volume and speaker_gain (state_mgr.cpp). Otherwise a hardware volume
+    // change, or the audio re-sync the host performs right after a USB
+    // re-enumeration, rewrites those fields and masquerades as a user edit. Copy
+    // both sides and neutralise those fields before the compare.
+    Config_body a = config.body;
+    Config_body b = g_active_snapshot;
+    a.speaker_volume = b.speaker_volume;
+    a.headset_volume = b.headset_volume;
+    a.speaker_gain   = b.speaker_gain;
+    edited_out = (memcmp(&a, &b, sizeof(Config_body)) != 0);
+    Config_body bd;
+    if (!slot_read((uint8_t)g_active_slot, name_out, bd)) {
+        memset(name_out, 0, SLOT_NAME_LEN);    // slot since deleted/overwritten
+    }
+    return true;
+}
+
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     if (idx >= SLOT_COUNT) return false;
     const uint32_t sec_off = slot_sector_offset(idx / SLOTS_PER_SECTOR);
@@ -438,7 +488,9 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
         return false;
     }
     uint8_t nm[SLOT_NAME_LEN]; Config_body bd;
-    return slot_read(idx, nm, bd);
+    if (!slot_read(idx, nm, bd)) return false;
+    active_profile_set(idx);   // the live config now IS this slot
+    return true;
 }
 
 uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
@@ -462,6 +514,7 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    (o.ps_shortcut_enabled  != n.ps_shortcut_enabled);
     config.body = slot_body;
     config_valid(); // clamp anything out of range (e.g. slot saved by older fw)
+    active_profile_set(idx); // record the loaded slot (RAM) for the portal readout
     // Persist. flash_safe_execute parks core1 with a 1 s timeout; at game
     // launch core1 is at its busiest (BT stream + haptics), which is exactly
     // when a lockout timeout can trip - and never during calm portal tests.
