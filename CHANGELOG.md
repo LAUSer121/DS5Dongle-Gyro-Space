@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.21] — 2026-08-09
+
+### Added
+- **Right-stick inversion.** A new "Right Stick" setting inverts the physical
+  right stick's X axis, Y axis, or both by rewriting the stick values in the
+  input report the PC sees — so it works in any game with no PC-side software,
+  and independently of gyro aiming (it applies whether or not gyro is on).
+  Useful for inverted-look setups, or games that only offer inversion on one
+  axis. New config field `rstick_invert` (id 0x65), appended at the struct tail
+  so existing configs and slots are untouched. Contributed by AppendinoCom
+  (PR #4) — thank you!
+
+### Changed
+- **Gyro invert is now two checkboxes** ("Invert X" / "Invert Y") instead of a
+  0–3 number field. It is the same stored byte and the same effect — both boxes
+  ticked equals the old "3" — so existing profiles carry over unchanged; it is
+  simply easier to set. The Gyro tab is renamed "Gyro / Stick" to cover both
+  controls, and both invert settings now carry hover descriptions. Also from
+  AppendinoCom's PR #4.
+
+### Notes
+- First firmware change since 1.18.17 (1.18.18–1.18.20 were portal-only), so the
+  version the portal reports now matches the release number again. This release
+  requires reflashing: `ds5-v1.18.21.uf2` (Pico 2 W) or
+  `ds5-v1.18.21-waveshare.uf2` (Waveshare RP2350B-Plus-W).
+
 ## [1.18.20] — 2026-08-09
 
 ### Fixed

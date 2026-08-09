@@ -124,7 +124,8 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 
 // Field definitions: [field_id, key, type('u8'|'u16'|'f32'), label, kind, opts]
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
-// kind: 'number' | 'select' | 'bool' ; type: 'u8' | 'u16' | 'f32'
+// kind: 'number' | 'select' | 'bool' | 'bits' ; type: 'u8' | 'u16' | 'f32'
+// ('bits' = one checkbox per bit of a bitmask byte; opts is the array of bit labels)
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
@@ -225,7 +226,10 @@ const SECTIONS = [
     [0x2f,'gyro_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Only while L2 (aim) held'],[5,'Only while R2 (fire) held'],[6,'Only while L1 held'],[7,'Only while R1 held'],[3,'Only while touchpad touched'],[4,'Always on — touch touchpad to pause (ratchet)']]],
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
     [0x31,'gyro_axis','u8','Horizontal source','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
-    [0x32,'gyro_invert','u8','Invert axes (0=none, 1=X, 2=Y, 3=both)','number',[0,3]],
+    [0x32,'gyro_invert','u8','Invert gyro aim','bits',['X (horizontal)','Y (vertical)']],
+  ]},
+  { title: 'Right Stick', fields: [
+    [0x65,'rstick_invert','u8','Invert right stick','bits',['X (horizontal)','Y (vertical)']],
   ]},
   { title: 'Advanced — BT Latency (experimental)', fields: [
     [0x1b,'bt_flush_timeout','u16','BT Flush Timeout (0=off)','select',{0:'Off (reliable)',4:'~2.5ms (low latency)',6:'~3.75ms',10:'~6.25ms',16:'~10ms'}],
@@ -333,7 +337,8 @@ const DESCRIPTIONS = {
   gyro_mode: "When gyro aiming is active - off, always, or only while a chosen button is held.",
   gyro_sens: "How much aim movement the gyro produces.",
   gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
-  gyro_invert: "Flips the gyro's horizontal and/or vertical direction.",
+  gyro_invert: "Flips the direction gyro aiming moves - X, Y, or both. Only affects gyro, when it's on.",
+  rstick_invert: "Inverts the physical right stick itself - X, Y, or both - in any game, separate from gyro.",
   // Advanced - BT Latency
   bt_flush_timeout: "Caps how long Bluetooth batches reports - lower cuts latency but can drop packets.",
   bt_qos_latency_us: "Requests a Bluetooth latency target - aggressive is snappier but less reliable.",
@@ -1982,6 +1987,7 @@ const SECTION_TAB = {
   'General Haptics & Audio':'haptics',
   'Native Haptics Filter':'haptics',
   'Gyro Aiming':'gyro',
+  'Right Stick':'gyro',
   'Device & Connection':'device',
   'Advanced — BT Latency (experimental)':'device',
 };
@@ -1994,7 +2000,7 @@ const TABS = [
   {id:'device',   label:'Device'},
   {id:'haptics',  label:'Haptics'},
   {id:'triggers', label:'Triggers'},
-  {id:'gyro',     label:'Gyro'},
+  {id:'gyro',     label:'Gyro / Stick'},
   {id:'slots',    label:'Slots'},
 ];
 window._tab = window._tab || 'triggers';
@@ -2075,7 +2081,19 @@ function fieldRowHTML(f){
   const _d = SUB_DIVIDERS[key];
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
   html += `<div class="row"><div><div class="label">${label}${descMarker(key)}</div></div><div>`;
-  if(kind==='bool'){
+  if(kind==='bits'){
+    // One checkbox per bit of a bitmask byte (e.g. gyro/right-stick X & Y invert).
+    // Each toggles its own bit of config[key] and leaves the others untouched, so
+    // the single stored byte round-trips through the normal read/save loop.
+    const cur = +config[key] || 0;
+    html += `<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end;align-items:center">`;
+    (opts||[]).forEach((lbl,i) => {
+      const mask = 1 << i;
+      html += `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">`
+            + `<input type="checkbox" ${(cur&mask)?'checked':''} onchange="config['${key}']=((+config['${key}']||0)&~${mask})|(this.checked?${mask}:0);(window._dirty=window._dirty||{})['${key}']=1" style="width:auto;margin:0"> ${lbl}</label>`;
+    });
+    html += `</div>`;
+  } else if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
       <option value="0" ${config[key]==0?'selected':''}>No</option>
       <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
@@ -2145,7 +2163,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.20</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.21</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
