@@ -344,6 +344,7 @@ error. (The firmware does not ship with these as defaults, so there's no flashin
 surprise; apply them in the portal and save.)
 
 **Auto-Haptics & Speaker Effect Leak**
+
 | Setting | Value |
 |---|---|
 | Mode | Off (switch to Mix or Replace per game) |
@@ -370,6 +371,7 @@ surprise; apply them in the portal and save.)
 | Effect Leak Detection Band (Hz) | 2500 |
 
 **General Haptics & Audio**
+
 | Setting | Value |
 |---|---|
 | Native Haptics Gain | 1.00 |
@@ -392,6 +394,7 @@ surprise; apply them in the portal and save.)
 | Wake PC on PS Button | On for auto-haptics profiles, off for native games |
 
 **Advanced — BT Latency (experimental)**
+
 | Setting | Value |
 |---|---|
 | BT Flush Timeout | Off (reliable) |
@@ -415,6 +418,7 @@ Notes on the suggested values:
 The portal groups settings into the sections below.
 
 ### Auto-Haptics & Speaker Effect Leak
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Mode | Off / Mix / Replace | Off | Off = native/rumble passthrough; Mix = native + derived; Replace = derived only |
