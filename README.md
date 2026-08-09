@@ -939,6 +939,7 @@ trigger sections, so a wall at zones 2-3 sits where the same numbers put it in a
 captured effect.
 
 ### Trigger effects — shared
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
