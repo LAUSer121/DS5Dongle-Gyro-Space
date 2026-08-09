@@ -178,6 +178,7 @@ void config_valid() {
     if (body->mix_native_level > 100) body->mix_native_level = 100; // 0 is valid (mute passthrough)
     if (body->mix_native_filter > 1) body->mix_native_filter = 1;  // fresh flash (0xff) -> filtered, as before
     if (body->ah_dsp_source > 1) body->ah_dsp_source = 0;         // fresh flash (0xff) -> ch0/1, as before
+    if (body->rstick_invert > 3) body->rstick_invert = 0;        // fresh flash (0xff) -> no inversion
     if (body->effect_leak_max_burst > 100) body->effect_leak_max_burst = 0; // 0=off; covers fresh-flash 0xFF
     // Custom captured-effect action (v1.14.0): validate scalar controls; state
     // bytes are raw (any value valid). Fresh-flash 0xFF -> safe defaults.
