@@ -11,7 +11,7 @@ All notable changes to this project are documented here.
   and independently of gyro aiming (it applies whether or not gyro is on).
   Useful for inverted-look setups, or games that only offer inversion on one
   axis. New config field `rstick_invert` (id 0x65), appended at the struct tail
-  so existing configs and slots are untouched. Contributed by @AppendinoCom
+  so existing configs and slots are untouched. Contributed by AppendinoCom
   (PR #4) — thank you!
 
 ### Changed
