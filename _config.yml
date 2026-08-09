@@ -7,7 +7,7 @@
 #
 # The title and description below also become the page <title> and meta
 # description, which is what search engines index.
-theme: jekyll-theme-slate
+theme: jekyll-theme-hacker
 title: DS5Dongle — Audio Auto-Haptics Edition
 description: >-
   Wireless DualSense-to-PC bridge on a Raspberry Pi Pico 2 W: audio-derived
