@@ -1,29 +1,28 @@
 ---
 ---
 
-@import "{{ site.theme }}";
+@import "jekyll-theme-midnight";
 
-/* Custom Table Fixes for Midnight Theme */
+/* Custom Table Fixes */
 table {
   width: 100%;
   border-collapse: collapse;
   margin: 20px 0;
-  display: block;
-  overflow-x: auto; /* Adds horizontal scrolling on small screens */
+  display: table !important; /* Forces display as a table */
 }
 
 th, td {
-  border: 1px solid #333;
+  border: 1px solid #444 !important;
   padding: 8px 12px;
   text-align: left;
 }
 
 th {
-  background-color: #222;
-  color: #fff;
+  background-color: #222 !important;
+  color: #fff !important;
   font-weight: bold;
 }
 
 tr:nth-child(even) {
-  background-color: #1a1a1a;
+  background-color: #111 !important;
 }
