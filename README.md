@@ -979,6 +979,7 @@ it composes with gyro aiming — the stick is inverted first, then the gyro delt
 added on top with its own invert. *(New in 1.18.21.)*
 
 ### Device & Connection
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Polling Rate | 250 / 500 / Real-time | Real-time | USB report rate |
@@ -989,6 +990,7 @@ added on top with its own invert. *(New in 1.18.21.)*
 | Wake PC on PS Button | on/off | off | Assert USB remote wakeup on PS press to wake the host |
 
 ### Advanced — BT Latency (experimental)
+
 | Setting | Default | Notes |
 |---|---|---|
 | BT Flush Timeout | Off | Drop stale packets instead of retransmitting. No clear benefit on a strong link; left in for tinkering. |
