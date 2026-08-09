@@ -2,7 +2,7 @@
 
 **Version 1.18.21**
 
-▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle/ds5-config-portal.html)** — the config portal runs as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in. (Goes live once GitHub Pages is enabled for this repo.)
+▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle/ds5-config-portal.html)** — the config portal cam run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in. (Goes live once GitHub Pages is enabled for this repo.)
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
