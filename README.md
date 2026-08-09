@@ -570,6 +570,7 @@ the high-frequency content and opens the speaker only when the level jumps sharp
 is high-passed to protect the small speaker from low-frequency popping.
 
 ### General Haptics & Audio
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Native Haptics Gain | 1.0–2.0 | 1.0 | Multiplier on native haptic channels |
