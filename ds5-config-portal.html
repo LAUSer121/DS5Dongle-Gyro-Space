@@ -420,6 +420,7 @@ async function connect(){
       const cfgv = await readField(0x00,'u16');
       if (maj !== null && maj !== undefined) fwVer = {maj,min,pat,cfgv};
     }catch(e){ /* pre-1.0.5 firmware: no version fields */ }
+    await readLoadedProfile();   // populate the loaded-profile bar before first render
     render();
   }catch(e){ toast('Connect failed: '+e.message,true); }
 }
@@ -492,6 +493,38 @@ async function slotInfo(idx){
   if (!r || r[2] !== 0x00) return null; // old firmware or bad slot index
   const name = new TextDecoder().decode(r.slice(6, 22)).replace(/\0+$/,'').trim();
   return { valid: r[4] === 1, cfgVersion: r[5], name };
+}
+
+// Currently-loaded profile (fw 1.18.22+): the dongle tracks which slot is live
+// in RAM, set whenever a slot is activated by the portal OR the automation, so
+// this reflects background profile switches once the portal re-reads (on connect
+// and on the 1 s poll). Reply: 0x66 0x67 status slot(0xFF=none) edited name[16].
+async function readLoadedProfile(){
+  try {
+    await sendCmd(0x67, []);
+    const r = await readCmdReplyOn(GET_REPORT, 0x67, undefined, 8);
+    if (!r || r[2] !== 0x00) return; // pre-1.18.22 firmware: leave the bar as-is
+    const slot = r[3];
+    const edited = r[4] === 1;
+    let name = '';
+    if (slot !== 0xFF) name = new TextDecoder().decode(r.slice(5, 21)).replace(/\0+$/,'').trim();
+    window._loadedProfile = { slot, edited, name };
+    const el = document.getElementById('profilebar');
+    if (el) el.innerHTML = profileBarInner();
+  } catch(_){ /* mid-flash stall etc.; next poll retries */ }
+}
+function profileBarInner(){
+  const p = window._loadedProfile;
+  if (!p || p.slot === 0xFF || p.slot == null)
+    return `<span style="color:var(--sub)">Loaded profile:</span> <span style="color:var(--sub)">—&nbsp; not from a saved slot</span>`;
+  const name = (p.name && p.name.length) ? escAttr(p.name) : `slot ${p.slot + 1}`;
+  return `<span style="color:var(--sub)">Loaded profile:</span> <b>${name}</b>`
+       + (p.edited ? ` <span style="color:#e0a030">(edited)</span>` : '');
+}
+function profileBarHTML(){
+  // Rendered right under the connect status bar so it is visible on every tab,
+  // not buried in the Device-tab diagnostics. The 1 s poll updates it in place.
+  return `<div class="status-bar" id="profilebar" style="margin-top:-10px;padding:9px 14px;font-size:13px">${profileBarInner()}</div>`;
 }
 async function slotSave(idx, name){
   const bytes = Array.from(new TextEncoder().encode((name||'').slice(0,16)));
@@ -1972,7 +2005,13 @@ async function refreshDiag(){
     el.innerHTML = `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
   }
 }
-setInterval(()=>{ if(!saving && !slotsBusy && device && device.opened && document.getElementById('diagbox')) hidLocked(refreshDiag); }, 1000);
+setInterval(()=>{
+  if(saving || slotsBusy || !device || !device.opened) return;
+  hidLocked(async () => {
+    await readLoadedProfile();                              // every tab: keep the bar current
+    if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
+  });
+}, 1000);
 
 // ===== Tabbed navigation =====
 // Sections keep their existing definitions; tabs are a RENDER-TIME partition, so
@@ -2163,7 +2202,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.21</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.24</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -2173,6 +2212,7 @@ function render(){
     html += `<div class="card"><p class="info-text">Click Connect and pick your DS5 Bridge.<br>Chrome or Edge required (WebHID).</p></div>`;
     app.innerHTML=html; return;
   }
+  html += profileBarHTML();   // loaded-profile line, under the connect box, every tab
   const tab = window._tab || 'triggers';
   html += `<div class="tabbar">` + TABS.map(t =>
       `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`

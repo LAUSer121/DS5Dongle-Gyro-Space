@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.24] — 2026-08-09
+
+### Added
+- **The portal now shows which profile is currently loaded**, right under the
+  Connected status bar — visible on every tab, not buried in the Device-tab
+  diagnostics. The dongle tracks the active slot in RAM and records it whenever a
+  slot is activated, by the portal *or* by the Playnite automation, so the
+  readout reflects background profile switches too, not only ones made in the
+  portal. It shows the slot's name (e.g. "Control"), appends "(edited)" once a
+  setting is changed away from the loaded slot, and reads "not from a saved slot"
+  when the live config didn't come from one — including after a power cycle, since
+  the marker is RAM-only. A 1-second poll keeps it current without a reload, and a
+  fresh connect or reconnect always re-reads it. The "edited" check deliberately
+  ignores the volume/gain fields the firmware syncs from hardware, so a hardware
+  volume change — or the audio re-sync the host performs after a USB
+  re-enumeration — is not mistaken for a user edit. New read-only HID command
+  `0x67`; no new config field, so slots and existing configs are untouched.
+
+### Notes
+- Firmware change (reports 1.18.24): reflash `ds5-v1.18.24.uf2` (Pico 2 W) or
+  `ds5-v1.18.24-waveshare.uf2` (Waveshare). On older firmware the portal degrades
+  gracefully — the loaded-profile line simply stays blank.
+
 ## [1.18.21] — 2026-08-09
 
 ### Added
