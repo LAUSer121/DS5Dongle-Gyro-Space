@@ -1,4 +1,4 @@
-# DS5Dongle — Studio aka. Audio Auto-Haptics Edition
+# DS5Dongle — Studio
 
 **Version 1.18.24**
 
