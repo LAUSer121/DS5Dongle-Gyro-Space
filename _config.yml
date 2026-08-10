@@ -8,7 +8,7 @@
 # The title and description below also become the page <title> and meta
 # description, which is what search engines index.
 theme: jekyll-theme-midnight
-title: DS5Dongle — Audio Auto-Haptics Edition
+title: DS5Dongle — Studio
 description: >-
   Wireless DualSense-to-PC bridge on a Raspberry Pi Pico 2 W: audio-derived
   haptics for games that have none, adaptive triggers, gyro aiming, right-stick
