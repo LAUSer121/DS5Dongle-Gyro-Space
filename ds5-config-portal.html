@@ -1171,8 +1171,14 @@ function cebRemove(i){ window._cebStages.splice(i, 1); cebRender(); }
 function cebClear(){ window._cebStages = []; cebRender(); }
 function cebRender(){
   const box = document.getElementById('ceb_list');
-  if (!box) return;
   const list = window._cebStages;
+  // Effect map (repopulated here because render() rebuilds this card to its
+  // placeholder while _cebStages survives — same reason cebRender runs at all).
+  const vz = document.getElementById('ceb_viz');
+  if (vz) vz.innerHTML = list.length
+    ? ceEffectPanel(list.map(s => ({ bytes: s.bytes, dt: 0 })), 'Effect map — how these stages play across the trigger pull')
+    : '';
+  if (!box) return;
   if (!list.length){ box.innerHTML = 'No stages yet.'; return; }
   const sorted = list.map((st, i) => ({ st, i })).sort((a, b) => cebStartZone(a.st.bytes) - cebStartZone(b.st.bytes));
   let html = '<div style="color:var(--sub);font-size:11px;margin-bottom:2px">Played in this order as you pull:</div>';
@@ -1324,14 +1330,24 @@ function ceDescribeState(b){
   if (t === 0x26 || t === 0x06) return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
   return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
 }
-// Mirror of the firmware's sequencer: order mechanical stages by start zone and
-// hand each over at min(its own end, the next one's start - 12).
+// Mirror of the firmware's run_sequencer (state_mgr.cpp). A set of 2..5 stages
+// with AT LEAST ONE mechanical stage (wall/resistance/bow) and DISTINCT start
+// zones is sequenced by trigger position. A vibration is a full stage here too:
+// it is sorted by its start zone and gets a real position window — this is the
+// position gating a lone 0x26 lacks on its own. An all-vibration set, or one with
+// duplicate start zones, is NOT sequenced (it falls to the time/rate path), so
+// this returns null and the caller treats each state on its own.
 function ceActiveWindows(list){
-  const mech = list.map((b,i) => ({b,i})).filter(x => ceIsMechBytes(x.b));
-  if (mech.length < 2) return null;
-  const ord = mech.map(x => ({...x, lo: ceZonesOfBytes(x.b)[0],
-                                    hi: ceZonesOfBytes(x.b).slice(-1)[0]}))
+  const n = list.length;
+  if (n < 2 || n > 5) return null;
+  const isStage = b => ceIsMechBytes(b) || isVibrationType(b[0]);
+  if (!list.every(isStage)) return null;          // some other type -> not sequenced
+  if (!list.some(ceIsMechBytes)) return null;     // all vibration -> time-based path
+  // firmware wall_zones(): an empty zone bitmap defaults to zones 2..8
+  const span = b => { const z = ceZonesOfBytes(b); return z.length ? [z[0], z[z.length-1]] : [2, 8]; };
+  const ord = list.map((b,i) => { const [lo,hi] = span(b); return { i, lo, hi }; })
                   .sort((a,c) => a.lo - c.lo);
+  for (let k = 1; k < ord.length; k++) if (ord[k].lo === ord[k-1].lo) return null; // distinct starts
   const win = {};
   for (let k = 0; k < ord.length; k++){
     const from = k === 0 ? 0 : win[ord[k-1].i].to;
@@ -1403,7 +1419,9 @@ async function ceReadTrigger(trig){
   const name = trig === 0 ? 'R2' : 'L2';
   const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
   const box  = document.getElementById('ce_readout');
+  const vz   = document.getElementById('ce_readviz');
   if (box) box.innerHTML = `Reading ${name}…`;
+  if (vz) vz.innerHTML = '';
   try {
     const n = Math.min(5, +config[pfx + '_state_count'] || 0);
     const on = +config[pfx + '_enable'] || 0;
@@ -1450,9 +1468,166 @@ async function ceReadTrigger(trig){
         + ` — its ending (a wall breaking, a bow snapping) will not be reached.</div>`;
     }
     if (box) box.innerHTML = h;
+    if (vz) vz.innerHTML = ceEffectPanel(states, `Effect map — ${name}, as it is on the device`);
   } catch(e){
     if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+    if (vz) vz.innerHTML = '';
   }
+}
+
+// ---- Effect map: draw the effect across the trigger pull --------------------
+// The thing text and hex cannot show: WHERE on the pull each stage sits, how wide
+// its window is, and whether a wall's break / a bow's snap is actually reached
+// before the sequencer hands to the next stage. This renders that as an SVG using
+// the SAME maths the reader uses (ceActiveWindows + ceZpos), so the picture and
+// the words always agree. Pure string-in / string-out (no DOM) so the harness can
+// exercise it directly. It is also the answer to "you can't screenshot a trigger
+// effect" — this can be screenshotted and shared.
+const CE_VIZ_COL = { res:'#4a90d9', wall:'#e0a030', brk:'#e05a4a', bow:'#38b2a0',
+                     vib:'#a070d0', grid:'#3a3f45', axis:'#8b9197', line:'#4a5158' };
+function ceVizKind(b){                       // colour family for a stage
+  const t = b[0];
+  if (t === 0x25 || t === 0x23) return 'wall';
+  if (t === 0x22 || t === 0x02) return 'bow';
+  if (isVibrationType(t))        return 'vib';
+  return 'res';                              // 0x21 / 0x01
+}
+function ceEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Core: array of {bytes,dt} (or bare 11-byte arrays) -> <svg> string.
+function ceEffectSVG(states){
+  const rows = (states||[]).map(s => Array.isArray(s) ? { bytes:s, dt:0 }
+                                                      : { bytes:s.bytes, dt:s.dt|0 })
+                           .filter(r => r.bytes && r.bytes[0] !== 0x05 && r.bytes[0] !== 0x00);
+  if (!rows.length) return '';
+  const bytes = rows.map(r => r.bytes);
+  const anyMech = bytes.some(ceIsMechBytes);
+
+  // All-vibration, more than one state -> time-based playback: x is time, not
+  // trigger position, so a position diagram would be a lie. Draw a time strip.
+  if (!anyMech && rows.length > 1) return ceEffectTimeSVG(rows);
+
+  // ---- positional diagram ---------------------------------------------------
+  const W = 580, T = 14, PH = 120, L = 40, R = 12, PW = W - L - R;
+  const yBase = T + PH;
+  const H = yBase + 34;
+  const px = p => L + Math.max(0, Math.min(255, p)) / 255 * PW;
+  const py = l => yBase - (Math.max(0, Math.min(7, l)) / 7) * PH;
+  const f2 = n => n.toFixed(1);
+
+  const win = ceActiveWindows(bytes);          // null unless >=2 mechanical stages
+  let s = '';
+  s += `<rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="#1c1f24" stroke="${CE_VIZ_COL.grid}"/>`;
+  [0,3,7].forEach(lv => { const y = py(lv);
+    s += `<line x1="${L}" y1="${f2(y)}" x2="${L+PW}" y2="${f2(y)}" stroke="${CE_VIZ_COL.grid}" stroke-dasharray="2 3"/>`;
+    s += `<text x="${L-4}" y="${f2(y+3)}" text-anchor="end" font-size="9" fill="${CE_VIZ_COL.axis}">${lv}</text>`; });
+  s += `<text x="12" y="${f2(T+PH/2)}" font-size="9" fill="${CE_VIZ_COL.axis}" transform="rotate(-90 12 ${f2(T+PH/2)})">force</text>`;
+  [0,25,50,75,100].forEach(pct => { const x = px(pct/100*255);
+    s += `<line x1="${f2(x)}" y1="${T}" x2="${f2(x)}" y2="${yBase}" stroke="${CE_VIZ_COL.grid}" stroke-dasharray="1 4"/>`;
+    s += `<text x="${f2(x)}" y="${yBase+12}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">${pct}%</text>`; });
+  s += `<text x="${f2(L+PW/2)}" y="${yBase+24}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">trigger pull →</text>`;
+
+  // Stages. When the set is sequenced (win != null) every stage — vibration
+  // included — is placed at its position window, matching the firmware. A lone
+  // vibration, or an all-vibration set, is NOT sequenced: a lone vibration plays
+  // wherever the trigger is armed, so it is drawn full-width.
+  const span = b => { const z = ceZonesOfBytes(b); return z.length ? [z[0], z[z.length-1]] : [2, 8]; };
+
+  // hand-off lines between consecutive sequenced stages (any kind, incl. vibration)
+  if (win){
+    const ordered = bytes.map((b,i) => ({ i, lo: span(b)[0] })).sort((a,c) => a.lo - c.lo);
+    for (let k = 0; k < ordered.length - 1; k++){
+      const x = px(win[ordered[k].i].to);
+      s += `<line x1="${f2(x)}" y1="${T}" x2="${f2(x)}" y2="${yBase}" stroke="${CE_VIZ_COL.line}" stroke-dasharray="4 3"/>`;
+      s += `<text x="${f2(x+2)}" y="${f2(T+9)}" font-size="8" fill="${CE_VIZ_COL.axis}">hand-off</text>`;
+    }
+  }
+
+  bytes.forEach((b, i) => {
+    const kind = ceVizKind(b);
+    const [lo, hi] = span(b);
+    const w = win && win[i];
+    const hardTo = w ? w.to : 255;              // where the sequencer clips this stage
+    const order = w ? w.order : 1;
+    const brkPos = ceZpos(hi);                  // break / snap position (last zone)
+
+    if (kind === 'vib'){
+      // positioned in a mixed set -> band over its window; a lone vibration ->
+      // full width (it plays wherever the trigger is armed — position is ignored).
+      const vf = w ? px(w.from) : L, vt = w ? px(w.to) : L + PW;
+      const top = T + 6, bandH = PH - 12;
+      s += `<rect x="${f2(vf)}" y="${top}" width="${f2(Math.max(0, vt-vf))}" height="${bandH}" fill="${CE_VIZ_COL.vib}" fill-opacity="0.15" stroke="${CE_VIZ_COL.vib}" stroke-opacity="0.75" stroke-dasharray="4 3"/>`;
+      s += `<line x1="${f2(vf+2)}" y1="${f2(top+bandH/2)}" x2="${f2(vt-2)}" y2="${f2(top+bandH/2)}" stroke="${CE_VIZ_COL.vib}" stroke-opacity="0.45" stroke-dasharray="2 3"/>`;
+      s += `<text x="${f2(vf+4)}" y="${f2(top+12)}" font-size="8.5" fill="${CE_VIZ_COL.vib}">buzz · freq ${b[9]}${w ? '' : ' · plays while armed'}</text>`;
+      s += `<text x="${f2((vf+vt)/2)}" y="${f2(yBase-4)}" text-anchor="middle" font-size="9" font-weight="bold" fill="${CE_VIZ_COL.vib}">${order}</text>`;
+      return;
+    }
+    if (kind === 'res'){
+      const cutX = w ? px(hardTo) : Infinity;
+      // baseline extent strip: a resistance at force 0 draws no bar (honest — it
+      // may not be felt), but its position on the pull is still worth showing.
+      const bx0 = px(ceZpos(lo)), bx1 = px(Math.min(hardTo, hi >= 9 ? 255 : ceZpos(hi + 1)));
+      s += `<rect x="${f2(bx0)}" y="${f2(yBase-2)}" width="${f2(Math.max(0, bx1-bx0))}" height="2" fill="${CE_VIZ_COL.res}" fill-opacity="0.85"/>`;
+      for (let z = lo; z <= hi; z++){
+        const fz = ceZoneForce(b, z);
+        const zx0 = px(ceZpos(z)), zx1 = px(z >= 9 ? 255 : ceZpos(z + 1));
+        const faded = zx0 >= cutX - 0.5;        // in the handed-over tail
+        s += `<rect x="${f2(zx0)}" y="${f2(py(fz))}" width="${f2(Math.max(0, zx1-zx0))}" height="${f2(yBase-py(fz))}" fill="${CE_VIZ_COL.res}" fill-opacity="${faded?0.16:0.5}" stroke="${CE_VIZ_COL.res}" stroke-opacity="${faded?0.35:0.85}"/>`;
+      }
+    } else if (kind === 'wall'){
+      const fz = b[3] & 7, reached = hardTo >= brkPos;
+      const x0 = px(ceZpos(lo)), xCut = px(Math.min(hardTo, brkPos)), xEnd = px(brkPos), yF = py(fz);
+      s += `<rect x="${f2(x0)}" y="${f2(yF)}" width="${f2(Math.max(0, xCut-x0))}" height="${f2(yBase-yF)}" fill="${CE_VIZ_COL.wall}" fill-opacity="0.5" stroke="${CE_VIZ_COL.wall}"/>`;
+      if (!reached) s += `<rect x="${f2(xCut)}" y="${f2(yF)}" width="${f2(Math.max(0, xEnd-xCut))}" height="${f2(yBase-yF)}" fill="${CE_VIZ_COL.wall}" fill-opacity="0.12" stroke="${CE_VIZ_COL.wall}" stroke-opacity="0.4" stroke-dasharray="3 3"/>`;
+      s += `<line x1="${f2(xEnd)}" y1="${f2(T+4)}" x2="${f2(xEnd)}" y2="${f2(yBase)}" stroke="${CE_VIZ_COL.brk}" stroke-width="1.5" stroke-opacity="${reached?1:0.5}" stroke-dasharray="${reached?'0':'2 2'}"/>`;
+      s += `<text x="${f2(xEnd)}" y="${f2(T-1)}" text-anchor="middle" font-size="8.5" fill="${CE_VIZ_COL.brk}" fill-opacity="${reached?1:0.6}">${reached?'break':'break ✕'}</text>`;
+    } else { // bow
+      const fz = b[3] & 7, snap = (b[3] >> 3) & 7, reached = hardTo >= brkPos;
+      const x0 = px(ceZpos(lo)), xEnd = px(brkPos), yF = py(fz), xCut = px(Math.min(hardTo, brkPos));
+      const yAt = x => yBase - (yBase - yF) * ((x - x0) / Math.max(1, xEnd - x0));
+      s += `<polyline points="${f2(x0)},${f2(yBase)} ${f2(xCut)},${f2(yAt(xCut))}" fill="none" stroke="${CE_VIZ_COL.bow}" stroke-width="2"/>`;
+      if (!reached) s += `<polyline points="${f2(xCut)},${f2(yAt(xCut))} ${f2(xEnd)},${f2(yF)}" fill="none" stroke="${CE_VIZ_COL.bow}" stroke-width="2" stroke-opacity="0.3" stroke-dasharray="3 3"/>`;
+      s += `<text x="${f2(xEnd)}" y="${f2(yF-3)}" text-anchor="middle" font-size="8.5" fill="${CE_VIZ_COL.bow}" fill-opacity="${reached?1:0.6}">${reached?`snap ${snap}/7`:'snap ✕'}</text>`;
+    }
+    const cx = (px(ceZpos(lo)) + px(Math.min(hardTo, kind==='res' ? (hi>=9?255:ceZpos(hi+1)) : brkPos))) / 2;
+    s += `<text x="${f2(cx)}" y="${f2(yBase-4)}" text-anchor="middle" font-size="9" font-weight="bold" fill="${CE_VIZ_COL[kind]}">${order}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;height:auto;font-family:inherit" role="img" aria-label="effect map">${s}</svg>`;
+}
+
+// Time strip for all-vibration timelines (x = elapsed time).
+function ceEffectTimeSVG(rows){
+  const W = 580, L = 8, R = 12, PW = W - L - R, barY = 26, barH = 30, H = 74;
+  const total = rows.reduce((a, r) => a + (r.dt || 0), 0), uniform = total <= 0;
+  let x = L, s = '';
+  s += `<text x="${L}" y="18" font-size="10" fill="${CE_VIZ_COL.axis}">Time-based playback${uniform ? ' — durations are 0, plays as a fixed blend (equal slices shown)' : ` — ${total} ms total`}</text>`;
+  rows.forEach(r => {
+    const frac = uniform ? 1 / rows.length : (r.dt || 0) / total, w = frac * PW;
+    const col = CE_VIZ_COL[ceVizKind(r.bytes)] || CE_VIZ_COL.vib;
+    s += `<rect x="${x.toFixed(1)}" y="${barY}" width="${Math.max(0, w).toFixed(1)}" height="${barH}" fill="${col}" fill-opacity="0.4" stroke="${col}"/>`;
+    const lbl = ceVizKind(r.bytes) === 'vib' ? `freq ${r.bytes[9]}` : effectTypeName(r.bytes[0]);
+    if (w > 34) s += `<text x="${(x+4).toFixed(1)}" y="${barY+18}" font-size="8.5" fill="${col}">${ceEsc(lbl)}${uniform ? '' : ` · ${r.dt}ms`}</text>`;
+    x += w;
+  });
+  s += `<text x="${(L+PW/2).toFixed(1)}" y="${barY+barH+16}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">time →</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;height:auto;font-family:inherit" role="img" aria-label="effect timeline">${s}</svg>`;
+}
+
+// Titled panel wrapper (legend + the caption that explains the faded/✕ marks).
+function ceEffectPanel(states, title){
+  const svg = ceEffectSVG(states);
+  if (!svg) return '';
+  const legend = [['Resistance', CE_VIZ_COL.res], ['Weapon break', CE_VIZ_COL.wall],
+                  ['break point', CE_VIZ_COL.brk], ['Bow / snap', CE_VIZ_COL.bow],
+                  ['Vibration', CE_VIZ_COL.vib]]
+    .map(([n,c]) => `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:9px"><span style="width:9px;height:9px;background:${c};display:inline-block;border-radius:2px"></span>${n}</span>`).join('');
+  return `<div style="border:1px solid var(--line,#333);border-radius:6px;padding:8px;background:#15171b">
+    <div style="font-size:11px;color:var(--sub);margin-bottom:4px">${ceEsc(title)}</div>
+    ${svg}
+    <div style="font-size:10px;color:var(--sub);margin-top:5px">${legend}</div>
+    <div style="font-size:10px;color:var(--sub);margin-top:3px">Faded fill / ✕ = the sequencer hands over before a wall's break or bow's snap is reached. Dashed verticals mark hand-offs. A violet band is a vibration stage (where the buzz plays); a lone vibration plays wherever the trigger is armed.</div>
+  </div>`;
 }
 
 // Export the effect currently assigned to a trigger, read back from the device.
@@ -1957,8 +2132,12 @@ async function readDiag(){
     try { ke = await readField(0x3c, 'u8'); } catch(e) {}
     let rl = null, rr = null, rf = null;
     try { rl = await readField(0x3d, 'u8'); rr = await readField(0x3e, 'u8'); rf = await readField(0x3f, 'u8'); } catch(e) {}
-    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf};
-  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null}; }
+    // Battery (0x68), read from the DualSense input report. (The auto-haptics
+    // meters 0x69-0x6b now live on the Haptics tab, read by readAhMeter().)
+    let bat = null;
+    try { bat = await readField(0x68, 'u8'); } catch(e) {}
+    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat};
+  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null}; }
 }
 function rssiLabel(r){
   if (r === null || r === undefined) return 'n/a';
@@ -1973,6 +2152,31 @@ function rssiLabel(r){
   else if (mag <= 30) q = 'fair';
   else q = 'weak';
   return `${r} (${q})`;
+}
+// Auto-haptics live meter, shown on the Haptics tab right under its settings so
+// you can watch "Haptics out" respond as you tune (no more hopping to the Device
+// tab). Reads only the three auto-haptics fields (0x69 frames / 0x6a derived-out
+// peak / 0x6b audio-in peak), which are peak-hold + cleared on read.
+function ahMeterHTML(ahf, ahi, aho){
+  if (ahf === null || ahf === undefined)
+    return `<span style="color:var(--sub)">Connect to see live auto-haptics activity.</span>`;
+  const active = ahf > 0;
+  const bar = (v, c) => `<span style="display:inline-block;width:160px;height:10px;background:#222;border-radius:3px;vertical-align:middle;overflow:hidden"><span style="display:block;width:${Math.min(100, Math.round((v/255)*100))}%;height:100%;background:${c}"></span></span>`;
+  let h = `Audio bridge: ${active ? '<b style="color:#4caf50">active</b>' : '<b style="color:#e0a030">not detected</b>'} `
+    + `<span style="color:var(--sub)">${active ? `(${ahf} audio frames in the last second)` : '(no audio arriving on the dongle — auto-haptics derives from PC audio, so start ds5audio.py)'}</span>`
+    + `<div style="margin-top:6px">Audio in (ch0/1):&nbsp; ${bar(ahi, '#4a90d9')} <span style="color:var(--sub)">${ahi}/255</span></div>`
+    + `<div style="margin-top:4px">Haptics out (derived):&nbsp; ${bar(aho, '#a070d0')} <span style="color:var(--sub)">${aho}/255</span></div>`;
+  if (active && ahi > 20 && aho < 4)
+    h += `<div style="color:#e0a030;margin-top:4px">⚠ audio is arriving but almost no haptic is being derived — check Auto-Haptics Mode is on and the cutoff / intensity aren't too low</div>`;
+  h += `<div style="color:var(--sub);font-size:11px;margin-top:5px">Live peak over the last second — change a setting above and watch "Haptics out" respond (needs ds5audio.py running and game audio playing).</div>`;
+  return h;
+}
+async function readAhMeter(){
+  let ahf = null, ahi = null, aho = null;
+  try { ahf = await readField(0x69, 'u16'); aho = await readField(0x6a, 'u8'); ahi = await readField(0x6b, 'u8'); }
+  catch(e) { return; }
+  const el = document.getElementById('ahbox');
+  if (el) el.innerHTML = ahMeterHTML(ahf, ahi, aho);
 }
 async function refreshDiag(){
   const d = await readDiag();
@@ -2002,13 +2206,26 @@ async function refreshDiag(){
       if (d.rf & 4) rq.push('Improved');
       extra += `<br>Rumble from host: peak L=${d.rl} R=${d.rr} since last read, requested: ${rq.length ? rq.join(' + ') : 'none'}  (peak-hold, so any burst in the last second registers. Non-zero = the game sends motor values, which Mix carries via Converted Rumble Strength. Zero while you feel vibration = it is delivered as haptic audio on ch3/4 instead, carried by Native Passthrough)`;
     }
-    el.innerHTML = `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
+    // Battery from the DualSense input report: low nibble = level 0-10 (x10 = %),
+    // high nibble = charge state. Shown first as it is the headline device stat.
+    // A raw 0x00 means no report has populated the byte yet (a real 0%/off pad
+    // wouldn't be reporting), so treat it as "no data" rather than showing 0%.
+    let batLine = '';
+    if (d.bat){
+      const lvl = d.bat & 0x0F, st = (d.bat >> 4) & 0x0F;
+      const pct = Math.min(lvl * 10, 100);
+      const status = st === 1 ? 'charging' : st === 2 ? 'full' : st >= 0x0F ? 'charge error' : 'on battery';
+      const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
+      batLine = `Battery: <b style="color:${col}">${pct}%</b> · ${status}<br>`;
+    }
+    el.innerHTML = batLine + `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
   }
 }
 setInterval(()=>{
   if(saving || slotsBusy || !device || !device.opened) return;
   hidLocked(async () => {
     await readLoadedProfile();                              // every tab: keep the bar current
+    if (document.getElementById('ahbox')) await readAhMeter();   // Haptics tab: live auto-haptics meter
     if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
   });
 }, 1000);
@@ -2202,7 +2419,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.24</span></h1>
+  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.25</span></h1>
     <p class="subtitle">awalol RAM base — field-ID protocol</p>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
@@ -2225,6 +2442,8 @@ function render(){
     html += `<div class="card"><div class="card-title">${section.title}</div>`;
     for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
+    if (section.title === 'Auto-Haptics & Speaker Effect Leak')
+      html += `<div class="card"><div class="card-title">Auto-haptics — live <span style="font-size:11px;color:var(--sub)">(updates while connected)</span></div><div id="ahbox" style="font-size:13px">Connect to see live auto-haptics activity.</div></div>`;
   }
   html += `<div class="actions">
     <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
@@ -2270,6 +2489,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
     </div>
     <div id="ceb_list" style="font-size:12px;margin-top:8px">No stages yet.</div>
+    <div id="ceb_viz" style="margin-top:8px"></div>
     <div style="margin-top:6px">
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">Assign → L2</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
@@ -2286,6 +2506,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">Read L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">Read R2</button>
       <div id="ce_readout" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+      <div id="ce_readviz" style="margin-top:8px"></div>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>

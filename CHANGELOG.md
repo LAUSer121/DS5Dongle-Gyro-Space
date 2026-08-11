@@ -2,6 +2,52 @@
 
 All notable changes to this project are documented here.
 
+## [1.18.25] — 2026-08-11
+
+### Added
+- **Trigger effect visualizer in the portal.** Every trigger effect now renders
+  as a diagram — trigger travel (0–100%) along the x-axis, force 0–7 up the y —
+  drawn live under the builder and under the Read L2/R2 output. Resistance shows
+  as per-zone steps, weapon-break walls mark where the break fires, bow effects
+  show their ramp and snap point, and vibration is drawn as a band over the
+  window where it actually plays. Sequenced stages get dashed hand-off lines, and
+  a stage that never reaches its wall or snap because the sequencer hands over
+  first is faded and marked ✕ — so a truncated wall or an unreachable bow is
+  visible at a glance instead of read off a warning. Because effects can't be
+  conveyed in text, the diagram can be screenshotted and shared. It reuses the
+  existing effect-decode helpers, so the picture and the prose description always
+  agree. Portal-only.
+- **DualSense battery readout** in the Device-tab diagnostics — level and charge
+  state (on battery / charging / full), read from the controller's own input
+  report. New read-only HID field `0x68`; no new config field.
+- **Auto-haptics activity + level meters** on the Haptics tab, right under the
+  auto-haptics settings, so tuning is visible without hopping to another tab. An
+  "Audio bridge: active / not detected" line
+  reports whether audio is actually arriving on the dongle's USB audio endpoint —
+  the most common reason auto-haptics "does nothing" is that `ds5audio.py` isn't
+  running, and this makes that obvious. Two bars show the audio coming in (ch0/1)
+  against the haptic the DSP is deriving from it, so "audio present but nothing
+  derived" (mode off, or cutoff/intensity too low) is visible too — change a
+  setting and watch "Haptics out" respond. All three are
+  peak-hold and cleared on read, like the rumble diagnostics, so the one-second
+  poll can't miss a short burst. New read-only HID fields `0x69`–`0x6b`; no new
+  config field.
+
+### Fixed
+- **Vibration positioning in the effect reader.** A sequenced vibration stage was
+  treated as position-independent, so both the text description and the new
+  diagram placed it wrong. The reader now mirrors the firmware sequencer: in a
+  multi-stage effect a vibration is a full stage sorted by its start zone, and its
+  active window begins at the hand-off from the previous stage — e.g. a vibration
+  set to zones 6–8 behind a wall that ends at zone 4 buzzes from ~40% travel, not
+  60%. A lone vibration with no other stages still plays the whole time it's armed.
+
+### Notes
+- Firmware change (reports 1.18.25): reflash `ds5-v1.18.25.uf2` (Pico 2 W) or
+  `ds5-v1.18.25-waveshare.uf2` (Waveshare RP2350B-Plus-W). On older firmware the
+  portal degrades gracefully — the battery line and the auto-haptics meters stay
+  blank; the visualizer and the reader fix work regardless, being portal-side.
+
 ## [1.18.24] — 2026-08-09
 
 ### Added

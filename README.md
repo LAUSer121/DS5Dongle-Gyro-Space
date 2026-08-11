@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.18.24**
+**Version 1.18.25**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -17,7 +17,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.18.24-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.18.25-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -142,6 +142,10 @@ to RAM so native fine haptics and controller audio work without overclocking.
   motion aiming, with selectable activation (always / while L2 held / touchpad
   touch / ratchet), sensitivity, horizontal axis source (yaw or roll), and
   per-axis invert.
+- **Right-stick inversion** — invert the physical right stick's X axis, Y axis, or
+  both, in any game with no PC-side software. Independent of gyro aiming (it applies
+  whether or not gyro is on), for inverted-look setups or games that only offer
+  inversion on one axis.
 - **Native-haptics anti-alias** — optional smoothing on the native haptic stream
   (off / light / strong) to tame gritty high-frequency actuator noise.
 - **Slot backup and restore** — download every stored profile slot, names
@@ -248,7 +252,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.18.24.uf2` (Pico 2 W) or `ds5-v1.18.24-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.18.25.uf2` (Pico 2 W) or `ds5-v1.18.25-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -301,6 +305,12 @@ below.
 > firmware to derive from, so auto-haptics will appear to do nothing however they
 > are tuned. That is the single most common reason auto-haptics "doesn't work". In
 > **Off** (native) mode it isn't needed at all.
+
+*(Not sure it's running? Since 1.18.25 the **Haptics** tab shows an "Audio bridge:
+active / not detected" line right under the auto-haptics settings, plus two meters —
+the audio arriving on the dongle against the haptic the DSP is deriving from it — so
+you can watch "Haptics out" respond as you tune, and see at a glance whether audio
+is reaching the dongle at all.)*
 
 The firmware ships with safe stock defaults (auto-haptics off, standard buffer), so
 a fresh flash is safe and native passthrough works immediately. For a tuned
@@ -648,6 +658,16 @@ any trigger in a game that doesn't. Effects are stored as the exact 11-byte
 commands the game sent — they are **not** decoded into the sliders above (a game's
 force curves don't survive that round-trip), so what you feel is the original
 effect, not an approximation.
+
+**See what an effect looks like.** Every effect — whether you build it, load it, or
+read it back off a trigger — is drawn as a diagram in the portal: trigger travel
+along the bottom, force up the side, with resistance shown as per-zone steps, a
+weapon-break wall marking where it gives way, a bow's ramp and snap point, and
+vibration as a band over the part of the pull where it plays. Sequenced stages show
+their hand-off points, and a wall or bow the sequencer cuts short before it fires is
+faded and marked ✕ — so a truncated effect is obvious at a glance. Since a trigger
+effect can't really be conveyed in words, the diagram can be screenshotted and
+shared. *(New in 1.18.25.)*
 
 **What can and can't be captured**
 
@@ -1193,9 +1213,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.18.24.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.18.24)
-- `ds5-v1.18.24-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.18.25.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.18.25)
+- `ds5-v1.18.25-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
