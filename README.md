@@ -4,7 +4,7 @@
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
-📥 **[Shared game profiles](profiles.html)** · 🎮 **[Trigger effects](effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
+📥 **[Shared game profiles](https://artzox.github.io/DS5Dongle-Studio/profiles.html)** · 🎮 **[Trigger effects](https://artzox.github.io/DS5Dongle-Studio/effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -963,9 +963,9 @@ captured effect.
 ### Trigger effects — shared
 
 Ready-to-import adaptive-trigger effects captured from real games live on the
-**[Trigger effects page](effects.html)** — break-through walls, bows, resistance
-curves and vibration you can load straight onto L2 or R2 in the portal, then Save
-to a slot.
+**[Trigger effects page](https://artzox.github.io/DS5Dongle-Studio/effects.html)** — break-through walls, bows,
+resistance curves and vibration you can load straight onto L2 or R2 in the portal,
+then Save to a slot.
 
 | Setting | Range | Default | Notes |
 |---|---|---|---|
@@ -1244,8 +1244,8 @@ profile per game and routes game audio to the dongle for audio-driven auto-hapti
 switching automatically between native-haptics games and everything else.
 
 Need per-game configs to switch between? The **[Shared game profiles
-page](profiles.html)** collects ready-to-import profiles — import one into a slot
-and the automation can activate it per game.
+page](https://artzox.github.io/DS5Dongle-Studio/profiles.html)** collects ready-to-import profiles — import one
+into a slot and the automation can activate it per game.
 
 Quick start:
 1. **Python 3 — only if you play games *without* native DualSense support.** The
