@@ -1,26 +1,94 @@
-# Shared game profiles.
-#
-# Each entry links to a JSON file under /shared/profiles/ that the config portal
-# can import. Order here does NOT matter — profiles.md sorts by `game`, so just
-# append. To add one: export a profile from the portal, drop the JSON in
-# shared/profiles/, and add a stanza below.
-#
-# Fields:
-#   game  - display name (used for the alphabetical sort)
-#   file  - root-relative path to the profile JSON
-#   desc  - one line: what it sets, and any companion `ds5audio --map` argument
-#   wake  - true if the profile turns Wake on (import those into a slot, not live)
+# Shared game profiles - rendered by profiles.md (sorted by `game`).
+# Auto-generated from shared/profiles/*.json; descriptions come from each
+# profile's settings. Edit prose freely. To add one: export from the portal,
+# drop it in shared/profiles/, and append a stanza.
 
-- game: God of War Ragnarök
-  file: /shared/profiles/gow-ragnarok.json
-  desc: >-
-    Native DualSense haptics passed straight through — Mix, DSP ch0/1,
-    passthrough 100, filter raw. Pair with the bridge run as --map front.
+- game: "Audio Mix (default preset)"
+  file: "/shared/profiles/Audi-Mix-default.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Control"
+  file: "/shared/profiles/Control.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Dead Space (2023)"
+  file: "/shared/profiles/Dead_Space_2023.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Dishonored 2"
+  file: "/shared/profiles/Dishonored2.json"
+  desc: "Auto-haptics from game audio, native passthrough 65%, converted rumble 50."
+  wake: true
+
+- game: "FPS (generic preset)"
+  file: "/shared/profiles/FPS.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  wake: true
+
+- game: "God of War (2018)"
+  file: "/shared/profiles/GOW_2018.json"
+  desc: "Auto-haptics from game audio, native passthrough 50%, converted rumble 30."
+  wake: true
+
+- game: "Kena: Bridge of Spirits"
+  file: "/shared/profiles/Kena.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Native — no augmentation"
+  file: "/shared/profiles/Native-off.json"
+  desc: "Native DualSense haptics with no augmentation (auto-haptics off)."
   wake: false
 
-- game: Ratchet & Clank
-  file: /shared/profiles/ratchet-clank.json
-  desc: >-
-    Turns the game's pad-speaker effects into haptics off ch2/3 — Mix, DSP ch2/3,
-    passthrough 0. Pair with the bridge run as --map rear.
+- game: "Neva"
+  file: "/shared/profiles/NEVA.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Oblivion Remastered"
+  file: "/shared/profiles/Oblivion_Remasterd.json"
+  desc: "Auto-haptics from game audio, native passthrough 70%, converted rumble 50."
+  wake: true
+
+- game: "Racing (generic preset)"
+  file: "/shared/profiles/Racing.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Resident Evil 4 (2023)"
+  file: "/shared/profiles/RE4_Dualsense.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 100."
+  wake: false
+
+- game: "Shadow Man"
+  file: "/shared/profiles/Shadow_Man.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Shadow of the Tomb Raider"
+  file: "/shared/profiles/Shadow_of_the_Tomb_Raider.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  wake: true
+
+- game: "South of Midnight"
+  file: "/shared/profiles/Sounth_of_Midnight.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Spyro Reignited Trilogy"
+  file: "/shared/profiles/Spyro_Trilogy.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Stray"
+  file: "/shared/profiles/Stray.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
+  wake: true
+
+- game: "The Callisto Protocol"
+  file: "/shared/profiles/Calisto_Protocol.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
   wake: true
