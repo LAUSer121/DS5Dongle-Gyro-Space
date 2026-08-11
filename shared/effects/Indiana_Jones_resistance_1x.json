@@ -1,0 +1,26 @@
+{
+  "format": "ds5dongle-custom-effect",
+  "version": 2,
+  "source": "L2",
+  "state_count": 1,
+  "states": [
+    {
+      "type": "0x21",
+      "name": "Resistance",
+      "bytes": [
+        33,
+        128,
+        3,
+        0,
+        0,
+        96,
+        27,
+        0,
+        0,
+        0,
+        0
+      ],
+      "duration_ms": 2107
+    }
+  ]
+}

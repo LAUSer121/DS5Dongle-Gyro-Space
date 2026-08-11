@@ -1,0 +1,62 @@
+{
+  "format": "ds5dongle-custom-effect",
+  "version": 2,
+  "source": "built",
+  "state_count": 3,
+  "states": [
+    {
+      "type": "0x22",
+      "name": "Bow / snap",
+      "bytes": [
+        34,
+        48,
+        0,
+        63,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "duration_ms": 0
+    },
+    {
+      "type": "0x26",
+      "name": "Vibration",
+      "bytes": [
+        38,
+        192,
+        1,
+        0,
+        0,
+        252,
+        7,
+        0,
+        0,
+        100,
+        0
+      ],
+      "duration_ms": 0
+    },
+    {
+      "type": "0x21",
+      "name": "Resistance",
+      "bytes": [
+        33,
+        0,
+        3,
+        0,
+        0,
+        0,
+        63,
+        0,
+        0,
+        0,
+        0
+      ],
+      "duration_ms": 0
+    }
+  ]
+}
