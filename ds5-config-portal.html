@@ -2419,8 +2419,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.25</span></h1>
-    <p class="subtitle">awalol RAM base — field-ID protocol</p>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.18.25</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
@@ -2456,6 +2455,7 @@ function render(){
   </div>
   ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
+    <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://artzox.github.io/DS5Dongle-Studio/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
     <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
   ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
@@ -2465,6 +2465,7 @@ function render(){
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
+    <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://artzox.github.io/DS5Dongle-Studio/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">browse shared effects ↗</a></span>
     <div id="effmon" style="font-size:13px;margin-top:6px">Connect and press Refresh after triggering an effect in-game.</div>
     <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
       <b style="font-size:13px">Timeline recording</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
