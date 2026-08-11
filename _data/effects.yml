@@ -1,0 +1,38 @@
+# Shared trigger effects.
+#
+# Each entry links to a ds5dongle-custom-effect JSON under /shared/effects/ that
+# the portal can load onto L2 or R2. Order here does NOT matter — effects.md sorts
+# by `name`, so just append. To add one: export an effect from the portal ("Export
+# effect from L2/R2", or the builder's Save), drop the JSON in shared/effects/,
+# and add a stanza below.
+#
+# Fields:
+#   name    - display name (used for the alphabetical sort)
+#   file    - root-relative path to the effect JSON
+#   type    - Resistance / Weapon break / Bow / Vibration (or a mix)
+#   trigger - the trigger it was captured from (R2 / L2); loadable onto either
+#   game    - where it came from
+#   desc    - one line describing how it plays across the pull
+
+- name: Ratchet & Clank — double-wall R2
+  file: /shared/effects/ratchet-double-wall-r2.json
+  type: Weapon break
+  trigger: R2
+  game: Ratchet & Clank
+  desc: >-
+    Two break-through walls then a bottom resistance hold — the fire /
+    rapid-fire double break the sequencer makes possible.
+
+- name: God of War Ragnarök — Leviathan recall
+  file: /shared/effects/gow-ragnarok-spear-r2.json
+  type: Vibration
+  trigger: R2
+  game: God of War Ragnarök
+  desc: A single sustained vibration held for as long as the trigger is pressed.
+
+- name: God of War (2018) — Leviathan aim
+  file: /shared/effects/gow-2018-r2.json
+  type: Resistance + bow
+  trigger: R2
+  game: God of War (2018)
+  desc: Light resistance through the early pull, then a bow snap deeper in.
