@@ -72,6 +72,20 @@ volatile uint8_t g_rumble_peak_r = 0;
 // Emulation, bit1 UseRumbleNotHaptics), also cleared on read: shows what the
 // game ASKED for, independent of what it actually put in the motor bytes.
 volatile uint8_t g_rumble_flags_seen = 0;
+// Auto-haptics activity + level meters (portal Device tab). Same sampling-proof
+// design as the rumble peaks above: a ~1 Hz poll must not miss a short burst, so
+// each latches its max and is cleared when the portal reads it.
+//  g_ah_frames   - audio frames delivered on the USB audio-out endpoint since the
+//                  last read. Non-zero => the bridge (ds5audio.py) is streaming,
+//                  even during game silence; zero => nothing arriving (the usual
+//                  reason auto-haptics "does nothing" is the script not running).
+//  g_ah_in_peak  - peak |ch0/1 input sample| 0-255: the DSP's audio source level.
+//  g_ah_out_peak - peak derived-haptic OUTPUT 0-255 the DSP is generating, taken
+//                  before native passthrough / converted rumble are mixed in, so
+//                  it reflects only what auto-haptics itself produces.
+volatile uint16_t g_ah_frames   = 0;
+volatile uint8_t  g_ah_in_peak  = 0;
+volatile uint8_t  g_ah_out_peak = 0;
 // Latest L2 (left trigger) analog position from the controller's input report,
 // used by the L2-gated R2 adaptive-trigger feature.
 volatile uint8_t g_l2_pos = 0;
@@ -190,6 +204,13 @@ void __not_in_flash_func(audio_loop)() {
         }
         g_diag_ch01_peak = (uint16_t)p01;
         g_diag_ch23_peak = (uint16_t)p23;
+        // Sampling-proof activity + input meter (see the globals near the top).
+        // Frames arriving at all means the audio bridge is streaming; the input
+        // peak is the DSP's source level, latched so a slow poll can't miss it.
+        extern volatile uint16_t g_ah_frames;
+        extern volatile uint8_t  g_ah_in_peak;
+        { uint32_t f = (uint32_t)g_ah_frames + (uint32_t)frames; g_ah_frames = f > 0xFFFF ? 0xFFFF : (uint16_t)f; }
+        { uint8_t v = (uint8_t)(p01 >> 7); if (v > g_ah_in_peak) g_ah_in_peak = v; }
     }
 
     static float audio_buf[512 * 2];
@@ -348,6 +369,7 @@ void __not_in_flash_func(audio_loop)() {
     const uint8_t atk_cfg = get_config().effect_leak_attack > 100 ? 50 : get_config().effect_leak_attack;
     const float GATE_OPEN   = 0.03f + (atk_cfg / 100.0f) * 0.37f;
     const float GATE_CLOSE  = 0.004f - (decay_cfg / 100.0f) * 0.0036f; // 0.004 .. 0.0004
+    float ah_out_pk = 0.0f;   // peak derived-haptic magnitude this block (diag meter)
     for (int i = 0; i < nframes; i++) {
  #if !DISABLE_SPEAKER_PROC       
         float spk_l_out, spk_r_out;
@@ -537,6 +559,11 @@ void __not_in_flash_func(audio_loop)() {
             // high intensity actually reaches strong output instead of saturating.
             al = tanhf(al);
             ar = tanhf(ar);
+            // Derived-haptic meter: capture al/ar here, before Mix folds in native
+            // passthrough and converted rumble, so the meter shows only what
+            // auto-haptics itself produces (al/ar are not reassigned in Mix).
+            { const float aa = al < 0 ? -al : al, ab = ar < 0 ? -ar : ar;
+              const float mx = aa > ab ? aa : ab; if (mx > ah_out_pk) ah_out_pk = mx; }
             if (auto_mode == 2) {
                 // Replace: derived only
                 h_l = al; h_r = ar;
@@ -610,6 +637,9 @@ void __not_in_flash_func(audio_loop)() {
         in_buf[i * 2]     = static_cast<WDL_ResampleSample>(clamp(h_l, -1.0f, 1.0f));
         in_buf[i * 2 + 1] = static_cast<WDL_ResampleSample>(clamp(h_r, -1.0f, 1.0f));
     }
+    { extern volatile uint8_t g_ah_out_peak;
+      const uint8_t v = ah_out_pk >= 1.0f ? 255 : (uint8_t)(ah_out_pk * 255.0f);
+      if (v > g_ah_out_peak) g_ah_out_peak = v; }
 
     // 3. 48kHz -> 3kHz 重采样
     static WDL_ResampleSample out_buf[SAMPLE_SIZE]; // 64 floats = 32帧 × 2ch

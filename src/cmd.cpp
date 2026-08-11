@@ -36,7 +36,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 24;
+constexpr uint8_t FW_VER_PATCH = 25;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -370,6 +370,18 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }
         case 0x37: { extern volatile uint16_t g_diag_ch01_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch01_peak); }
         case 0x38: { extern volatile uint16_t g_diag_ch23_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch23_peak); }
+        // DualSense battery, from the controller's input report (byte 52): low
+        // nibble = level 0-10, high nibble = charge state (0 discharging, 1
+        // charging, 2 full). A live value, not cleared on read; stale while the
+        // controller is disconnected, so the portal only shows it when connected.
+        case 0x68: { extern uint8_t interrupt_in_data[63]; return write_config_value(buffer, bufsize, (uint8_t)interrupt_in_data[52]); }
+        // Auto-haptics activity + level meters (peak-hold, cleared on read):
+        //   0x69 frames delivered on the audio-out endpoint (bridge active?)
+        //   0x6a derived-haptic OUTPUT peak the DSP is generating (0-255)
+        //   0x6b audio INPUT peak on ch0/1, the DSP source (0-255)
+        case 0x69: { extern volatile uint16_t g_ah_frames;   const uint16_t v = g_ah_frames;   g_ah_frames = 0;   return write_config_value(buffer, bufsize, v); }
+        case 0x6a: { extern volatile uint8_t  g_ah_out_peak; const uint8_t  v = g_ah_out_peak; g_ah_out_peak = 0; return write_config_value(buffer, bufsize, v); }
+        case 0x6b: { extern volatile uint8_t  g_ah_in_peak;  const uint8_t  v = g_ah_in_peak;  g_ah_in_peak = 0;  return write_config_value(buffer, bufsize, v); }
         // Read-only firmware version (no write handlers on purpose).
         case 0x7d: return write_config_value(buffer, bufsize, FW_VER_MAJOR);
         case 0x7e: return write_config_value(buffer, bufsize, FW_VER_MINOR);
