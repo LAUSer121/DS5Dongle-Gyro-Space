@@ -25,14 +25,11 @@ feel in a game that has none.
       <td><strong>{{ e.name }}</strong><br><small>{{ e.desc }}</small></td>
       <td>{{ e.type }}</td>
       <td align="center">{{ e.trigger }}</td>
-      <td><a href="{{ e.file | relative_url }}">JSON</a></td>
+      <td><a href="{{ e.file | relative_url }}" download>JSON</a></td>
     </tr>
   {%- endfor %}
   </tbody>
 </table>
 
-**Add one:** capture or build it in the portal, click **Export effect** (or the
-builder's **Save**), drop the JSON in `shared/effects/`, and append a stanza to
-`_data/effects.yml`.
 
 [← Back to home]({{ '/' | relative_url }}) · [Shared profiles]({{ '/profiles.html' | relative_url }})

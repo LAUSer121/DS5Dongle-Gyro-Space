@@ -26,14 +26,11 @@ dongle setting — the profile covers the on-dongle half.
       <td><strong>{{ p.game }}</strong></td>
       <td>{{ p.desc }}</td>
       <td align="center">{% if p.wake %}on{% else %}off{% endif %}</td>
-      <td><a href="{{ p.file | relative_url }}">JSON</a></td>
+      <td><a href="{{ p.file | relative_url }}" download>JSON</a></td>
     </tr>
   {%- endfor %}
   </tbody>
 </table>
 
-**Add yours:** configure the game in the portal, click **Export profile**, drop the
-JSON in `shared/profiles/`, and append a stanza to `_data/profiles.yml`. The list
-re-sorts itself.
 
 [← Back to home]({{ '/' | relative_url }}) · [Trigger effects]({{ '/effects.html' | relative_url }})
