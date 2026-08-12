@@ -41,6 +41,14 @@ All notable changes to this project are documented here.
   active window begins at the hand-off from the previous stage — e.g. a vibration
   set to zones 6–8 behind a wall that ends at zone 4 buzzes from ~40% travel, not
   60%. A lone vibration with no other stages still plays the whole time it's armed.
+- **Connect no longer stalls or occasionally reads back a stale version with
+  default settings.** The 1-second background poll (loaded profile, battery,
+  auto-haptics) reads from the same `0x81` GET buffer as the full config read on
+  connect, so if it fired mid-read it clobbered a reply — slowing the connect, and
+  on the silent auto-reconnect leaving a stale firmware version and default-looking
+  values. The poll is now suspended for the whole connect / auto-reconnect /
+  auto-apply read sequence, and the auto-reconnect path now re-reads the firmware
+  version too.
 
 ### Notes
 - Firmware change (reports 1.18.25): reflash `ds5-v1.18.25.uf2` (Pico 2 W) or

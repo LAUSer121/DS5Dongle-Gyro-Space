@@ -391,7 +391,7 @@ if (navigator.hid && navigator.hid.addEventListener) {
       // Give the firmware a moment to (re)populate its feature data after connect,
       // then re-read so the UI reflects real values rather than 0s.
       await sleep(400);
-      if (typeof readAll === 'function') { await readAll(); }
+      if (typeof reloadFromDevice === 'function') { await reloadFromDevice(); }
       if (typeof render === 'function') { render(); }
     } catch (_) { /* leave handle; user can click Connect */ }
   });
@@ -402,6 +402,30 @@ let config = {};
 
 function toast(msg, err=false){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',2200); }
 
+// Read the full config + firmware version + loaded profile from the device, with
+// the 1-second background poll suspended for the whole sequence. The poll's reads
+// (loaded-profile 0x67, battery, auto-haptics) share the 0x81 GET buffer with the
+// per-field config reads here, so if it fires mid-read it clobbers a reply — which
+// caused slow connects and, on the silent auto-reconnect handler, a stale version
+// with default-looking settings. `saving` is the existing poll gate; wasSaving keeps
+// this safe to nest (e.g. when a save/activate path already holds it).
+async function reloadFromDevice(){
+  const wasSaving = saving;
+  saving = true;
+  try {
+    await readAll();
+    savedSnapshot = {...config};   // baseline for change detection on save
+    fwVer = null;
+    try {
+      const maj = await readField(0x7d,'u8'), min = await readField(0x7e,'u8'),
+            pat = await readField(0x7f,'u8'), cfgv = await readField(0x00,'u16');
+      if (maj !== null && maj !== undefined) fwVer = {maj,min,pat,cfgv};
+    } catch(e){ /* pre-1.0.5 firmware: no version fields */ }
+    await readLoadedProfile();
+  } finally {
+    saving = wasSaving;
+  }
+}
 async function connect(){
   try{
     const filters=[{vendorId:SONY_VID,productId:DS5_PID},{vendorId:SONY_VID,productId:DSE_PID}];
@@ -409,18 +433,7 @@ async function connect(){
     if(!devices.length) return;
     device=pickDs5(devices) || devices[0];
     if(!device.opened) await device.open();
-    await readAll();
-    savedSnapshot = {...config}; // baseline for change detection on save
-    // Firmware version (read-only fields added in fw 1.0.5; older builds lack them)
-    fwVer = null;
-    try{
-      const maj = await readField(0x7d,'u8');
-      const min = await readField(0x7e,'u8');
-      const pat = await readField(0x7f,'u8');
-      const cfgv = await readField(0x00,'u16');
-      if (maj !== null && maj !== undefined) fwVer = {maj,min,pat,cfgv};
-    }catch(e){ /* pre-1.0.5 firmware: no version fields */ }
-    await readLoadedProfile();   // populate the loaded-profile bar before first render
+    await reloadFromDevice();   // full read with the 1s poll suspended (see helper)
     render();
   }catch(e){ toast('Connect failed: '+e.message,true); }
 }
@@ -2597,7 +2610,7 @@ async function autoApply(){
       device = d;
       if (!device.opened) await device.open();
       await sleep(300);
-      await readAll();
+      await reloadFromDevice();
 
       const settings = (json && typeof json.settings==='object') ? json.settings : json;
       const known = new Set(FIELDS.map(f=>f[1]));
