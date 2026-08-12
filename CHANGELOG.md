@@ -32,6 +32,7 @@ All notable changes to this project are documented here.
   peak-hold and cleared on read, like the rumble diagnostics, so the one-second
   poll can't miss a short burst. New read-only HID fields `0x69`–`0x6b`; no new
   config field.
+- Portal now links to game profiles and trigger effects, which can be directly loaded.
 
 ### Fixed
 - **Vibration positioning in the effect reader.** A sequenced vibration stage was
