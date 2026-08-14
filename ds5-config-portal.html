@@ -692,9 +692,10 @@ async function connect(){
 // browser HID permission hiccup hid it from the filtered chooser).
 async function connectAll(){
   try{
-    // WebHID requires the options argument; an empty object means "no filters,
-    // show every HID device".
-    const devices=await navigator.hid.requestDevice({});
+    // Chrome's WebHID marks `filters` as a REQUIRED member of the options
+    // dictionary, so requestDevice() and requestDevice({}) both throw. An empty
+    // filters array is the documented way to show every HID device.
+    const devices=await navigator.hid.requestDevice({filters: []});
     if(!devices.length) return;
     device=pickDs5(devices) || devices[0];
     if(!device.opened) await device.open();
