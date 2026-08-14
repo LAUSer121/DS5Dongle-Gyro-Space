@@ -2,6 +2,75 @@
 
 All notable changes to this project are documented here.
 
+## [1.19.0] — 2026-08-14
+
+Config version 19. **No `flash_nuke` needed.** One new config field is appended at
+the tail of the struct, so existing settings and all 24 slots load untouched.
+
+> **Re-save your slots.** `macro_disable` is a new config field. Any slot saved
+> before 1.19.0 carries no value for it and will load as "no macros enabled", so a
+> later profile apply reverts the macro set you just chose. Save each slot once
+> after setting its macros.
+
+### Added
+- **Macros.** Bind a controller chord or a touchpad swipe to a keyboard combo —
+  `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
+  edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
+  HID keyboard interface the wake feature already provides; nothing runs on the PC.
+  - **Recorded, not typed in.** *Record input* captures the actual buttons you
+    hold or the swipe you make; *Record output* captures the combo you type on
+    your real keyboard.
+  - **Tap or hold is decided by the recording.** Tap the chord and it fires on
+    press; hold it for ~0.5 s or more and it becomes a long-press macro with the
+    duration you held as the threshold. The same chord can carry both, the way
+    the PS button does.
+  - **Release order is captured**, so `Alt+Tab` replays with Tab released before
+    Alt.
+  - **Touchpad swipes** — four directions, distinguished by starting half of the
+    pad and one or two fingers.
+  - **Names** — up to 15 characters, stored on the dongle, so they survive a
+    cleared browser or a different PC.
+  - **Definitions are shared, enablement is per-profile.** The macro table lives
+    in its own flash sector and is common to every slot; only the enable bitmap
+    (`macro_disable`, field `0x6c`) is stored per slot. Define once, then pick per
+    game which are live — the Playnite automation switches macro sets with no
+    extra setup.
+  - The portal warns when one bound chord contains another, since the shorter one
+    then makes the longer unreachable.
+- **Host-side macro engine tests** at `tools/macro-tests/` — compiles the real
+  `src/macro.cpp` against small fakes for TinyUSB, flash and time, with a fake
+  flash sector so the storage path is exercised. Run `run-macro-tests.sh` after
+  any change to the engine, alongside the portal harness.
+
+### Fixed
+- **Bulk config reads truncated any field wider than one byte unless it had been
+  hand-added to a list.** The bulk reader (`0x0c`) carried its own field-id →
+  length table with a `default: len = 1`; the length is now derived from the
+  actual C++ type of the value, so any future field of any width is correct on
+  arrival with nothing to keep in sync.
+- **The portal skipped the USB re-enumeration for `disable_usb_sn` and
+  `ps_shortcut_enabled`.** Both are enumeration-critical in the firmware but were
+  missing from the portal's `ENUM_FIELDS`, so toggling the PS shortcut from the
+  portal saved the field without applying it — the keyboard interface it adds did
+  not appear until something else re-enumerated. Slot activation was unaffected.
+- **Unnecessary re-enumeration on slot switches.** The wake keyboard interface is
+  shared by wake, the PS shortcut and macros, and those three were tested
+  independently when deciding whether a reconnect was required. With wake already
+  on, changing the macro set left the descriptor identical yet still dropped the
+  device — on every Playnite slot switch. All three sites now test whether the
+  interface is *present*, through one shared function.
+- **`readAll()` left its change-detection baseline stale** whenever it fell back
+  from the bulk read to the per-field path, which is most likely right after a
+  reconnect. Beyond a spurious "unsaved changes" warning, this meant the next save
+  compared against the previous device state and could trigger a reconnect that
+  was not needed, or skip one that was.
+
+### Changed
+- Slot sectors now have an explicit reservation (`SLOT_SECTORS_RESERVED = 16`,
+  room for up to 128 slots) enforced by `static_assert`, with the macro table
+  placed below it. Raising `SLOT_COUNT` stays a one-constant change and can no
+  longer silently overwrite a neighbouring region.
+
 ## [1.18.25] — 2026-08-11
 
 ### Added
