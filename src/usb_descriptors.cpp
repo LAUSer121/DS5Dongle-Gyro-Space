@@ -1025,7 +1025,10 @@ static char const *string_desc_arr[] =
     NULL, // 3: Serials will use unique ID if possible
 #if ENABLE_SERIAL
     "USB Serial", // 4: CDC interface
+#else
+    NULL, // 4: reserved - UPS battery chemistry always lives at index 5
 #endif
+    "LiP", // 5: UPS battery chemistry (always at index 5 regardless of ENABLE_SERIAL)
 };
 
 static uint16_t _desc_str[60 + 1];

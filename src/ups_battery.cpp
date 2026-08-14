@@ -231,9 +231,9 @@ uint16_t ups_get_report(uint8_t report_id, uint8_t report_type, uint8_t *buffer,
     (void) report_type; // feature and input reports carry the same values
     switch (report_id) {
         case UPS_RID_IPRODUCT:          return ups_copy8(buffer, reqlen, 2);    // STRID_PRODUCT
-        case UPS_RID_ISERIAL:           return ups_copy8(buffer, reqlen, 0);
-        case UPS_RID_IMANUFACTURER:     return ups_copy8(buffer, reqlen, 0);
-        case UPS_RID_IDEVICECHEMISTRY:  return ups_copy8(buffer, reqlen, 0);
+        case UPS_RID_ISERIAL:           return ups_copy8(buffer, reqlen, 3);    // STRID_SERIAL
+        case UPS_RID_IMANUFACTURER:     return ups_copy8(buffer, reqlen, 1);    // STRID_MANUFACTURER
+        case UPS_RID_IDEVICECHEMISTRY:  return ups_copy8(buffer, reqlen, 5);    // "LiP"
         case UPS_RID_CAPACITYMODE:      return ups_copy8(buffer, reqlen, 0);    // 0 = mAh
         case UPS_RID_PRESENTSTATUS:     return ups_copy8(buffer, reqlen, g_status);
         case UPS_RID_FULLCHARGE:        return ups_copy16(buffer, reqlen, UPS_FULL_CAPACITY);
@@ -316,4 +316,15 @@ void ups_battery_tick() {
     tud_hid_n_report(inst, UPS_RID_RUNTIMETOEMPTY, payload, 2);
     payload[0] = g_status;
     tud_hid_n_report(inst, UPS_RID_PRESENTSTATUS, payload, 1);
+    // Temperature / Voltage / CycleCount (like HidBattery) - Windows 11 build
+    // 29550+ parses these; harmless on older builds.
+    payload[0] = 300 & 0xFF;      // Kelvin
+    payload[1] = 300 >> 8;
+    tud_hid_n_report(inst, UPS_RID_TEMPERATURE, payload, 2);
+    payload[0] = 3600 & 0xFF;     // centivolts
+    payload[1] = 3600 >> 8;
+    tud_hid_n_report(inst, UPS_RID_VOLTAGE, payload, 2);
+    payload[0] = 0;               // cycle count
+    payload[1] = 0;
+    tud_hid_n_report(inst, UPS_RID_CYCLECOUNT, payload, 2);
 }
