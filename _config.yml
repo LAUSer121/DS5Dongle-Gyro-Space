@@ -1,6 +1,6 @@
 # GitHub Pages configuration.
 #
-# Renders README.md as the site homepage (https://artzox.github.io/DS5Dongle-Studio/)
+# Renders README.md as the site homepage (https://LAUSer121.github.io/DS5Dongle-Gyro-Space/)
 # using a built-in theme, and serves ds5-config-portal.html directly as the
 # in-browser config tool at /ds5-config-portal.html. No index.html is used, so
 # there is no second copy of the portal to keep in sync.
