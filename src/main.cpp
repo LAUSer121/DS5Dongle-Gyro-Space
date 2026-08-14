@@ -12,6 +12,7 @@
 #include "wake.h"
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
+#include "macro.h"
 #endif
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
@@ -202,6 +203,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         wake_on_bt_input(data + 3, len - 3);
         #ifdef ENABLE_WAKE_HID
         ps_shortcut_tick(data + 3, len - 3);
+        macro_on_input(data + 3, len - 3);
         #endif
 
         if (get_config().polling_rate_mode != 2) {
@@ -457,6 +459,13 @@ int main() {
                 state_set(outputData + 3, sizeof(SetStateData));
                 bt_write(outputData, sizeof(outputData));
             }
+            #ifdef ENABLE_WAKE_HID
+            // Keyboard-side twin of state_release_for_suspend(). Doing this
+            // lazily on the next input report is not enough: if the controller
+            // goes quiet no report arrives, and a combo caught mid-playback
+            // leaves a modifier latched at the host across the whole sleep.
+            if (susp && !was_suspended) macro_reset();
+            #endif
             was_suspended = susp;
         }
         {
@@ -492,6 +501,12 @@ int main() {
         cyw43_arch_poll();
         tud_task();
         wake_task();
+        // Drives the ordered playback walk and the long-press threshold. Without
+        // this the engine would assert the first key of a combo and never
+        // advance to release it - macro_on_input only STARTS a macro.
+        #ifdef ENABLE_WAKE_HID
+        macro_task();
+        #endif
         audio_loop();
         interrupt_loop();
 #if ENABLE_BATT_LED

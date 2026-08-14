@@ -3,6 +3,8 @@
 //
 
 #include "config.h"
+#include "flash_map.h"
+#include "macro.h"
 
 #include <cmath>
 #include <cstring>
@@ -15,7 +17,7 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 18;
+constexpr uint16_t CONFIG_VERSION = 19;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -312,9 +314,12 @@ static_assert(SLOT_COUNT % SLOTS_PER_SECTOR == 0, "whole sectors only");
 // no migration; additional sectors grow DOWNWARD (-5, -6, ...), away from the
 // config sector (-3) and the btstack bank (-2/-1). Each sector is still erased
 // and rewritten independently, so saving slot 12 never touches slots 1-8.
-static uint32_t slot_sector_offset(uint8_t sector) {
-    return PICO_FLASH_SIZE_BYTES - (4u + sector) * FLASH_SECTOR_SIZE;
+// The reservation and the macro sector anchor live in flash_map.h, which owns
+// the whole top-of-flash map so no two regions can be declared into each other.
+static constexpr uint32_t slot_sector_offset(uint8_t sector) {
+    return slot_sector_offset_at(sector);
 }
+
 constexpr uint32_t SLOT_MAGIC_V1 = 0x53355344; // "DS5S" — legacy: fixed-size body, layout-fragile
 constexpr uint32_t SLOT_MAGIC_V2 = 0x54355344; // "DS5T" — v2: explicit body_len, survives body growth
 
@@ -511,7 +516,15 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    (o.disable_speaker      != n.disable_speaker)      ||
                    (o.enable_wake          != n.enable_wake)          ||
                    (o.disable_usb_sn       != n.disable_usb_sn)       ||
-                   (o.ps_shortcut_enabled  != n.ps_shortcut_enabled);
+                   // The keyboard interface is shared by wake, the PS shortcut
+                   // and macros, so what matters is whether it is PRESENT - not
+                   // which of the three asked for it. Testing them separately
+                   // reconnected when nothing had changed: with wake already on,
+                   // enabling a macro leaves the descriptor identical, yet it
+                   // dropped the device on every slot switch that altered the
+                   // macro set. enable_wake keeps its own test above because it
+                   // also moves bcdUSB, the BOS descriptor and REMOTE_WAKEUP.
+                   (usb_kbd_iface_needed(o) != usb_kbd_iface_needed(n));
     config.body = slot_body;
     config_valid(); // clamp anything out of range (e.g. slot saved by older fw)
     active_profile_set(idx); // record the loaded slot (RAM) for the portal readout

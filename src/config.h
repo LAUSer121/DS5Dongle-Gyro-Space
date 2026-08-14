@@ -209,6 +209,31 @@ struct __attribute__((packed)) Config_body {
     // compose: invert the stick here, and align gyro separately if used. Same
     // bit layout as gyro_invert. Contributed by AppendinoCom (PR #4).
     uint8_t  rstick_invert; // bit0 = invert X (horizontal), bit1 = invert Y (vertical)
+    // Macro mask (v1.19.0). One bit per entry in the DEVICE-GLOBAL macro table.
+    // The table itself lives in its own flash sector (MACRO_FLASH_OFFSET) and is
+    // NOT per-slot - only this mask is, so a slot selects which subset of the
+    // shared macros is live. That is what lets Playnite switch macro sets per
+    // game without duplicating definitions into all 24 slots.
+    //
+    // STORED INVERTED - a SET bit means macro N is DISABLED - and this is not a
+    // style choice. Slots written by older firmware are read back 0xFF-filled
+    // past their recorded body_len, and config_valid() turns that fill into a
+    // safe default by RANGE-CLAMPING each field. A bitmap has no invalid range:
+    // 0xFFFFFFFF is the perfectly legal "all 32 enabled". Stored the obvious way
+    // round, every pre-existing slot would load with every macro switched on and
+    // would drag a spurious USB re-enumeration along with it. Inverted, the
+    // 0xFF fill reads as "all disabled", which is exactly the wanted default and
+    // needs no clamp at all.
+    //
+    // Keep the inversion at the STORAGE layer only. Firmware, wire format and
+    // portal state all speak macro_disable; the single place it flips is the
+    // checkbox's checked attribute at render time.
+    //
+    // Enumeration-critical at its all-disabled boundary: the wake keyboard
+    // interface is present iff at least one macro is enabled (see
+    // usb_descriptors.cpp), so crossing MACRO_NONE_ENABLED changes the USB
+    // descriptor. Flipping WHICH macros are on does not.
+    uint32_t macro_disable;
 };
 
 struct __attribute__((packed)) Config {

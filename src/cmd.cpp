@@ -11,6 +11,7 @@
 
 #include "bt.h"
 #include "config.h"
+#include "macro.h"
 #include "wake.h"
 #include "device/usbd.h"
 #include "pico/time.h"
@@ -35,8 +36,18 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 18;
-constexpr uint8_t FW_VER_PATCH = 25;
+constexpr uint8_t FW_VER_MINOR = 19;
+constexpr uint8_t FW_VER_PATCH = 0;
+
+// Width of the value the LAST successful write_config_value() emitted. The bulk
+// reader (0x0c) needs a length per field and used to carry its own hand-written
+// field-id -> length switch, with a comment saying it "must match the portal
+// FIELDS table". It drifted the first time a 4-byte field was added:
+// macro_disable (0x6c) fell to the default of 1, so the portal read only its low
+// byte - 0xFFFFFFFF arrived as 0x000000FF and showed macros 8-31 as enabled.
+// Deriving it from sizeof(T) here means the fact lives in exactly one place and
+// any future field of any width is correct on arrival.
+static uint8_t g_last_field_len = 1;
 
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
@@ -44,6 +55,7 @@ static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
         return false;
     }
     memcpy(buffer, &value, sizeof(T));
+    g_last_field_len = (uint8_t) sizeof(T);
     return true;
 }
 
@@ -215,6 +227,9 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x63: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.mix_native_filter=v; break; }
         case 0x64: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ah_dsp_source=v; break; }
         case 0x65: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.rstick_invert=v; break; }
+        // Macro enable bitmap, stored INVERTED (set bit = disabled) so an old
+        // slot's 0xFF tail fill defaults to "no macros". See config.h.
+        case 0x6c: { uint32_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.macro_disable=v; break; }
         case 0x56: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.effect_leak_max_burst=v; break; }
         case 0x57: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_enable=v; break; }
         case 0x58: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_condition=v; break; }
@@ -287,6 +302,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x14: return write_config_value(buffer, bufsize, config.auto_haptics_lowpass_hz);
         case 0x15: return write_config_value(buffer, bufsize, config.auto_mute_replace);
         case 0x16: return write_config_value(buffer, bufsize, config.auto_mute_mix);
+        case 0x6c: return write_config_value(buffer, bufsize, config.macro_disable);
         case 0x17: return write_config_value(buffer, bufsize, config.auto_haptics_gate);
         case 0x18: return write_config_value(buffer, bufsize, config.auto_haptics_slope);
         case 0x19: return write_config_value(buffer, bufsize, config.lightbar_off);
@@ -718,6 +734,71 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
 
+        case 0x17: {
+            // READ macro entry. Payload: [idx]. Reply: 0x66 0x17 status idx
+            // <12-byte MacroEntry> <16-byte label>.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x17; buf[2] = 0x01;
+            MacroRecord rec{};
+            if (bufsize >= 1 && buffer[0] == 0xFF) {
+                // USED BITMAP. One round trip tells the portal which rows are
+                // non-empty; sweeping all 32 entries to find that out cost ~2s
+                // of HID traffic and blocked every other read behind it.
+                uint32_t used = 0;
+                for (uint8_t i2 = 0; i2 < MACRO_COUNT; ++i2) {
+                    MacroRecord r2{};
+                    if (!macro_get(i2, r2)) continue;
+                    const bool empty = (r2.entry.chord == 0) && (r2.entry.gesture == 0) &&
+                                       (r2.entry.keys[0] == 0) && (r2.entry.keys[1] == 0) &&
+                                       (r2.entry.keys[2] == 0) && (r2.entry.keys[3] == 0);
+                    if (!empty) used |= (1u << i2);
+                }
+                buf[2] = 0x00; buf[3] = 0xFF;
+                memcpy(buf + 4, &used, sizeof(used));
+                feature_data[0x84].assign(buf, buf + sizeof(buf));
+                break;
+            }
+            if (bufsize >= 1 && macro_get(buffer[0], rec)) {
+                buf[2] = 0x00; buf[3] = buffer[0];
+                memcpy(buf + 4, &rec, sizeof(rec));
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x18: {
+            // WRITE macro entry into the RAM image only. Payload:
+            // [idx] <12-byte MacroEntry> <16-byte label>. Nothing reaches flash
+            // until 0x19, so saving a 32-row list costs ONE erase, not 32.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x18; buf[2] = 0x01;
+            if (bufsize >= 1 + sizeof(MacroRecord)) {
+                MacroRecord rec{};
+                memcpy(&rec, buffer + 1, sizeof(rec));
+                if (macro_set_entry(buffer[0], rec)) { buf[2] = 0x00; buf[3] = buffer[0]; }
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x19: {
+            // COMMIT the RAM image to the macro sector.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x19;
+            buf[2] = macro_commit() ? 0x00 : 0x01;
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x1a: {
+            // SUSPEND/RESUME macro firing for the portal's record mode. Without
+            // this, recording a chord that matches an already-enabled macro
+            // types its combo into the portal while the user is capturing it.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x1a; buf[2] = 0x00;
+            const bool on = (bufsize >= 1) && (buffer[0] != 0);
+            macro_suspend(on);
+            buf[3] = on ? 1 : 0;
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
         case 0x67: {
             // Read the currently-loaded profile (RAM only, set by slot_activate /
             // slot_save - so it reflects loads from the portal AND the automation).
@@ -800,18 +881,11 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     const uint8_t fid = buffer[1 + i2];
                     uint8_t tmp[8]{};
                     if (!get_config_field(fid, tmp, sizeof(tmp))) { ok = false; break; }
-                    // get_config_field writes the raw value; length by field type:
-                    // reuse its convention - u8=1, u16=2, f32=4. Determine via a
-                    // conservative probe: write_config_value zero-fills, so track
-                    // known u16/f32 ids explicitly.
-                    uint8_t len = 1;
-                    switch (fid) {
-                        // u16 fields (must match the portal FIELDS table)
-                        case 0x00: case 0x14: case 0x1b: case 0x1c:
-                        case 0x1f: case 0x26: case 0x40: case 0x4a: len = 2; break;
-                        case 0x01: len = 4; break; // haptics_gain f32
-                        default: len = 1; break;
-                    }
+                    // Length comes from the type get_config_field actually wrote
+                    // (see g_last_field_len). Previously a hand-maintained id ->
+                    // length switch lived here and silently truncated any field
+                    // whose id had not been added to it.
+                    const uint8_t len = g_last_field_len;
                     if ((uint16_t)(out + 2 + len) > sizeof(buf)) { ok = false; break; }
                     buf[out] = fid; buf[out + 1] = len;
                     memcpy(buf + out + 2, tmp, len);

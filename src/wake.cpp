@@ -17,6 +17,7 @@
 #include "hardware/address_mapped.h"
 #include "pico/time.h"
 #include "ps_shortcut.h"
+#include "macro.h"
 #include "config.h"
 
 
@@ -301,6 +302,16 @@ void wake_on_bt_disconnect(void) {
     prev_b7 = 0x08; prev_b8 = 0x00; prev_b9 = 0x00;
     critical_section_exit(&wake_cs);
     ps_shortcut_reset();
+    macro_reset();   // never leave a modifier latched when the controller goes
+}
+
+// True while the wake FSM is mid-sequence on the shared keyboard instance:
+// from the resume request until its F15 keyup has been sent. macro.cpp stands
+// off during this window. Deliberately NOT gated on host_suspended - most of
+// this sequence runs AFTER the bus resumes, which is exactly when a macro would
+// otherwise be free to interleave.
+bool wake_owns_keyboard(void) {
+    return state == WAKE_REQUESTED || state == WAKE_KEY_DOWN || state == WAKE_KEY_UP_SENT;
 }
 
 void wake_task(void) {
