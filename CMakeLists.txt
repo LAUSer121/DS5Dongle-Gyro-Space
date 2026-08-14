@@ -322,6 +322,7 @@ target_compile_definitions(ds5-bridge PRIVATE ENABLE_WAKE_HID)
 target_sources(ds5-bridge PRIVATE
         src/wake.cpp
         src/ps_shortcut.cpp
+        src/macro.cpp
 )
 
 option(WAKE_DEBUG "Print wake-FSM transitions to UART (developer use)" OFF)

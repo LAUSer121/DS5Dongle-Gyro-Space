@@ -2,6 +2,204 @@
 
 All notable changes to this project are documented here.
 
+## [1.19.0] — 2026-08-14
+
+Config version 19. **No `flash_nuke` needed.** One new config field is appended at
+the tail of the struct, so existing settings and all 24 slots load untouched.
+
+> **Re-save your slots.** `macro_disable` is a new config field. Any slot saved
+> before 1.19.0 carries no value for it and will load as "no macros enabled", so a
+> later profile apply reverts the macro set you just chose. Save each slot once
+> after setting its macros.
+
+### Added
+- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo — e.g.
+  `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
+  edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
+  HID keyboard interface the wake feature already provides; nothing runs on the PC.
+  - **Recorded, not typed in.** *Record input* captures the actual buttons you
+    hold or the swipe you make; *Record output* captures the combo you type on
+    your real keyboard.
+  - **Tap or hold is decided by the recording.** Tap the controller button and it fires on
+    press; hold it for ~0.5 s or more and it becomes a long-press macro with the
+    duration you held as the threshold. The same button press can carry both, the way
+    the PS button does.
+  - **Release order is captured**, so `Alt+Tab` replays with Tab released before
+    Alt.
+  - **Touchpad swipes** — four directions, distinguished by starting half of the
+    pad and one or two fingers.
+  - **Names** — up to 15 characters, stored on the dongle, so they survive a
+    cleared browser or a different PC.
+  - **Definitions are shared, enablement is per-profile.** The macro table lives
+    in its own flash sector and is common to every slot; only the enable bitmap
+    (`macro_disable`, field `0x6c`) is stored per slot. Define once, then pick per
+    game which are live — the Playnite automation switches macro sets with no
+    extra setup.
+  - The portal warns when one bound button press contains another, since the shorter one
+    then makes the longer unreachable.
+- **Host-side macro engine tests** at `tools/macro-tests/` — compiles the real
+  `src/macro.cpp` against small fakes for TinyUSB, flash and time, with a fake
+  flash sector so the storage path is exercised. Run `run-macro-tests.sh` after
+  any change to the engine, alongside the portal harness.
+
+### Fixed
+- **Bulk config reads truncated any field wider than one byte unless it had been
+  hand-added to a list.** The bulk reader (`0x0c`) carried its own field-id →
+  length table with a `default: len = 1`; the length is now derived from the
+  actual C++ type of the value, so any future field of any width is correct on
+  arrival with nothing to keep in sync.
+- **Unnecessary re-enumeration on slot switches.** The wake keyboard interface is
+  shared by wake, the PS shortcut and macros, and those three were tested
+  independently when deciding whether a reconnect was required. With wake already
+  on, changing the macro set left the descriptor identical yet still dropped the
+  device — on every Playnite slot switch. All three sites now test whether the
+  interface is *present*, through one shared function.
+- **`readAll()` left its change-detection baseline stale** whenever it fell back
+  from the bulk read to the per-field path, which is most likely right after a
+  reconnect. Beyond a spurious "unsaved changes" warning, this meant the next save
+  compared against the previous device state and could trigger a reconnect that
+  was not needed, or skip one that was.
+
+### Changed
+- Slot sectors now have an explicit reservation (`SLOT_SECTORS_RESERVED = 16`,
+  room for up to 128 slots) enforced by `static_assert`, with the macro table
+  placed below it. Raising `SLOT_COUNT` stays a one-constant change and can no
+  longer silently overwrite a neighbouring region.
+
+## [1.18.25] — 2026-08-11
+
+### Added
+- **Trigger effect visualizer in the portal.** Every trigger effect now renders
+  as a diagram — trigger travel (0–100%) along the x-axis, force 0–7 up the y —
+  drawn live under the builder and under the Read L2/R2 output. Resistance shows
+  as per-zone steps, weapon-break walls mark where the break fires, bow effects
+  show their ramp and snap point, and vibration is drawn as a band over the
+  window where it actually plays. Sequenced stages get dashed hand-off lines, and
+  a stage that never reaches its wall or snap because the sequencer hands over
+  first is faded and marked ✕ — so a truncated wall or an unreachable bow is
+  visible at a glance instead of read off a warning. Because effects can't be
+  conveyed in text, the diagram can be screenshotted and shared. It reuses the
+  existing effect-decode helpers, so the picture and the prose description always
+  agree. Portal-only.
+- **DualSense battery readout** in the Device-tab diagnostics — level and charge
+  state (on battery / charging / full), read from the controller's own input
+  report. New read-only HID field `0x68`; no new config field.
+- **Auto-haptics activity + level meters** on the Haptics tab, right under the
+  auto-haptics settings, so tuning is visible without hopping to another tab. An
+  "Audio bridge: active / not detected" line
+  reports whether audio is actually arriving on the dongle's USB audio endpoint —
+  the most common reason auto-haptics "does nothing" is that `ds5audio.py` isn't
+  running, and this makes that obvious. Two bars show the audio coming in (ch0/1)
+  against the haptic the DSP is deriving from it, so "audio present but nothing
+  derived" (mode off, or cutoff/intensity too low) is visible too — change a
+  setting and watch "Haptics out" respond. All three are
+  peak-hold and cleared on read, like the rumble diagnostics, so the one-second
+  poll can't miss a short burst. New read-only HID fields `0x69`–`0x6b`; no new
+  config field.
+- Portal now links to game profiles and trigger effects, which can be directly loaded.
+
+### Fixed
+- **Vibration positioning in the effect reader.** A sequenced vibration stage was
+  treated as position-independent, so both the text description and the new
+  diagram placed it wrong. The reader now mirrors the firmware sequencer: in a
+  multi-stage effect a vibration is a full stage sorted by its start zone, and its
+  active window begins at the hand-off from the previous stage — e.g. a vibration
+  set to zones 6–8 behind a wall that ends at zone 4 buzzes from ~40% travel, not
+  60%. A lone vibration with no other stages still plays the whole time it's armed.
+- **Connect no longer stalls or occasionally reads back a stale version with
+  default settings.** The 1-second background poll (loaded profile, battery,
+  auto-haptics) reads from the same `0x81` GET buffer as the full config read on
+  connect, so if it fired mid-read it clobbered a reply — slowing the connect, and
+  on the silent auto-reconnect leaving a stale firmware version and default-looking
+  values. The poll is now suspended for the whole connect / auto-reconnect /
+  auto-apply read sequence, and the auto-reconnect path now re-reads the firmware
+  version too.
+
+### Notes
+- Firmware change (reports 1.18.25): reflash `ds5-v1.18.25.uf2` (Pico 2 W) or
+  `ds5-v1.18.25-waveshare.uf2` (Waveshare RP2350B-Plus-W). On older firmware the
+  portal degrades gracefully — the battery line and the auto-haptics meters stay
+  blank; the visualizer and the reader fix work regardless, being portal-side.
+
+## [1.18.24] — 2026-08-09
+
+### Added
+- **The portal now shows which profile is currently loaded**, right under the
+  Connected status bar — visible on every tab, not buried in the Device-tab
+  diagnostics. The dongle tracks the active slot in RAM and records it whenever a
+  slot is activated, by the portal *or* by the Playnite automation, so the
+  readout reflects background profile switches too, not only ones made in the
+  portal. It shows the slot's name (e.g. "Control"), appends "(edited)" once a
+  setting is changed away from the loaded slot, and reads "not from a saved slot"
+  when the live config didn't come from one — including after a power cycle, since
+  the marker is RAM-only. A 1-second poll keeps it current without a reload, and a
+  fresh connect or reconnect always re-reads it. The "edited" check deliberately
+  ignores the volume/gain fields the firmware syncs from hardware, so a hardware
+  volume change — or the audio re-sync the host performs after a USB
+  re-enumeration — is not mistaken for a user edit. New read-only HID command
+  `0x67`; no new config field, so slots and existing configs are untouched.
+
+### Notes
+- Firmware change (reports 1.18.24): reflash `ds5-v1.18.24.uf2` (Pico 2 W) or
+  `ds5-v1.18.24-waveshare.uf2` (Waveshare). On older firmware the portal degrades
+  gracefully — the loaded-profile line simply stays blank.
+
+## [1.18.21] — 2026-08-09
+
+### Added
+- **Right-stick inversion.** A new "Right Stick" setting inverts the physical
+  right stick's X axis, Y axis, or both by rewriting the stick values in the
+  input report the PC sees — so it works in any game with no PC-side software,
+  and independently of gyro aiming (it applies whether or not gyro is on).
+  Useful for inverted-look setups, or games that only offer inversion on one
+  axis. New config field `rstick_invert` (id 0x65), appended at the struct tail
+  so existing configs and slots are untouched. Contributed by AppendinoCom
+  (PR #4) — thank you!
+
+### Changed
+- **Gyro invert is now two checkboxes** ("Invert X" / "Invert Y") instead of a
+  0–3 number field. It is the same stored byte and the same effect — both boxes
+  ticked equals the old "3" — so existing profiles carry over unchanged; it is
+  simply easier to set. The Gyro tab is renamed "Gyro / Stick" to cover both
+  controls, and both invert settings now carry hover descriptions. Also from
+  AppendinoCom's PR #4.
+
+### Notes
+- First firmware change since 1.18.17 (1.18.18–1.18.20 were portal-only), so the
+  version the portal reports now matches the release number again. This release
+  requires reflashing: `ds5-v1.18.21.uf2` (Pico 2 W) or
+  `ds5-v1.18.21-waveshare.uf2` (Waveshare RP2350B-Plus-W).
+
+## [1.18.20] — 2026-08-09
+
+### Fixed
+- **The configuration portal loaded slowly after waking the PC, and stayed
+  slow until it was closed and reopened.** On connect the portal reads the
+  whole configuration in one bulk transfer, falling back to reading every
+  field one at a time if that fails. Right after a host wake the Bluetooth
+  link between the controller and dongle is still settling, so the bulk read
+  dropped a packet and returned nothing — and the portal took that transient
+  miss as "this firmware has no bulk support" and disabled the fast path for
+  the rest of the session, leaving every read on the slow per-field route.
+  Closing and reopening reset the flag, and by then the link had settled,
+  which is exactly why a reopen loaded quickly. The bulk read is now retried a
+  few times with a short backoff so it lands once the link is ready, and a
+  failed read no longer disables the fast path unless a full per-field pass
+  shows the link is healthy and bulk genuinely unavailable (pre-1.4.0
+  firmware). Connects after wake are fast on the first attempt; the healthy
+  case is unchanged, since a bulk read that succeeds immediately adds no delay.
+
+## [1.18.19] — 2026-08-09
+
+### Added
+- **Hover descriptions for every setting in the configuration portal.** Each
+  setting now shows a small "i" marker; hovering it brings up a one-line,
+  plain-language description of what that setting does, in the spirit of the
+  README glossary. Every setting is covered, across all tabs, including the
+  two-column Adaptive Triggers layout. It is implemented as plain markup and
+  CSS with no per-field scripting, so it adds nothing to portal load time or
+  runtime and there is nothing new to wire up.
+
 ## [1.18.18] — 2026-08-04
 ### Fixed
 - slot-activate script fixed to load slots 17-24, was broken and only loaded 1-16 with the previous release,

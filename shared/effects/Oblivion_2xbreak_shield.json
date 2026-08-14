@@ -1,0 +1,44 @@
+{
+  "format": "ds5dongle-custom-effect",
+  "version": 2,
+  "source": "built",
+  "state_count": 2,
+  "states": [
+    {
+      "type": "0x25",
+      "name": "Weapon break",
+      "bytes": [
+        37,
+        36,
+        0,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "duration_ms": 0
+    },
+    {
+      "type": "0x25",
+      "name": "Weapon break",
+      "bytes": [
+        37,
+        128,
+        1,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "duration_ms": 0
+    }
+  ]
+}

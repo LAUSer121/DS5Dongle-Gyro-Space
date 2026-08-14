@@ -35,6 +35,25 @@
   .row:last-child { border-bottom:none; }
   .row .label { font-size:15px; }
   .row .hint { font-size:12px; color:var(--sub); margin-top:2px; }
+  /* Hover glossary for each setting. The marker sits after the label; the popover
+     is a CSS ::after so there is no per-field JS and nothing to wire into events.
+     No ancestor sets overflow:hidden, so the popover is never clipped. */
+  .desc { position:relative; display:inline-flex; align-items:center; justify-content:center;
+          width:15px; height:15px; margin-left:7px; border-radius:50%;
+          border:1px solid var(--sub); color:var(--sub);
+          font-size:10px; font-weight:700; font-style:normal; line-height:1;
+          cursor:help; vertical-align:middle; user-select:none; }
+  .desc:hover { border-color:var(--accent); color:var(--accent); }
+  .desc::after { content:attr(data-tip); position:absolute; left:50%; top:calc(100% + 9px);
+          transform:translateX(-50%); width:max-content; min-width:180px; max-width:300px;
+          background:var(--card); color:var(--text); border:1px solid var(--border);
+          border-radius:8px; padding:9px 11px; font-size:12.5px; font-weight:400; line-height:1.45;
+          text-align:left; white-space:normal; box-shadow:0 6px 22px rgba(0,0,0,.5);
+          opacity:0; visibility:hidden; transition:opacity .12s; pointer-events:none; z-index:60; }
+  .desc::before { content:''; position:absolute; left:50%; top:calc(100% + 3px);
+          transform:translateX(-50%); border:6px solid transparent; border-bottom-color:var(--border);
+          opacity:0; visibility:hidden; transition:opacity .12s; z-index:61; }
+  .desc:hover::after, .desc:hover::before { opacity:1; visibility:visible; }
   input[type=number], select { background:#11141a; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 10px; font-size:14px; width:150px; text-align:right; }
   select { text-align:left; }
   .btn { border:none; border-radius:8px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; }
@@ -105,7 +124,8 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 
 // Field definitions: [field_id, key, type('u8'|'u16'|'f32'), label, kind, opts]
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
-// kind: 'number' | 'select' | 'bool' ; type: 'u8' | 'u16' | 'f32'
+// kind: 'number' | 'select' | 'bool' | 'bits' ; type: 'u8' | 'u16' | 'f32'
+// ('bits' = one checkbox per bit of a bitmask byte; opts is the array of bit labels)
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
@@ -143,6 +163,12 @@ const SECTIONS = [
     [0x0c,'lock_volume','u8','Lock Volume','bool'],
     [0x0f,'disable_mic','u8','Disable Mic','bool'],
     [0x10,'disable_speaker','u8','Disable Speaker','bool'],
+  ]},
+  { title: 'Macros', fields: [
+    // The bitmap is stored INVERTED (set bit = disabled) so an old slot's 0xFF
+    // tail fill defaults to "no macros" - see config.h. The UI shows ENABLED
+    // checkboxes; macroBit() is the single place that inversion happens.
+    [0x6c,'macro_disable','u32','Macros','macros'],
   ]},
   { title: 'Device & Connection', fields: [
     [0x0b,'controller_mode','u8','Controller Type','select',{0:'DualSense (DS5)',1:'DualSense Edge (DSE)',2:'Auto-detect'}],
@@ -205,12 +231,16 @@ const SECTIONS = [
   { title: 'Gyro Aiming', fields: [
     [0x2f,'gyro_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Only while L2 (aim) held'],[5,'Only while R2 (fire) held'],[6,'Only while L1 held'],[7,'Only while R1 held'],[3,'Only while touchpad touched'],[4,'Always on — touch touchpad to pause (ratchet)']]],
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
-    [0x65,'gyro_space','u8','Space (orientation mapping)','select',[[0,'Yaw — yaw (gyro_axis=0) or roll (gyro_axis=1) to horizontal, pitch to vertical (classic dual-axis)'],[1,'Roll — roll to horizontal, pitch to vertical (classic dual-axis)'],[2,'Yaw + Roll — yaw & roll (gravity axis) to horizontal, pitch to vertical (Steam-style)'],[3,'Local Space — axes follow the controller (default, yaw→X pitch→Y)'],[4,'Player Space — world yaw + local pitch (Steam-style)'],[5,'World Space — gravity-aligned, grip-independent (recommended)'],[6,'Laser Pointer — screen projection of the forward vector (relative to activation)']]],
-    [0x66,'gyro_fusion','u8','Fusion gain (gravity correction)','number',[0,100]],
-    [0x67,'gyro_cal_x','i16','Gyro calibration offset X (raw)','number',[-32768,32767]],
-    [0x68,'gyro_cal_y','i16','Gyro calibration offset Y (raw)','number',[-32768,32767]],
-    [0x69,'gyro_cal_z','i16','Gyro calibration offset Z (raw)','number',[-32768,32767]],
+    [0x31,'gyro_axis','u8','Horizontal source (Yaw space)','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
+    [0x72,'gyro_space','u8','Space (orientation mapping)','select',[[0,'Yaw — yaw (gyro_axis=0) or roll (gyro_axis=1) to horizontal, pitch to vertical (classic dual-axis)'],[1,'Roll — roll to horizontal, pitch to vertical (classic dual-axis)'],[2,'Yaw + Roll — yaw & roll (gravity axis) to horizontal, pitch to vertical (Steam-style)'],[3,'Local Space — axes follow the controller (default, yaw→X pitch→Y)'],[4,'Player Space — world yaw + local pitch (Steam-style)'],[5,'World Space — gravity-aligned, grip-independent (recommended)'],[6,'Laser Pointer — screen projection of the forward vector (relative to activation)']]],
+    [0x73,'gyro_fusion','u8','Fusion gain (gravity correction)','number',[0,100]],
+    [0x74,'gyro_cal_x','i16','Gyro calibration offset X (raw)','number',[-32768,32767]],
+    [0x75,'gyro_cal_y','i16','Gyro calibration offset Y (raw)','number',[-32768,32767]],
+    [0x76,'gyro_cal_z','i16','Gyro calibration offset Z (raw)','number',[-32768,32767]],
     [0x32,'gyro_invert','u8','Invert axes (0=none, 1=X, 2=Y, 3=both)','number',[0,3]],
+  ]},
+  { title: 'Right Stick', fields: [
+    [0x65,'rstick_invert','u8','Invert right stick','bits',['X (horizontal)','Y (vertical)']],
   ]},
   { title: 'Advanced — BT Latency (experimental)', fields: [
     [0x1b,'bt_flush_timeout','u16','BT Flush Timeout (0=off)','select',{0:'Off (reliable)',4:'~2.5ms (low latency)',6:'~3.75ms',10:'~6.25ms',16:'~10ms'}],
@@ -219,6 +249,123 @@ const SECTIONS = [
 ];
 // Flat list derived from sections (for read/write loops).
 const FIELDS = SECTIONS.flatMap(s => s.fields);
+
+// Per-setting hover glossary, keyed by field key (NOT part of the FIELDS tuple,
+// so the coverage/render harness that parses those tuples is unaffected). A field
+// with no entry simply shows no marker. Wording mirrors the README Glossary.
+// Keep entries plain text - they are escaped into a data-tip attribute, but avoid
+// packing markup in. One or two sentences; note the sensible default where it helps.
+const DESCRIPTIONS = {
+  // Auto-Haptics & Speaker Effect Leak
+  auto_haptics_enable: "Whether audio-derived haptics are off, mixed with the game's native output, or fully replace it.",
+  auto_haptics_gain: "Overall strength of the audio-derived haptics.",
+  auto_haptics_smooth: "How gradually the derived haptics rise and fall - higher is smoother, lower is punchier.",
+  auto_haptics_gate: "The level below which derived haptics stay silent, so quiet audio doesn't buzz.",
+  mix_native_level: "How much of a game's own native haptics reaches the actuators in Mix mode.",
+  mix_native_filter: "Whether the native feed is low-passed before mixing, or passed through untouched.",
+  ah_dsp_source: "Which audio channels the derived haptics are generated from.",
+  auto_haptics_lowpass_hz: "The frequency above which audio is ignored when looking for bass to drive haptics.",
+  ah_xover_hz: "Splits the haptic band so each grip is driven by a different part of the spectrum.",
+  ah_low_gain: "Strength of the low half of the split - impacts and deep rumble.",
+  ah_high_gain: "Strength of the high half of the split - the music and voice range.",
+  auto_haptics_slope: "How sharply the low-pass cuts off the unwanted higher frequencies.",
+  auto_mute_replace: "Mutes the controller speaker automatically in Replace mode.",
+  auto_mute_mix: "Mutes the controller speaker automatically in Mix mode.",
+  lightbar_off: "Turns the lightbar off while Replace mode is active.",
+  rumble_haptic_strength: "Strength of a game's rumble re-created on the actuators when it can't be handed to native rumble.",
+  effect_leak_volume: "How loudly sharp one-off sounds leak to the speaker while it's muted.",
+  effect_leak_sensitivity: "How readily a sound counts as a sharp onset worth leaking.",
+  effect_leak_decay: "How quickly a leaked accent fades once the sound passes.",
+  effect_leak_attack: "How fast the leak opens when an onset is detected.",
+  effect_leak_output_hp_hz: "Trims low frequencies from the leaked sound to keep the accent crisp.",
+  effect_leak_hp_hz: "The low edge of the band the detector listens to for onsets.",
+  effect_leak_lp_hz: "The high edge of the leaked sound - the top of the leak window.",
+  effect_leak_max_burst: "Caps how long one leak lasts, turning a sustained sound into a short accent.",
+  effect_leak_hold: "Briefly keeps the leak open after a sound so it doesn't flutter.",
+  // General Haptics & Audio
+  haptics_gain: "Boosts the strength of a game's own native haptics.",
+  speaker_volume: "Volume of the controller's built-in speaker.",
+  headset_volume: "Volume of a headset plugged into the controller.",
+  speaker_gain: "Extra pre-amplification applied to the speaker signal.",
+  sync_spk_headset_volume: "Ties speaker and headset volume together so one control moves both.",
+  lock_volume: "Prevents the controller's volume buttons from changing the level.",
+  disable_mic: "Turns the controller microphone off.",
+  disable_speaker: "Turns the controller's built-in speaker off.",
+  // Device & Connection
+  controller_mode: "Which controller model the dongle presents itself as to the PC.",
+  polling_rate_mode: "How often the controller reports to the PC - higher is more responsive.",
+  audio_buffer_length: "Audio buffering size - lower is lower-latency, higher is steadier.",
+  inactive_time: "Idle minutes before the controller disconnects to save battery.",
+  disable_inactive_disconnect: "Keeps the controller connected even when left idle.",
+  disable_pico_led: "Turns off the Pico board's on-board LED.",
+  enable_wake: "Lets a PS-button press wake the PC from sleep (set per profile).",
+  // Native Haptics Filter
+  haptics_aa: "How much the native haptics are smoothed to remove digital grit.",
+  // Rumble to Trigger
+  r2t_mode: "Turns a game's rumble into trigger vibration, and on which trigger(s).",
+  r2t_on_press: "Only vibrate the trigger while it is actually being pressed.",
+  r2t_strength: "Strength of the rumble-driven trigger vibration.",
+  r2t_frequency: "Frequency of the trigger vibration - lower feels heavier.",
+  synth_force: "Forces trigger effects on even when a game or app sends its own.",
+  // Adaptive Triggers - R2
+  at_mode: "When R2's resistance is active - off, always, or gated by another input.",
+  at_strength: "How hard the R2 resistance pushes back.",
+  at_threshold: "How far the gating input must be pressed to arm R2's resistance.",
+  at_start_pos: "The trigger position where R2's resistance begins.",
+  at_shape: "The shape of R2's resistance - flat, ramping, a detent, or a breakable wall.",
+  at_strength_b: "The end or wall strength used by the ramp and detent shapes.",
+  at_detent_pos: "The trigger position of the detent or break point.",
+  at_deadzone: "Ignores the first part of the pull so the game only registers a press past this zone.",
+  at_pushback: "Strength of a recoil kick fired at the break point (0 = no kick).",
+  at_kick_style: "Whether the recoil kick is a buzz or a mechanical push-back.",
+  at_pushback_freq: "Frequency of the kick's thump - lower feels heavier.",
+  at_pushback_src: "What the recoil kick is driven from (shared by both triggers).",
+  ce_r2_enable: "Enables a captured custom effect on R2 (assigned in the monitor below).",
+  ce_r2_condition: "Whether the custom effect plays while held, on press, or on release.",
+  ce_r2_thresh: "The engage point, or for while-held walls the zone where the wall re-arms.",
+  ce_r2_rate: "How fast a two-state vibration effect toggles between its states.",
+  ce_r2_state_count: "How many states make up the custom effect (set automatically).",
+  ce_r2_yield: "Who owns R2 when gated - the custom effect or the resistance sliders.",
+  // Adaptive Triggers - L2
+  at_l2_mode: "When L2's resistance is active - off, always, or gated by another input.",
+  at_l2_strength: "How hard the L2 resistance pushes back.",
+  at_l2_threshold: "How far the gating input must be pressed to arm L2's resistance.",
+  at_l2_start_pos: "The trigger position where L2's resistance begins.",
+  at_l2_shape: "The shape of L2's resistance - flat, ramping, a detent, or a breakable wall.",
+  at_l2_strength_b: "The end or wall strength used by the ramp and detent shapes.",
+  at_l2_detent_pos: "The trigger position of the detent or break point.",
+  at_l2_deadzone: "Ignores the first part of the pull so the game only registers a press past this zone.",
+  at_l2_pushback: "Strength of a recoil kick fired at the break point (0 = no kick).",
+  at_l2_kick_style: "Whether the recoil kick is a buzz or a mechanical push-back.",
+  at_l2_pushback_freq: "Frequency of the kick's thump - lower feels heavier.",
+  ce_l2_enable: "Enables a captured custom effect on L2 (assigned in the monitor below).",
+  ce_l2_condition: "Whether the custom effect plays while held, on press, or on release.",
+  ce_l2_thresh: "The engage point, or for while-held walls the zone where the wall re-arms.",
+  ce_l2_rate: "How fast a two-state vibration effect toggles between its states.",
+  ce_l2_state_count: "How many states make up the custom effect (set automatically).",
+  ce_l2_yield: "Who owns L2 when gated - the custom effect or the resistance sliders.",
+  // Gyro Aiming
+  gyro_mode: "When gyro aiming is active - off, always, or only while a chosen button is held.",
+  gyro_sens: "How much aim movement the gyro produces.",
+  gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
+  gyro_invert: "Flips the direction gyro aiming moves - X, Y, or both. Only affects gyro, when it's on.",
+  rstick_invert: "Inverts the physical right stick itself - X, Y, or both - in any game, separate from gyro.",
+  // Advanced - BT Latency
+  bt_flush_timeout: "Caps how long Bluetooth batches reports - lower cuts latency but can drop packets.",
+  bt_qos_latency_us: "Requests a Bluetooth latency target - aggressive is snappier but less reliable.",
+};
+
+// Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
+// HARD RULE #1: unescaped quotes close the attribute and silently break markup.
+function escAttr(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+                  .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// The marker HTML for a field key, or '' if the field has no description.
+function descMarker(key){
+  const d = DESCRIPTIONS[key];
+  return d ? `<span class="desc" data-tip="${escAttr(d)}" aria-label="${escAttr(d)}">i</span>` : '';
+}
 
 let device = null;
 let saving = false; // suspends background diagnostic polling during save/reconnect
@@ -255,7 +402,7 @@ if (navigator.hid && navigator.hid.addEventListener) {
       // Give the firmware a moment to (re)populate its feature data after connect,
       // then re-read so the UI reflects real values rather than 0s.
       await sleep(400);
-      if (typeof readAll === 'function') { await readAll(); }
+      if (typeof reloadFromDevice === 'function') { await reloadFromDevice(); }
       if (typeof render === 'function') { render(); }
     } catch (_) { /* leave handle; user can click Connect */ }
   });
@@ -266,6 +413,30 @@ let config = {};
 
 function toast(msg, err=false){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',2200); }
 
+// Read the full config + firmware version + loaded profile from the device, with
+// the 1-second background poll suspended for the whole sequence. The poll's reads
+// (loaded-profile 0x67, battery, auto-haptics) share the 0x81 GET buffer with the
+// per-field config reads here, so if it fires mid-read it clobbers a reply — which
+// caused slow connects and, on the silent auto-reconnect handler, a stale version
+// with default-looking settings. `saving` is the existing poll gate; wasSaving keeps
+// this safe to nest (e.g. when a save/activate path already holds it).
+async function reloadFromDevice(){
+  const wasSaving = saving;
+  saving = true;
+  try {
+    await readAll();
+    savedSnapshot = {...config};   // baseline for change detection on save
+    fwVer = null;
+    try {
+      const maj = await readField(0x7d,'u8'), min = await readField(0x7e,'u8'),
+            pat = await readField(0x7f,'u8'), cfgv = await readField(0x00,'u16');
+      if (maj !== null && maj !== undefined) fwVer = {maj,min,pat,cfgv};
+    } catch(e){ /* pre-1.0.5 firmware: no version fields */ }
+    await readLoadedProfile();
+  } finally {
+    saving = wasSaving;
+  }
+}
 async function connect(){
   try{
     const filters=[{vendorId:SONY_VID,productId:DS5_PID},{vendorId:SONY_VID,productId:DSE_PID}];
@@ -273,17 +444,7 @@ async function connect(){
     if(!devices.length) return;
     device=pickDs5(devices) || devices[0];
     if(!device.opened) await device.open();
-    await readAll();
-    savedSnapshot = {...config}; // baseline for change detection on save
-    // Firmware version (read-only fields added in fw 1.0.5; older builds lack them)
-    fwVer = null;
-    try{
-      const maj = await readField(0x7d,'u8');
-      const min = await readField(0x7e,'u8');
-      const pat = await readField(0x7f,'u8');
-      const cfgv = await readField(0x00,'u16');
-      if (maj !== null && maj !== undefined) fwVer = {maj,min,pat,cfgv};
-    }catch(e){ /* pre-1.0.5 firmware: no version fields */ }
+    await reloadFromDevice();   // full read with the 1s poll suspended (see helper)
     render();
   }catch(e){ toast('Connect failed: '+e.message,true); }
 }
@@ -356,6 +517,38 @@ async function slotInfo(idx){
   if (!r || r[2] !== 0x00) return null; // old firmware or bad slot index
   const name = new TextDecoder().decode(r.slice(6, 22)).replace(/\0+$/,'').trim();
   return { valid: r[4] === 1, cfgVersion: r[5], name };
+}
+
+// Currently-loaded profile (fw 1.18.22+): the dongle tracks which slot is live
+// in RAM, set whenever a slot is activated by the portal OR the automation, so
+// this reflects background profile switches once the portal re-reads (on connect
+// and on the 1 s poll). Reply: 0x66 0x67 status slot(0xFF=none) edited name[16].
+async function readLoadedProfile(){
+  try {
+    await sendCmd(0x67, []);
+    const r = await readCmdReplyOn(GET_REPORT, 0x67, undefined, 8);
+    if (!r || r[2] !== 0x00) return; // pre-1.18.22 firmware: leave the bar as-is
+    const slot = r[3];
+    const edited = r[4] === 1;
+    let name = '';
+    if (slot !== 0xFF) name = new TextDecoder().decode(r.slice(5, 21)).replace(/\0+$/,'').trim();
+    window._loadedProfile = { slot, edited, name };
+    const el = document.getElementById('profilebar');
+    if (el) el.innerHTML = profileBarInner();
+  } catch(_){ /* mid-flash stall etc.; next poll retries */ }
+}
+function profileBarInner(){
+  const p = window._loadedProfile;
+  if (!p || p.slot === 0xFF || p.slot == null)
+    return `<span style="color:var(--sub)">Loaded profile:</span> <span style="color:var(--sub)">—&nbsp; not from a saved slot</span>`;
+  const name = (p.name && p.name.length) ? escAttr(p.name) : `slot ${p.slot + 1}`;
+  return `<span style="color:var(--sub)">Loaded profile:</span> <b>${name}</b>`
+       + (p.edited ? ` <span style="color:#e0a030">(edited)</span>` : '');
+}
+function profileBarHTML(){
+  // Rendered right under the connect status bar so it is visible on every tab,
+  // not buried in the Device-tab diagnostics. The 1 s poll updates it in place.
+  return `<div class="status-bar" id="profilebar" style="margin-top:-10px;padding:9px 14px;font-size:13px">${profileBarInner()}</div>`;
 }
 async function slotSave(idx, name){
   const bytes = Array.from(new TextEncoder().encode((name||'').slice(0,16)));
@@ -496,21 +689,37 @@ async function readField(fieldId, type){
     if (type === 'u8')  return dv.getUint8(0);
     if (type === 'u16') return dv.getUint16(0, true);
     if (type === 'i16') return dv.getInt16(0, true);
+    if (type === 'u32') return dv.getUint32(0, true);
     if (type === 'f32') return dv.getFloat32(0, true);
     return 0;
   }
   throw new Error('field 0x'+fieldId.toString(16)+' read mismatch after retries');
 }
 
+// Post-wake connect robustness: the fast bulk read can miss a packet while the
+// BT link is still settling after a host wake. Retry it a few times with a short
+// backoff before dropping to the slow per-field path.
+const BULK_READ_TRIES = 3;
+const BULK_READ_BACKOFF_MS = 150;
 async function readAll(){
   const prev = {...config};
-  // Bulk fast path (fw >= 1.4.0): whole config in a few packets.
+  // Bulk fast path (fw >= 1.4.0): whole config in a few packets. Retry a few
+  // times before falling back — right after a host wake the link is settling and
+  // the first attempt often returns null; a short-backoff retry usually lands it.
   if (bulkSupported !== false){
-    try {
-      const got = await bulkReadFields(FIELDS);
-      if (got){ bulkSupported = true; config = got; savedSnapshot = {...got}; return; }
-    } catch(_){}
-    if (bulkSupported === null) bulkSupported = false; // old firmware: stop probing
+    let got = null;
+    for (let attempt = 0; attempt < BULK_READ_TRIES; attempt++){
+      try { got = await bulkReadFields(FIELDS); } catch(_){ got = null; }
+      if (got) break;
+      if (attempt < BULK_READ_TRIES - 1) await sleep(BULK_READ_BACKOFF_MS);
+    }
+    if (got){ bulkSupported = true; config = got; savedSnapshot = {...got};
+              window._macroRows = null; return; }
+    // Bulk still didn't complete. Do NOT latch bulkSupported=false here: a
+    // wake-time link wobble makes bulk miss too, and disabling the fast path on a
+    // transient miss pinned the whole session onto the slow per-field path (which
+    // is why a close+reopen, once the link had settled, loaded faster). The real
+    // decision is made after the per-field pass below, from link health.
   }
   const fresh = {};
   let failures = 0;
@@ -535,7 +744,26 @@ async function readAll(){
     }
     if (!ok) toast('Some values could not be read — try Re-read', true);
   }
+  // Decide bulk support from link health: if the per-field pass read the whole
+  // config cleanly (healthy link) yet bulk had failed, bulk is genuinely
+  // unavailable (pre-1.4.0 firmware) -> stop probing it. If per-field ALSO
+  // dropped reads, the link was the problem, not bulk -> leave bulkSupported
+  // unset so the next (settled) connect re-probes the fast path.
+  if (bulkSupported === null && failures === 0) bulkSupported = false;
   config = fresh;
+  // The macro TABLE is device-global so it does not change with a profile, but a
+  // reconnect gives us a new handle and the cached rows may predate it. Drop the
+  // cache so the panel re-reads once, under the gate, rather than showing stale
+  // rows next to a freshly-read enable mask.
+  window._macroRows = null;
+  // Both exit paths must refresh the baseline. The bulk path above already did;
+  // this one did not, so after any read that fell back to per-field - which is
+  // most likely right after a reconnect, when bulk tends to miss - savedSnapshot
+  // still described the PREVIOUS device state. Two consequences: the macro panel
+  // claimed unsaved changes that did not exist, and, more seriously, saveAll()'s
+  // ENUM_FIELDS/kbdIfaceNeeded comparison used a stale baseline, so the next save
+  // could trigger a reconnect that was not needed or skip one that was.
+  savedSnapshot = {...fresh};
 }
 
 async function writeField(fieldId, type, value){
@@ -543,6 +771,7 @@ async function writeField(fieldId, type, value){
   if (type === 'u8')  bytes = [value & 0xff];
   else if (type === 'u16'){ bytes = [value & 0xff, (value>>8)&0xff]; }
   else if (type === 'i16'){ const v = value | 0; bytes = [v & 0xff, (v>>8)&0xff]; }
+  else if (type === 'u32'){ const v = value>>>0; bytes = [v & 0xff, (v>>>8)&0xff, (v>>>16)&0xff, (v>>>24)&0xff]; }
   else if (type === 'f32'){ const b=new Uint8Array(new Float32Array([value]).buffer); bytes=[...b]; }
   await sendCmd(0x01, [fieldId, ...bytes]);
 }
@@ -557,12 +786,14 @@ function encField(type, value){
   if (type === 'u8')  return [value & 0xff];
   if (type === 'u16') return [value & 0xff, (value>>8)&0xff];
   if (type === 'i16'){ const v = value | 0; return [v & 0xff, (v>>8)&0xff]; }
+  if (type === 'u32'){ const v = value>>>0; return [v & 0xff, (v>>>8)&0xff, (v>>>16)&0xff, (v>>>24)&0xff]; }
   return [...new Uint8Array(new Float32Array([value]).buffer)]; // f32
 }
 function decField(type, bytes){
   if (type === 'u8')  return bytes[0];
   if (type === 'u16') return bytes[0] | (bytes[1]<<8);
   if (type === 'i16') return (bytes[0] | (bytes[1]<<8)) << 16 >> 16;
+  if (type === 'u32') return ((bytes[0] | (bytes[1]<<8) | (bytes[2]<<16) | (bytes[3]<<24)) >>> 0);
   return new Float32Array(new Uint8Array(bytes.slice(0,4)).buffer)[0];
 }
 async function bulkWriteFields(entries){ // entries: [{fid,type,value}] -> true if ALL applied
@@ -611,7 +842,8 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   const r = await readCmdReplyOn(SLOT_REPORT, 0x0d, slot, 12); // slot field-read reply is on SLOT_REPORT (0x84)
   if (!r || r[2] !== 0x00) return null;
   // reply: 66 0d status slot fid <value bytes...>
-  const sz = fdef[2] === 'u16' || fdef[2] === 'i16' ? 2 : (fdef[2] === 'f32' ? 4 : 1);
+  const sz = (fdef[2] === 'u16' || fdef[2] === 'i16') ? 2
+           : ((fdef[2] === 'f32' || fdef[2] === 'u32') ? 4 : 1);
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
@@ -986,8 +1218,14 @@ function cebRemove(i){ window._cebStages.splice(i, 1); cebRender(); }
 function cebClear(){ window._cebStages = []; cebRender(); }
 function cebRender(){
   const box = document.getElementById('ceb_list');
-  if (!box) return;
   const list = window._cebStages;
+  // Effect map (repopulated here because render() rebuilds this card to its
+  // placeholder while _cebStages survives — same reason cebRender runs at all).
+  const vz = document.getElementById('ceb_viz');
+  if (vz) vz.innerHTML = list.length
+    ? ceEffectPanel(list.map(s => ({ bytes: s.bytes, dt: 0 })), 'Effect map — how these stages play across the trigger pull')
+    : '';
+  if (!box) return;
   if (!list.length){ box.innerHTML = 'No stages yet.'; return; }
   const sorted = list.map((st, i) => ({ st, i })).sort((a, b) => cebStartZone(a.st.bytes) - cebStartZone(b.st.bytes));
   let html = '<div style="color:var(--sub);font-size:11px;margin-bottom:2px">Played in this order as you pull:</div>';
@@ -1139,14 +1377,24 @@ function ceDescribeState(b){
   if (t === 0x26 || t === 0x06) return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
   return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
 }
-// Mirror of the firmware's sequencer: order mechanical stages by start zone and
-// hand each over at min(its own end, the next one's start - 12).
+// Mirror of the firmware's run_sequencer (state_mgr.cpp). A set of 2..5 stages
+// with AT LEAST ONE mechanical stage (wall/resistance/bow) and DISTINCT start
+// zones is sequenced by trigger position. A vibration is a full stage here too:
+// it is sorted by its start zone and gets a real position window — this is the
+// position gating a lone 0x26 lacks on its own. An all-vibration set, or one with
+// duplicate start zones, is NOT sequenced (it falls to the time/rate path), so
+// this returns null and the caller treats each state on its own.
 function ceActiveWindows(list){
-  const mech = list.map((b,i) => ({b,i})).filter(x => ceIsMechBytes(x.b));
-  if (mech.length < 2) return null;
-  const ord = mech.map(x => ({...x, lo: ceZonesOfBytes(x.b)[0],
-                                    hi: ceZonesOfBytes(x.b).slice(-1)[0]}))
+  const n = list.length;
+  if (n < 2 || n > 5) return null;
+  const isStage = b => ceIsMechBytes(b) || isVibrationType(b[0]);
+  if (!list.every(isStage)) return null;          // some other type -> not sequenced
+  if (!list.some(ceIsMechBytes)) return null;     // all vibration -> time-based path
+  // firmware wall_zones(): an empty zone bitmap defaults to zones 2..8
+  const span = b => { const z = ceZonesOfBytes(b); return z.length ? [z[0], z[z.length-1]] : [2, 8]; };
+  const ord = list.map((b,i) => { const [lo,hi] = span(b); return { i, lo, hi }; })
                   .sort((a,c) => a.lo - c.lo);
+  for (let k = 1; k < ord.length; k++) if (ord[k].lo === ord[k-1].lo) return null; // distinct starts
   const win = {};
   for (let k = 0; k < ord.length; k++){
     const from = k === 0 ? 0 : win[ord[k-1].i].to;
@@ -1218,7 +1466,9 @@ async function ceReadTrigger(trig){
   const name = trig === 0 ? 'R2' : 'L2';
   const pfx  = trig === 0 ? 'ce_r2' : 'ce_l2';
   const box  = document.getElementById('ce_readout');
+  const vz   = document.getElementById('ce_readviz');
   if (box) box.innerHTML = `Reading ${name}…`;
+  if (vz) vz.innerHTML = '';
   try {
     const n = Math.min(5, +config[pfx + '_state_count'] || 0);
     const on = +config[pfx + '_enable'] || 0;
@@ -1265,9 +1515,166 @@ async function ceReadTrigger(trig){
         + ` — its ending (a wall breaking, a bow snapping) will not be reached.</div>`;
     }
     if (box) box.innerHTML = h;
+    if (vz) vz.innerHTML = ceEffectPanel(states, `Effect map — ${name}, as it is on the device`);
   } catch(e){
     if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+    if (vz) vz.innerHTML = '';
   }
+}
+
+// ---- Effect map: draw the effect across the trigger pull --------------------
+// The thing text and hex cannot show: WHERE on the pull each stage sits, how wide
+// its window is, and whether a wall's break / a bow's snap is actually reached
+// before the sequencer hands to the next stage. This renders that as an SVG using
+// the SAME maths the reader uses (ceActiveWindows + ceZpos), so the picture and
+// the words always agree. Pure string-in / string-out (no DOM) so the harness can
+// exercise it directly. It is also the answer to "you can't screenshot a trigger
+// effect" — this can be screenshotted and shared.
+const CE_VIZ_COL = { res:'#4a90d9', wall:'#e0a030', brk:'#e05a4a', bow:'#38b2a0',
+                     vib:'#a070d0', grid:'#3a3f45', axis:'#8b9197', line:'#4a5158' };
+function ceVizKind(b){                       // colour family for a stage
+  const t = b[0];
+  if (t === 0x25 || t === 0x23) return 'wall';
+  if (t === 0x22 || t === 0x02) return 'bow';
+  if (isVibrationType(t))        return 'vib';
+  return 'res';                              // 0x21 / 0x01
+}
+function ceEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Core: array of {bytes,dt} (or bare 11-byte arrays) -> <svg> string.
+function ceEffectSVG(states){
+  const rows = (states||[]).map(s => Array.isArray(s) ? { bytes:s, dt:0 }
+                                                      : { bytes:s.bytes, dt:s.dt|0 })
+                           .filter(r => r.bytes && r.bytes[0] !== 0x05 && r.bytes[0] !== 0x00);
+  if (!rows.length) return '';
+  const bytes = rows.map(r => r.bytes);
+  const anyMech = bytes.some(ceIsMechBytes);
+
+  // All-vibration, more than one state -> time-based playback: x is time, not
+  // trigger position, so a position diagram would be a lie. Draw a time strip.
+  if (!anyMech && rows.length > 1) return ceEffectTimeSVG(rows);
+
+  // ---- positional diagram ---------------------------------------------------
+  const W = 580, T = 14, PH = 120, L = 40, R = 12, PW = W - L - R;
+  const yBase = T + PH;
+  const H = yBase + 34;
+  const px = p => L + Math.max(0, Math.min(255, p)) / 255 * PW;
+  const py = l => yBase - (Math.max(0, Math.min(7, l)) / 7) * PH;
+  const f2 = n => n.toFixed(1);
+
+  const win = ceActiveWindows(bytes);          // null unless >=2 mechanical stages
+  let s = '';
+  s += `<rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="#1c1f24" stroke="${CE_VIZ_COL.grid}"/>`;
+  [0,3,7].forEach(lv => { const y = py(lv);
+    s += `<line x1="${L}" y1="${f2(y)}" x2="${L+PW}" y2="${f2(y)}" stroke="${CE_VIZ_COL.grid}" stroke-dasharray="2 3"/>`;
+    s += `<text x="${L-4}" y="${f2(y+3)}" text-anchor="end" font-size="9" fill="${CE_VIZ_COL.axis}">${lv}</text>`; });
+  s += `<text x="12" y="${f2(T+PH/2)}" font-size="9" fill="${CE_VIZ_COL.axis}" transform="rotate(-90 12 ${f2(T+PH/2)})">force</text>`;
+  [0,25,50,75,100].forEach(pct => { const x = px(pct/100*255);
+    s += `<line x1="${f2(x)}" y1="${T}" x2="${f2(x)}" y2="${yBase}" stroke="${CE_VIZ_COL.grid}" stroke-dasharray="1 4"/>`;
+    s += `<text x="${f2(x)}" y="${yBase+12}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">${pct}%</text>`; });
+  s += `<text x="${f2(L+PW/2)}" y="${yBase+24}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">trigger pull →</text>`;
+
+  // Stages. When the set is sequenced (win != null) every stage — vibration
+  // included — is placed at its position window, matching the firmware. A lone
+  // vibration, or an all-vibration set, is NOT sequenced: a lone vibration plays
+  // wherever the trigger is armed, so it is drawn full-width.
+  const span = b => { const z = ceZonesOfBytes(b); return z.length ? [z[0], z[z.length-1]] : [2, 8]; };
+
+  // hand-off lines between consecutive sequenced stages (any kind, incl. vibration)
+  if (win){
+    const ordered = bytes.map((b,i) => ({ i, lo: span(b)[0] })).sort((a,c) => a.lo - c.lo);
+    for (let k = 0; k < ordered.length - 1; k++){
+      const x = px(win[ordered[k].i].to);
+      s += `<line x1="${f2(x)}" y1="${T}" x2="${f2(x)}" y2="${yBase}" stroke="${CE_VIZ_COL.line}" stroke-dasharray="4 3"/>`;
+      s += `<text x="${f2(x+2)}" y="${f2(T+9)}" font-size="8" fill="${CE_VIZ_COL.axis}">hand-off</text>`;
+    }
+  }
+
+  bytes.forEach((b, i) => {
+    const kind = ceVizKind(b);
+    const [lo, hi] = span(b);
+    const w = win && win[i];
+    const hardTo = w ? w.to : 255;              // where the sequencer clips this stage
+    const order = w ? w.order : 1;
+    const brkPos = ceZpos(hi);                  // break / snap position (last zone)
+
+    if (kind === 'vib'){
+      // positioned in a mixed set -> band over its window; a lone vibration ->
+      // full width (it plays wherever the trigger is armed — position is ignored).
+      const vf = w ? px(w.from) : L, vt = w ? px(w.to) : L + PW;
+      const top = T + 6, bandH = PH - 12;
+      s += `<rect x="${f2(vf)}" y="${top}" width="${f2(Math.max(0, vt-vf))}" height="${bandH}" fill="${CE_VIZ_COL.vib}" fill-opacity="0.15" stroke="${CE_VIZ_COL.vib}" stroke-opacity="0.75" stroke-dasharray="4 3"/>`;
+      s += `<line x1="${f2(vf+2)}" y1="${f2(top+bandH/2)}" x2="${f2(vt-2)}" y2="${f2(top+bandH/2)}" stroke="${CE_VIZ_COL.vib}" stroke-opacity="0.45" stroke-dasharray="2 3"/>`;
+      s += `<text x="${f2(vf+4)}" y="${f2(top+12)}" font-size="8.5" fill="${CE_VIZ_COL.vib}">buzz · freq ${b[9]}${w ? '' : ' · plays while armed'}</text>`;
+      s += `<text x="${f2((vf+vt)/2)}" y="${f2(yBase-4)}" text-anchor="middle" font-size="9" font-weight="bold" fill="${CE_VIZ_COL.vib}">${order}</text>`;
+      return;
+    }
+    if (kind === 'res'){
+      const cutX = w ? px(hardTo) : Infinity;
+      // baseline extent strip: a resistance at force 0 draws no bar (honest — it
+      // may not be felt), but its position on the pull is still worth showing.
+      const bx0 = px(ceZpos(lo)), bx1 = px(Math.min(hardTo, hi >= 9 ? 255 : ceZpos(hi + 1)));
+      s += `<rect x="${f2(bx0)}" y="${f2(yBase-2)}" width="${f2(Math.max(0, bx1-bx0))}" height="2" fill="${CE_VIZ_COL.res}" fill-opacity="0.85"/>`;
+      for (let z = lo; z <= hi; z++){
+        const fz = ceZoneForce(b, z);
+        const zx0 = px(ceZpos(z)), zx1 = px(z >= 9 ? 255 : ceZpos(z + 1));
+        const faded = zx0 >= cutX - 0.5;        // in the handed-over tail
+        s += `<rect x="${f2(zx0)}" y="${f2(py(fz))}" width="${f2(Math.max(0, zx1-zx0))}" height="${f2(yBase-py(fz))}" fill="${CE_VIZ_COL.res}" fill-opacity="${faded?0.16:0.5}" stroke="${CE_VIZ_COL.res}" stroke-opacity="${faded?0.35:0.85}"/>`;
+      }
+    } else if (kind === 'wall'){
+      const fz = b[3] & 7, reached = hardTo >= brkPos;
+      const x0 = px(ceZpos(lo)), xCut = px(Math.min(hardTo, brkPos)), xEnd = px(brkPos), yF = py(fz);
+      s += `<rect x="${f2(x0)}" y="${f2(yF)}" width="${f2(Math.max(0, xCut-x0))}" height="${f2(yBase-yF)}" fill="${CE_VIZ_COL.wall}" fill-opacity="0.5" stroke="${CE_VIZ_COL.wall}"/>`;
+      if (!reached) s += `<rect x="${f2(xCut)}" y="${f2(yF)}" width="${f2(Math.max(0, xEnd-xCut))}" height="${f2(yBase-yF)}" fill="${CE_VIZ_COL.wall}" fill-opacity="0.12" stroke="${CE_VIZ_COL.wall}" stroke-opacity="0.4" stroke-dasharray="3 3"/>`;
+      s += `<line x1="${f2(xEnd)}" y1="${f2(T+4)}" x2="${f2(xEnd)}" y2="${f2(yBase)}" stroke="${CE_VIZ_COL.brk}" stroke-width="1.5" stroke-opacity="${reached?1:0.5}" stroke-dasharray="${reached?'0':'2 2'}"/>`;
+      s += `<text x="${f2(xEnd)}" y="${f2(T-1)}" text-anchor="middle" font-size="8.5" fill="${CE_VIZ_COL.brk}" fill-opacity="${reached?1:0.6}">${reached?'break':'break ✕'}</text>`;
+    } else { // bow
+      const fz = b[3] & 7, snap = (b[3] >> 3) & 7, reached = hardTo >= brkPos;
+      const x0 = px(ceZpos(lo)), xEnd = px(brkPos), yF = py(fz), xCut = px(Math.min(hardTo, brkPos));
+      const yAt = x => yBase - (yBase - yF) * ((x - x0) / Math.max(1, xEnd - x0));
+      s += `<polyline points="${f2(x0)},${f2(yBase)} ${f2(xCut)},${f2(yAt(xCut))}" fill="none" stroke="${CE_VIZ_COL.bow}" stroke-width="2"/>`;
+      if (!reached) s += `<polyline points="${f2(xCut)},${f2(yAt(xCut))} ${f2(xEnd)},${f2(yF)}" fill="none" stroke="${CE_VIZ_COL.bow}" stroke-width="2" stroke-opacity="0.3" stroke-dasharray="3 3"/>`;
+      s += `<text x="${f2(xEnd)}" y="${f2(yF-3)}" text-anchor="middle" font-size="8.5" fill="${CE_VIZ_COL.bow}" fill-opacity="${reached?1:0.6}">${reached?`snap ${snap}/7`:'snap ✕'}</text>`;
+    }
+    const cx = (px(ceZpos(lo)) + px(Math.min(hardTo, kind==='res' ? (hi>=9?255:ceZpos(hi+1)) : brkPos))) / 2;
+    s += `<text x="${f2(cx)}" y="${f2(yBase-4)}" text-anchor="middle" font-size="9" font-weight="bold" fill="${CE_VIZ_COL[kind]}">${order}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;height:auto;font-family:inherit" role="img" aria-label="effect map">${s}</svg>`;
+}
+
+// Time strip for all-vibration timelines (x = elapsed time).
+function ceEffectTimeSVG(rows){
+  const W = 580, L = 8, R = 12, PW = W - L - R, barY = 26, barH = 30, H = 74;
+  const total = rows.reduce((a, r) => a + (r.dt || 0), 0), uniform = total <= 0;
+  let x = L, s = '';
+  s += `<text x="${L}" y="18" font-size="10" fill="${CE_VIZ_COL.axis}">Time-based playback${uniform ? ' — durations are 0, plays as a fixed blend (equal slices shown)' : ` — ${total} ms total`}</text>`;
+  rows.forEach(r => {
+    const frac = uniform ? 1 / rows.length : (r.dt || 0) / total, w = frac * PW;
+    const col = CE_VIZ_COL[ceVizKind(r.bytes)] || CE_VIZ_COL.vib;
+    s += `<rect x="${x.toFixed(1)}" y="${barY}" width="${Math.max(0, w).toFixed(1)}" height="${barH}" fill="${col}" fill-opacity="0.4" stroke="${col}"/>`;
+    const lbl = ceVizKind(r.bytes) === 'vib' ? `freq ${r.bytes[9]}` : effectTypeName(r.bytes[0]);
+    if (w > 34) s += `<text x="${(x+4).toFixed(1)}" y="${barY+18}" font-size="8.5" fill="${col}">${ceEsc(lbl)}${uniform ? '' : ` · ${r.dt}ms`}</text>`;
+    x += w;
+  });
+  s += `<text x="${(L+PW/2).toFixed(1)}" y="${barY+barH+16}" text-anchor="middle" font-size="9" fill="${CE_VIZ_COL.axis}">time →</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;height:auto;font-family:inherit" role="img" aria-label="effect timeline">${s}</svg>`;
+}
+
+// Titled panel wrapper (legend + the caption that explains the faded/✕ marks).
+function ceEffectPanel(states, title){
+  const svg = ceEffectSVG(states);
+  if (!svg) return '';
+  const legend = [['Resistance', CE_VIZ_COL.res], ['Weapon break', CE_VIZ_COL.wall],
+                  ['break point', CE_VIZ_COL.brk], ['Bow / snap', CE_VIZ_COL.bow],
+                  ['Vibration', CE_VIZ_COL.vib]]
+    .map(([n,c]) => `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:9px"><span style="width:9px;height:9px;background:${c};display:inline-block;border-radius:2px"></span>${n}</span>`).join('');
+  return `<div style="border:1px solid var(--line,#333);border-radius:6px;padding:8px;background:#15171b">
+    <div style="font-size:11px;color:var(--sub);margin-bottom:4px">${ceEsc(title)}</div>
+    ${svg}
+    <div style="font-size:10px;color:var(--sub);margin-top:5px">${legend}</div>
+    <div style="font-size:10px;color:var(--sub);margin-top:3px">Faded fill / ✕ = the sequencer hands over before a wall's break or bow's snap is reached. Dashed verticals mark hand-offs. A violet band is a vibration stage (where the buzz plays); a lone vibration plays wherever the trigger is armed.</div>
+  </div>`;
 }
 
 // Export the effect currently assigned to a trigger, read back from the device.
@@ -1706,10 +2113,27 @@ async function saveAll(){
     // effect leak, mute, lightbar, volumes) applies live on save. So only trigger
     // a reconnect when one of those enumeration-time fields actually changed —
     // this avoids an unnecessary disconnect/reconnect on every save.
-    const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'];
+    // Covers the fields the PORTAL can change. It is deliberately a subset of
+    // slot_activate()'s needs_reenum set in config.cpp: that one also lists
+    // ps_shortcut_enabled and disable_usb_sn, which a SLOT body can carry but
+    // which are not exposed here, so they can never differ between two portal
+    // saves. Adding either of them to the portal later means adding it here too.
+    const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length',
+                         'disable_mic','disable_speaker','enable_wake',
+                         'disable_usb_sn'];
     let needReconnect = false;
     for (const k of ENUM_FIELDS){
       if (savedSnapshot[k] !== config[k]) { needReconnect = true; break; }
+    }
+    // macro_disable is NOT listed above: it does not change the descriptor on its
+    // own, only whether the shared keyboard INTERFACE is present. Mirrors
+    // usb_kbd_iface_needed() in macro.h - keep the two in step. enable_wake stays
+    // in the list because it also moves bcdUSB / BOS regardless of the keyboard.
+    // NOTE kbdIfaceNeeded() reads ps_shortcut_enabled, which the portal does not
+    // expose, so it always evaluates as off here. Harmless while the field stays
+    // unexposed; expose it and this comparison becomes wrong until it is read.
+    if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
+      needReconnect = true;
     }
 
     if (!needReconnect){
@@ -1772,8 +2196,12 @@ async function readDiag(){
     try { ke = await readField(0x3c, 'u8'); } catch(e) {}
     let rl = null, rr = null, rf = null;
     try { rl = await readField(0x3d, 'u8'); rr = await readField(0x3e, 'u8'); rf = await readField(0x3f, 'u8'); } catch(e) {}
-    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf};
-  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null}; }
+    // Battery (0x68), read from the DualSense input report. (The auto-haptics
+    // meters 0x69-0x6b now live on the Haptics tab, read by readAhMeter().)
+    let bat = null;
+    try { bat = await readField(0x68, 'u8'); } catch(e) {}
+    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat};
+  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null}; }
 }
 function rssiLabel(r){
   if (r === null || r === undefined) return 'n/a';
@@ -1788,6 +2216,31 @@ function rssiLabel(r){
   else if (mag <= 30) q = 'fair';
   else q = 'weak';
   return `${r} (${q})`;
+}
+// Auto-haptics live meter, shown on the Haptics tab right under its settings so
+// you can watch "Haptics out" respond as you tune (no more hopping to the Device
+// tab). Reads only the three auto-haptics fields (0x69 frames / 0x6a derived-out
+// peak / 0x6b audio-in peak), which are peak-hold + cleared on read.
+function ahMeterHTML(ahf, ahi, aho){
+  if (ahf === null || ahf === undefined)
+    return `<span style="color:var(--sub)">Connect to see live auto-haptics activity.</span>`;
+  const active = ahf > 0;
+  const bar = (v, c) => `<span style="display:inline-block;width:160px;height:10px;background:#222;border-radius:3px;vertical-align:middle;overflow:hidden"><span style="display:block;width:${Math.min(100, Math.round((v/255)*100))}%;height:100%;background:${c}"></span></span>`;
+  let h = `Audio bridge: ${active ? '<b style="color:#4caf50">active</b>' : '<b style="color:#e0a030">not detected</b>'} `
+    + `<span style="color:var(--sub)">${active ? `(${ahf} audio frames in the last second)` : '(no audio arriving on the dongle — auto-haptics derives from PC audio, so start ds5audio.py)'}</span>`
+    + `<div style="margin-top:6px">Audio in (ch0/1):&nbsp; ${bar(ahi, '#4a90d9')} <span style="color:var(--sub)">${ahi}/255</span></div>`
+    + `<div style="margin-top:4px">Haptics out (derived):&nbsp; ${bar(aho, '#a070d0')} <span style="color:var(--sub)">${aho}/255</span></div>`;
+  if (active && ahi > 20 && aho < 4)
+    h += `<div style="color:#e0a030;margin-top:4px">⚠ audio is arriving but almost no haptic is being derived — check Auto-Haptics Mode is on and the cutoff / intensity aren't too low</div>`;
+  h += `<div style="color:var(--sub);font-size:11px;margin-top:5px">Live peak over the last second — change a setting above and watch "Haptics out" respond (needs ds5audio.py running and game audio playing).</div>`;
+  return h;
+}
+async function readAhMeter(){
+  let ahf = null, ahi = null, aho = null;
+  try { ahf = await readField(0x69, 'u16'); aho = await readField(0x6a, 'u8'); ahi = await readField(0x6b, 'u8'); }
+  catch(e) { return; }
+  const el = document.getElementById('ahbox');
+  if (el) el.innerHTML = ahMeterHTML(ahf, ahi, aho);
 }
 async function refreshDiag(){
   const d = await readDiag();
@@ -1817,16 +2270,35 @@ async function refreshDiag(){
       if (d.rf & 4) rq.push('Improved');
       extra += `<br>Rumble from host: peak L=${d.rl} R=${d.rr} since last read, requested: ${rq.length ? rq.join(' + ') : 'none'}  (peak-hold, so any burst in the last second registers. Non-zero = the game sends motor values, which Mix carries via Converted Rumble Strength. Zero while you feel vibration = it is delivered as haptic audio on ch3/4 instead, carried by Native Passthrough)`;
     }
-    el.innerHTML = `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
+    // Battery from the DualSense input report: low nibble = level 0-10 (x10 = %),
+    // high nibble = charge state. Shown first as it is the headline device stat.
+    // A raw 0x00 means no report has populated the byte yet (a real 0%/off pad
+    // wouldn't be reporting), so treat it as "no data" rather than showing 0%.
+    let batLine = '';
+    if (d.bat){
+      const lvl = d.bat & 0x0F, st = (d.bat >> 4) & 0x0F;
+      const pct = Math.min(lvl * 10, 100);
+      const status = st === 1 ? 'charging' : st === 2 ? 'full' : st >= 0x0F ? 'charge error' : 'on battery';
+      const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
+      batLine = `Battery: <b style="color:${col}">${pct}%</b> · ${status}<br>`;
+    }
+    el.innerHTML = batLine + `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
   }
 }
-setInterval(()=>{ if(!saving && !slotsBusy && device && device.opened && document.getElementById('diagbox')) hidLocked(refreshDiag); }, 1000);
+setInterval(()=>{
+  if(saving || slotsBusy || !device || !device.opened) return;
+  hidLocked(async () => {
+    await readLoadedProfile();                              // every tab: keep the bar current
+    if (document.getElementById('ahbox')) await readAhMeter();   // Haptics tab: live auto-haptics meter
+    if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
+  });
+}, 1000);
 
-// ===== Gyro/Accel live curves (fw 1.19.0, fields 0x6a-0x6f) =====
+// ===== Gyro/Accel live curves (fw 1.19.0, fields 0x77-0x7c) =====
 // Two canvases on the Gyro tab: 3-axis gyroscope and 3-axis accelerometer, fed
 // from read-only firmware diagnostics at ~10 Hz so the sensor wave can be seen
 // while tuning gyro aiming. Polling only runs while the Gyro tab is on screen.
-const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Accelerometer Live Curves <span style="font-size:11px;color:var(--sub)">(raw LSB · ~10 Hz · fields 0x6A-0x6F)</span></div>
+const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Accelerometer Live Curves <span style="font-size:11px;color:var(--sub)">(raw LSB · ~10 Hz · fields 0x77-0x7C)</span></div>
   <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Move the controller to see the sensor wave. Top: gyroscope 3 axes (rate, raw int16). Bottom: accelerometer 3 axes (raw int16). Curves stream only while this tab is open.</div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:6px">
     <span><span style="color:#ff4d6d;font-weight:bold">—</span> GX (pitch)</span>
@@ -1851,8 +2323,8 @@ const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Acce
   </div>
 </div>`;
 
-const IMU_KEYS = [[0x6a,'gx','i16'],[0x6b,'gy','i16'],[0x6c,'gz','i16'],
-                  [0x6d,'ax','i16'],[0x6e,'ay','i16'],[0x6f,'az','i16'],
+const IMU_KEYS = [[0x77,'gx','i16'],[0x78,'gy','i16'],[0x79,'gz','i16'],
+                  [0x7a,'ax','i16'],[0x7b,'ay','i16'],[0x7c,'az','i16'],
                   [0x70,'sx','i16'],[0x71,'sy','i16']];
 const imuHist = { gx:[],gy:[],gz:[],ax:[],ay:[],az:[],sx:[],sy:[] };
 const IMU_MAX_PTS = 300; // ~30 s of history at 10 Hz
@@ -1984,19 +2456,658 @@ const SECTION_TAB = {
   'General Haptics & Audio':'haptics',
   'Native Haptics Filter':'haptics',
   'Gyro Aiming':'gyro',
+  'Right Stick':'gyro',
   'Device & Connection':'device',
   'Advanced — BT Latency (experimental)':'device',
+  'Macros':'macros',
 };
 // Order: connection first, then the feature areas, with Slots (where you save
 // what you just set up) last. Custom effects are NOT a separate tab: every
 // custom effect is a TRIGGER effect, and its settings cross-reference the
 // resistance mode on the same trigger (the gate hand-off warning names it), so
 // splitting them put a warning on one tab and its fix on another.
+// ===================== Macros =============================================
+// Rows are edited here and written to a DEVICE-GLOBAL table (fw cmds 0x17 read,
+// 0x18 write-to-RAM, 0x19 commit). Only the enable bitmap lives in Config_body,
+// so a slot selects WHICH of the shared macros are live.
+//
+// PORTAL HARD RULE observed throughout: no quoted data is interpolated into an
+// event attribute. Every generated handler takes numeric arguments only.
+
+const MACRO_COUNT = 32;
+const MACRO_KEYS = 4;            // keys per combo INCLUDING modifiers (src/macro.h)
+const MACRO_REC_LEN = 28;        // 12-byte entry + 16-byte label
+const MACRO_NONE_ENABLED = 0xFFFFFFFF;
+
+// Transcription of src/input_buttons.h. Bit values are persisted inside every
+// stored chord, so this list is APPEND ONLY and must match the header exactly.
+// tools/macro-tests covers the firmware side; portal-macro-test.js cross-checks
+// these two tables against each other.
+const BTN = [
+  ['DPAD_UP',    1<<0,  'D-pad Up'],
+  ['DPAD_DOWN',  1<<1,  'D-pad Down'],
+  ['DPAD_LEFT',  1<<2,  'D-pad Left'],
+  ['DPAD_RIGHT', 1<<3,  'D-pad Right'],
+  ['SQUARE',     1<<4,  'Square'],
+  ['CROSS',      1<<5,  'Cross'],
+  ['CIRCLE',     1<<6,  'Circle'],
+  ['TRIANGLE',   1<<7,  'Triangle'],
+  ['L1',         1<<8,  'L1'],
+  ['R1',         1<<9,  'R1'],
+  ['L2',         1<<10, 'L2 (click)'],
+  ['R2',         1<<11, 'R2 (click)'],
+  ['CREATE',     1<<12, 'Create'],
+  ['OPTIONS',    1<<13, 'Options'],
+  ['L3',         1<<14, 'L3'],
+  ['R3',         1<<15, 'R3'],
+  ['PS',         1<<16, 'PS'],
+  ['TOUCHPAD',   1<<17, 'Touchpad click'],
+  ['MUTE',       1<<18, 'Mute'],
+];
+// Hat value -> direction bits. THE D-PAD IS AN ENUM, NOT A BITMASK: "Up" is hat
+// value 0, indistinguishable from "no button", and the idle value 8 would read
+// as a phantom press. Mirrors HAT_TO_DPAD in input_buttons.h.
+const HAT_TO_DPAD = [1, 1|8, 8, 8|2, 2, 2|4, 4, 4|1, 0];
+
+function macroButtonMask(d){
+  if (!d || d.byteLength < 10) return 0;
+  const b0 = d.getUint8(7), b1 = d.getUint8(8), b2 = d.getUint8(9);
+  let hat = b0 & 0x0F; if (hat > 8) hat = 8;
+  let m = HAT_TO_DPAD[hat];
+  if (b0 & 0x10) m |= 1<<4;
+  if (b0 & 0x20) m |= 1<<5;
+  if (b0 & 0x40) m |= 1<<6;
+  if (b0 & 0x80) m |= 1<<7;
+  for (let i=0;i<8;i++) if (b1 & (1<<i)) m |= 1<<(8+i);
+  if (b2 & 0x01) m |= 1<<16;
+  if (b2 & 0x02) m |= 1<<17;
+  if (b2 & 0x04) m |= 1<<18;
+  return m >>> 0;
+}
+function macroChordName(mask){
+  if (!mask) return '';
+  return BTN.filter(b => (mask & b[1])).map(b => b[2]).join(' + ');
+}
+
+// Gesture byte: bits 0-1 direction, bit2 zone, bit3 fingers, bit7 valid.
+const GEST_VALID = 0x80, GEST_ZONE_RIGHT = 0x04, GEST_TWO_FINGER = 0x08;
+const GEST_DIRS = ['Swipe up','Swipe down','Swipe left','Swipe right'];
+function macroGestureName(g){
+  if (!g || !(g & GEST_VALID)) return '';
+  let t = GEST_DIRS[g & 0x03];
+  t += (g & GEST_ZONE_RIGHT) ? ' (right half)' : ' (left half)';
+  if (g & GEST_TWO_FINGER) t += ', two fingers';
+  return t;
+}
+
+// event.code -> HID usage. Modifiers are usages 0xE0-0xE7 so they sit in keys[]
+// like anything else; the firmware folds that range into the modifier byte.
+const KEYMAP = (() => {
+  const m = {ControlLeft:0xE0, ShiftLeft:0xE1, AltLeft:0xE2, MetaLeft:0xE3,
+             ControlRight:0xE4, ShiftRight:0xE5, AltRight:0xE6, MetaRight:0xE7,
+             Enter:0x28, Escape:0x29, Backspace:0x2A, Tab:0x2B, Space:0x2C,
+             Minus:0x2D, Equal:0x2E, BracketLeft:0x2F, BracketRight:0x30,
+             Backslash:0x31, Semicolon:0x33, Quote:0x34, Backquote:0x35,
+             Comma:0x36, Period:0x37, Slash:0x38, CapsLock:0x39,
+             PrintScreen:0x46, ScrollLock:0x47, Pause:0x48, Insert:0x49,
+             Home:0x4A, PageUp:0x4B, Delete:0x4C, End:0x4D, PageDown:0x4E,
+             ArrowRight:0x4F, ArrowLeft:0x50, ArrowDown:0x51, ArrowUp:0x52};
+  for (let i=0;i<26;i++) m['Key'+String.fromCharCode(65+i)] = 0x04+i;
+  m['Digit1']=0x1E; m['Digit2']=0x1F; m['Digit3']=0x20; m['Digit4']=0x21; m['Digit5']=0x22;
+  m['Digit6']=0x23; m['Digit7']=0x24; m['Digit8']=0x25; m['Digit9']=0x26; m['Digit0']=0x27;
+  for (let i=1;i<=12;i++) m['F'+i] = 0x39+i;
+  return m;
+})();
+const USAGE_NAME = (() => {
+  const r = {}; for (const k in KEYMAP) r[KEYMAP[k]] = k;
+  const pretty = {0xE0:'Ctrl',0xE1:'Shift',0xE2:'Alt',0xE3:'Win',
+                  0xE4:'RCtrl',0xE5:'RShift',0xE6:'RAlt',0xE7:'RWin'};
+  for (const u in pretty) r[u] = pretty[u];
+  for (let i=0;i<26;i++) r[0x04+i] = String.fromCharCode(65+i);
+  return r;
+})();
+function macroComboName(keys, rel){
+  const used = keys.filter(k => k);
+  if (!used.length) return '';
+  return used.map(k => USAGE_NAME[k] || ('0x'+k.toString(16))).join(' + ');
+}
+
+// ---- manual key picker ----------------------------------------------------
+// Required, not a convenience: Windows takes the Win key and Alt+Tab before the
+// page ever sees them, and the browser keeps Ctrl+W / Ctrl+T / F11. Those combos
+// are UNREACHABLE by recording - including Win+G and Win+Tab, which the firmware
+// already ships hardcoded as the PS shortcut. The picker writes the same keys[]
+// and rel_order the recorder produces, so playback is identical either way.
+const MOD_PICK = [[0xE0,'Ctrl'], [0xE1,'Shift'], [0xE2,'Alt'], [0xE3,'Win']];
+
+// Non-modifier usages, in a browsable order rather than usage-code order.
+function macroKeyOptions(){
+  const out = [];
+  for (let i=0;i<26;i++) out.push([0x04+i, String.fromCharCode(65+i)]);
+  const digits = [[0x1E,'1'],[0x1F,'2'],[0x20,'3'],[0x21,'4'],[0x22,'5'],
+                  [0x23,'6'],[0x24,'7'],[0x25,'8'],[0x26,'9'],[0x27,'0']];
+  for (const d of digits) out.push(d);
+  for (let i=1;i<=12;i++) out.push([0x39+i, 'F'+i]);
+  const named = [[0x28,'Enter'],[0x29,'Escape'],[0x2A,'Backspace'],[0x2B,'Tab'],
+                 [0x2C,'Space'],[0x2D,'Minus'],[0x2E,'Equal'],[0x2F,'['],[0x30,']'],
+                 [0x31,'Backslash'],[0x33,'Semicolon'],[0x34,'Quote'],[0x35,'Backquote'],
+                 [0x36,'Comma'],[0x37,'Period'],[0x38,'Slash'],[0x39,'CapsLock'],
+                 [0x46,'PrintScreen'],[0x47,'ScrollLock'],[0x48,'Pause'],[0x49,'Insert'],
+                 [0x4A,'Home'],[0x4B,'PageUp'],[0x4C,'Delete'],[0x4D,'End'],[0x4E,'PageDown'],
+                 [0x4F,'Right'],[0x50,'Left'],[0x51,'Down'],[0x52,'Up']];
+  for (const n of named) out.push(n);
+  return out;
+}
+
+window._macroPick = window._macroPick || null;   // {row, mods:[usage], key:usage}
+
+function macroPickOpen(i){
+  const rows = window._macroRows || [];
+  const m = rows[i]; if (!m) return;
+  const ks = (m.keys || []).filter(k => k);
+  window._macroPick = {
+    row: i,
+    mods: ks.filter(k => k >= 0xE0 && k <= 0xE7),
+    key:  ks.find(k => k < 0xE0 || k > 0xE7) || 0
+  };
+  macroRender();
+}
+function macroPickCancel(){ window._macroPick = null; macroRender(); }
+function macroPickMod(u, on){
+  const p = window._macroPick; if (!p) return;
+  const at = p.mods.indexOf(u);
+  if (on && at < 0) p.mods.push(u);          // press order = the order you tick
+  if (!on && at >= 0) p.mods.splice(at, 1);
+}
+function macroPickKey(u){ const p = window._macroPick; if (p) p.key = u|0; }
+function macroPickApply(){
+  const p = window._macroPick; if (!p) return;
+  const rows = window._macroRows || [];
+  const m = rows[p.row];
+  if (!m){ window._macroPick = null; macroRender(); return; }
+  const seq = p.mods.concat(p.key ? [p.key] : []);
+  if (!seq.length){ alert('Choose at least one key.'); return; }
+  if (seq.length > MACRO_KEYS){
+    alert('A macro holds at most ' + MACRO_KEYS + ' keys, including modifiers.');
+    return;
+  }
+  m.keys = [seq[0]||0, seq[1]||0, seq[2]||0, seq[3]||0];
+  // Reverse press order: last pressed lifts first. Correct for every combo of
+  // this shape - Win+G releases G then Win, Alt+Tab releases Tab then Alt.
+  let rel = 0;
+  for (let i=0;i<seq.length;i++) rel |= ((seq.length-1-i) << (2*i));
+  m.rel_order = rel & 0xff;
+  window._macroPick = null;
+  macroRender();
+}
+
+// ---- state ---------------------------------------------------------------
+window._macroRows = window._macroRows || null;   // survives render(), like _cebStages
+window._macroRec  = null;                        // {row, which, ...} while recording
+
+function macroBlankRow(){
+  return {chord:0, gesture:0, flags:0, hold_cs:0, keys:[0,0,0,0], rel_order:0, label:'', present:false};
+}
+function macroRowEmpty(m){
+  return !m || (!m.chord && !m.gesture && !m.keys.some(k=>k));
+}
+// A row is listed if it holds a definition OR the user just added it with +.
+// Device index is fixed (it maps to a bit of the enable mask), so rows keep
+// their index and the list is simply the present subset.
+function macroPresentCount(){
+  const rows = window._macroRows || [];
+  let n = 0; for (let i=0;i<MACRO_COUNT;i++) if (rows[i] && rows[i].present) n++;
+  return n;
+}
+// Mirror of usb_kbd_iface_needed() in src/macro.h. The keyboard interface is
+// shared, so a reconnect is needed only when its PRESENCE changes.
+function kbdIfaceNeeded(c){
+  if (!c) return false;
+  return !!(+c.enable_wake) || !!(+c.ps_shortcut_enabled) ||
+         ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED);
+}
+function macroSetLabel(i, v){
+  const rows = window._macroRows || [];
+  if (!rows[i]) return;
+  // 16 bytes on the device, ASCII only - the label is stored in the macro record
+  // and read back, so a fresh browser on another PC still shows your names.
+  rows[i].label = String(v || '').replace(/[^\x20-\x7e]/g, '').slice(0, 15);
+}
+function macroBit(i){ return ((+config.macro_disable>>>0) & (1<<i)) === 0; }
+function macroSetBit(i, on){
+  let v = (+config.macro_disable>>>0);
+  if (on) v &= ~(1<<i); else v |= (1<<i);
+  config.macro_disable = v>>>0;
+  const h = document.getElementById('f_macro_disable');
+  if (h) h.value = String(v>>>0);
+  macroRender();
+}
+
+// ---- transport -----------------------------------------------------------
+// Which rows are non-empty, in ONE round trip (fw cmd 0x17 with idx 0xFF).
+// Sweeping all 32 to discover that cost ~2s of HID traffic and, because every
+// transaction shares the single reply buffer behind hidLocked(), it queued up
+// in front of the profile-name and slot reads too.
+async function macroUsedMask(){
+  await sendCmd(0x17, [0xFF]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x17, 0xFF, 12);
+  if (!r || r[2] !== 0x00) return null;
+  return ((r[4] | (r[5]<<8) | (r[6]<<16) | (r[7]<<24)) >>> 0);
+}
+
+async function macroReadAll(){
+  const rows = [];
+  const used = await macroUsedMask();
+  for (let i=0;i<MACRO_COUNT;i++){
+    // Skip the read entirely for rows the device says are empty.
+    if (used !== null && !(used & (1<<i))){ rows.push(macroBlankRow()); continue; }
+    await sendCmd(0x17, [i]);
+    const r = await readCmdReplyOn(SLOT_REPORT, 0x17, i, 12);
+    if (!r || r[2] !== 0x00){ rows.push(macroBlankRow()); continue; }
+    const dv = new DataView(r.buffer, r.byteOffset);
+    const row = {
+      chord: dv.getUint32(4, true),
+      gesture: r[8], flags: r[9], hold_cs: r[10],
+      keys: [r[11], r[12], r[13], r[14]],
+      rel_order: r[15],
+      label: ''
+    };
+    let lbl = ''; for (let k=0;k<16;k++){ const c = r[16+k]; if (!c) break; lbl += String.fromCharCode(c); }
+    row.label = lbl;
+    row.present = !macroRowEmpty(row);
+    rows.push(row);
+  }
+  return rows;
+}
+async function macroWriteAll(){
+  const rows = window._macroRows || [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    const m = rows[i] || macroBlankRow();
+    const a = new Array(1+MACRO_REC_LEN).fill(0);
+    a[0] = i;
+    a[1] = m.chord & 0xff; a[2] = (m.chord>>>8)&0xff; a[3] = (m.chord>>>16)&0xff; a[4] = (m.chord>>>24)&0xff;
+    a[5] = m.gesture & 0xff; a[6] = m.flags & 0xff; a[7] = m.hold_cs & 0xff;
+    a[8] = m.keys[0]|0; a[9] = m.keys[1]|0; a[10] = m.keys[2]|0; a[11] = m.keys[3]|0;
+    a[12] = m.rel_order & 0xff;
+    for (let k=0;k<16;k++) a[13+k] = m.label.charCodeAt(k) || 0;
+    await sendCmd(0x18, a);
+    await new Promise(r => setTimeout(r, 8));
+  }
+  await sendCmd(0x19, []);   // one erase for the whole table
+  await new Promise(r => setTimeout(r, 60));
+}
+async function macroSuspendFiring(on){
+  try { await sendCmd(0x1a, [on ? 1 : 0]); } catch(e){}
+}
+
+let _macroBusy = false;
+async function refreshMacros(){
+  const box = document.getElementById('macrobox');
+  if (!device){ if (box) box.textContent = 'Connect a device to load macros.'; return; }
+  // Gate on saving/slotsBusy BEFORE taking the HID lock, exactly as the 1 Hz
+  // diagnostic poll does. hidLocked() alone is not enough: the main config read
+  // path (reloadFromDevice -> readAll -> readField) does NOT go through the lock,
+  // it is protected by the `saving` flag instead. So a macro sweep started from
+  // render() ran concurrently with the post-activate config read, and two
+  // in-flight WebHID feature transactions on one device make readField retry and
+  // then throw - which surfaced as "values cannot be read" and, when it hit the
+  // 0x7d/0x7e/0x7f reads, as "FW: pre-1.0.5 (no version fields)".
+  if (saving || slotsBusy) return;
+  if (_macroBusy) return;            // render() fires often; one sweep at a time
+  _macroBusy = true;
+  if (box) box.textContent = 'Reading macros…';
+  try {
+    window._macroRows = await hidLocked(() => macroReadAll());
+  } catch(e){
+    if (box) box.textContent = 'Could not read macros: ' + e;
+    return;
+  } finally {
+    _macroBusy = false;
+  }
+  macroRender();
+}
+
+// ---- recording -----------------------------------------------------------
+// Input capture reads the gamepad's own input reports. The portal opens the
+// device but never subscribed to them before, so this is the first use of the
+// full-rate stream - no firmware round-trip and no polling granularity.
+function macroOnInputReport(ev){
+  const st = window._macroRec;
+  if (!st || st.which !== 0) return;
+  const m = macroButtonMask(ev.data);
+  if (m && !st.firstDown) st.firstDown = performance.now();
+  // PEAK simultaneous set, not the union over the window: pressing R3 then Up
+  // then brushing Square would otherwise capture all three.
+  if (macroPop(m) > macroPop(st.peak)) { st.peak = m; st.peakAt = performance.now(); }
+  if (!m && st.firstDown && !st.upAt) st.upAt = performance.now();
+
+  // Touchpad. Same shape as touch_task() in macro.cpp: record on touch-down,
+  // keep the last coordinates seen WHILE DOWN, classify on lift.
+  const f1 = macroTouchPoint(ev.data, 0), f2 = macroTouchPoint(ev.data, 1);
+  if (!f1) return;
+  const now = performance.now();
+  if (f1.down && !st.tDown){
+    st.tDown = true; st.tStart = now; st.tEnd = 0;
+    st.tX0 = f1.x; st.tY0 = f1.y; st.tLastX = f1.x; st.tLastY = f1.y;
+    st.tTwo = !!(f2 && f2.down);
+  } else if (f1.down){
+    st.tLastX = f1.x; st.tLastY = f1.y;
+    if (f2 && f2.down) st.tTwo = true;
+  } else if (st.tDown){
+    st.tDown = false; st.tEnd = now;
+    const g = macroClassifySwipe(st);
+    if (g) st.gesture = g;
+  }
+  macroRecStatus();
+}
+function macroPop(v){ let n=0; v=v>>>0; while(v){ n += v&1; v >>>= 1; } return n; }
+
+// Mirror of touch_point() in src/input_buttons.h. bit7 SET means the finger is
+// LIFTED, and X/Y stop updating once it is - so the lift report carries stale
+// coordinates and a swipe must be classified from the last sample taken while
+// the finger was still down. macro.cpp does the same.
+function macroTouchPoint(d, which){
+  const off = which ? 36 : 32;
+  if (!d || d.byteLength < off + 4) return null;
+  const b0 = d.getUint8(off), b1 = d.getUint8(off+1), b2 = d.getUint8(off+2), b3 = d.getUint8(off+3);
+  return { down: (b0 & 0x80) === 0,
+           x: b1 | ((b2 & 0x0F) << 8),
+           y: (b2 >> 4) | (b3 << 4) };
+}
+// Thresholds must match macro.cpp: GEST_MIN_MS/GEST_MAX_MS/GEST_MIN_DX/GEST_MIN_DY.
+const GEST_MIN_MS = 40, GEST_MAX_MS = 600, GEST_MIN_DX = 300, GEST_MIN_DY = 200;
+const TOUCH_X_MAX = 1919;
+
+function macroClassifySwipe(st){
+  if (!st.tStart || !st.tEnd) return 0;
+  const dt = st.tEnd - st.tStart;
+  if (dt < GEST_MIN_MS || dt > GEST_MAX_MS) return 0;
+  const dx = st.tLastX - st.tX0, dy = st.tLastY - st.tY0;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  let g = GEST_VALID;
+  if (adx >= ady){
+    if (adx < GEST_MIN_DX) return 0;
+    g |= (dx > 0) ? 3 : 2;        // GEST_DIR_RIGHT : GEST_DIR_LEFT
+  } else {
+    if (ady < GEST_MIN_DY) return 0;
+    g |= (dy > 0) ? 1 : 0;        // GEST_DIR_DOWN : GEST_DIR_UP
+  }
+  if (st.tX0 > (TOUCH_X_MAX / 2)) g |= GEST_ZONE_RIGHT;
+  if (st.tTwo) g |= GEST_TWO_FINGER;
+  return g;
+}
+
+function macroOnKeyDown(e){
+  const st = window._macroRec;
+  if (!st || st.which !== 1) return;
+  e.preventDefault(); e.stopPropagation();
+  const u = KEYMAP[e.code];
+  if (!u){ st.unknown = true; return; }
+  if (st.press.indexOf(u) < 0 && st.press.length < 4) st.press.push(u);
+  if (e.code === 'MetaLeft' || e.code === 'MetaRight') st.sawMeta = true;
+  macroRecStatus();
+}
+function macroOnKeyUp(e){
+  const st = window._macroRec;
+  if (!st || st.which !== 1) return;
+  e.preventDefault(); e.stopPropagation();
+  const u = KEYMAP[e.code];
+  if (u && st.release.indexOf(u) < 0) st.release.push(u);
+  macroRecStatus();
+}
+function macroRecStatus(){
+  const st = window._macroRec; if (!st) return;
+  const el = document.getElementById('macrorec');
+  if (!el) return;
+  if (st.which === 1){
+    el.textContent = 'Recording keyboard — ' + (st.press.map(u => USAGE_NAME[u] || u).join(' + ') || 'press your combo');
+  } else {
+    const seen = st.gesture ? macroGestureName(st.gesture)
+               : (st.peak ? macroChordName(st.peak) : '');
+    el.textContent = 'Recording controller — ' + (seen || 'press buttons or swipe the touchpad') +
+                     '   (press Stop when done)';
+  }
+}
+
+async function macroRecord(row, which){
+  if (window._macroRec){ await macroRecordStop(); return; }
+  window._macroRec = {row, which, peak:0, peakAt:0, firstDown:0, upAt:0,
+                      press:[], release:[], sawMeta:false, unknown:false,
+                      tDown:false, tStart:0, tEnd:0, tX0:0, tY0:0,
+                      tLastX:0, tLastY:0, tTwo:false, gesture:0};
+  if (which === 0){
+    await macroSuspendFiring(true);   // don't let an enabled macro type into the portal
+    try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
+  } else {
+    window.addEventListener('keydown', macroOnKeyDown, true);
+    window.addEventListener('keyup', macroOnKeyUp, true);
+  }
+  macroRender();
+}
+
+async function macroRecordStop(){
+  const st = window._macroRec; if (!st) return;
+  window._macroRec = null;
+  const rows = window._macroRows || [];
+  const m = rows[st.row] || (rows[st.row] = macroBlankRow());
+
+  if (st.which === 0){
+    try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
+    await macroSuspendFiring(false);
+    // A swipe wins only when no real buttons were held. The touchpad CLICK is a
+    // button, so a pressed swipe would otherwise register as both.
+    const chordNoPad = (st.peak >>> 0) & ~(1<<17);
+    if (st.gesture && !chordNoPad){
+      m.gesture = st.gesture & 0xff;
+      m.chord = 0;
+      m.flags &= ~1;          // a swipe has no release, so it can only pulse
+      m.hold_cs = 0;
+    } else if (st.peak){
+      m.chord = chordNoPad >>> 0;
+      m.gesture = 0;
+      // The hold you performed sets the mode: a tap records short, a hold
+      // records long with the duration you actually held.
+      const held = (st.upAt && st.peakAt) ? (st.upAt - st.peakAt) : 0;
+      if (held >= 400){ m.flags |= 1; m.hold_cs = Math.min(255, Math.round(held/10)); }
+      else { m.flags &= ~1; m.hold_cs = 0; }
+    }
+  } else {
+    window.removeEventListener('keydown', macroOnKeyDown, true);
+    window.removeEventListener('keyup', macroOnKeyUp, true);
+    if (st.press.length){
+      m.keys = [st.press[0]||0, st.press[1]||0, st.press[2]||0, st.press[3]||0];
+      // Release permutation: slot i lifts at position ((rel>>2i)&3). Anything
+      // the browser could not observe falls back to reverse press order, which
+      // is right for essentially every real combo.
+      let rel = 0, ok = true;
+      for (let i=0;i<st.press.length;i++){
+        const p = st.release.indexOf(st.press[i]);
+        if (p < 0 || p > 3){ ok = false; break; }
+        rel |= (p << (2*i));
+      }
+      if (!ok){ rel = 0; for (let i=0;i<st.press.length;i++) rel |= ((st.press.length-1-i) << (2*i)); }
+      m.rel_order = rel & 0xff;
+    }
+    if (st.sawMeta || st.unknown){
+      alert('Some keys could not be captured.\n\nWindows takes the Win key and Alt+Tab before the browser sees them, and the browser keeps Ctrl+W / Ctrl+T / F11.\n\nUse the Pick button on this row to set the combo by hand.');
+    }
+  }
+  macroRender();
+}
+
+function macroAddRow(){
+  const rows = window._macroRows || (window._macroRows = []);
+  for (let i=0;i<MACRO_COUNT;i++){
+    if (!rows[i]) rows[i] = macroBlankRow();
+    if (!rows[i].present){
+      rows[i] = macroBlankRow();
+      rows[i].present = true;
+      macroSetBit(i, true);   // a macro you just added is on by default
+      return;                 // macroSetBit re-renders
+    }
+  }
+  alert('All ' + MACRO_COUNT + ' macros are in use.');
+}
+function macroDeleteRow(i){
+  const rows = window._macroRows || [];
+  if (!rows[i]) return;
+  rows[i] = macroBlankRow();     // present:false - drops out of the list
+  macroSetBit(i, false);         // and out of the enable mask; re-renders
+}
+
+// A bound chord that CONTAINS another bound chord is unreachable: at the moment
+// the shorter one completes the firmware cannot know the longer one is coming,
+// so it fires and the held branch never re-evaluates. Warn rather than guess
+// with an arm delay, which would tax every short macro's latency.
+function macroSubsetWarnings(){
+  const rows = window._macroRows || [];
+  const out = [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    const a = rows[i]; if (!a || !a.chord || !macroBit(i)) continue;
+    for (let j=0;j<MACRO_COUNT;j++){
+      if (i===j) continue;
+      const b = rows[j]; if (!b || !b.chord || !macroBit(j)) continue;
+      if (a.chord !== b.chord && (b.chord & a.chord) === a.chord){
+        out.push('Row ' + (i+1) + ' (' + macroChordName(a.chord) + ') is contained in row ' +
+                 (j+1) + ' (' + macroChordName(b.chord) + ') — row ' + (j+1) + ' will never fire.');
+      }
+    }
+  }
+  return out;
+}
+
+function macroRender(){
+  const box = document.getElementById('macrobox');
+  if (!box) return;
+  const rows = window._macroRows;
+  if (!rows){ box.textContent = device ? 'Reading macros…' : 'Connect a device to load macros.'; return; }
+  const rec = window._macroRec;
+  const pick = window._macroPick;
+
+  let h = '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
+          'Definitions are stored on the dongle and shared by every slot. The checkboxes are per-slot: ' +
+          'save a slot to capture which macros are live for that game.</div>';
+
+  // Only meaningful once a real read has established the baseline; before that
+  // an absent key would compare as 0 and flag every fresh connect as dirty.
+  const dirty = !!savedSnapshot && ('macro_disable' in savedSnapshot) &&
+                ((+savedSnapshot.macro_disable>>>0) !== (+config['macro_disable']>>>0));
+  if (dirty){
+    h += '<div style="border:1px solid #a60;background:#2a1c00;padding:6px 8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         'Enable state changed — press <b>Save macros to device</b> to apply it. ' +
+         'Until then the dongle still uses the previous set.</div>';
+  }
+
+  const warn = macroSubsetWarnings();
+  if (warn.length){
+    h += '<div style="border:1px solid #a60;background:#2a1c00;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         warn.map(w => '⚠ ' + w).join('<br>') + '</div>';
+  }
+  if (rec){
+    h += '<div id="macrorec" style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         (rec.which === 0 ? 'Recording controller — hold the buttons you want, then press Stop. Hold for ~0.5s or more to record a long press.'
+                          : 'Recording keyboard — press your combo, then press Stop.') + '</div>';
+  }
+
+  const anyRow = (rows||[]).some(r => r && r.present);
+  h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  if (anyRow) h += '<tr style="color:var(--sub);font-size:11px"><th style="width:34px"></th><th style="text-align:left">Name</th><th></th><th style="text-align:left">Controller input</th><th></th><th style="text-align:left">Keyboard output</th><th style="width:30px"></th></tr>';
+
+  let shown = 0;
+  for (let i=0;i<MACRO_COUNT;i++){
+    const m = rows[i];
+    if (!m || !m.present) continue;   // only rows that exist; + creates one
+    shown++;
+    const inLbl  = m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord);
+    const inTxt  = inLbl ? (inLbl + ((m.flags & 1) ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
+    const outTxt = macroComboName(m.keys, m.rel_order) || '—';
+    const recIn  = rec && rec.row === i && rec.which === 0;
+    const recOut = rec && rec.row === i && rec.which === 1;
+    const dis    = rec ? ' disabled' : '';
+    h += '<tr style="border-top:1px solid var(--line,#333)">';
+    h += '<td><input type="checkbox" onchange="macroSetBit(' + i + ', this.checked)"' + (macroBit(i) ? ' checked' : '') + '></td>';
+    h += '<td style="padding:2px 6px"><input type="text" maxlength="15" placeholder="unnamed" ' +
+         'style="width:104px;padding:2px 4px;font-size:12px" oninput="macroSetLabel(' + i + ', this.value)" ' +
+         'value="' + escAttr(m.label || '') + '"></td>';
+    h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button></td>';
+    h += '<td style="padding:2px 8px;color:' + (inLbl ? 'inherit' : 'var(--sub)') + '">' + inTxt + '</td>';
+    const pickOpen = pick && pick.row === i;
+    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',1)"' + (rec && !recOut ? ' disabled' : '') + '>' + (recOut ? 'Stop' : 'Record output') + '</button>';
+    h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickOpen(' + i + ')"' + (rec || pickOpen ? ' disabled' : '') + ' title="Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture">Pick</button></td>';
+    h += '<td style="padding:2px 8px;color:' + (outTxt !== '—' ? 'inherit' : 'var(--sub)') + '">' + outTxt + '</td>';
+    h += '<td><button class="btn btn-outline" style="padding:2px 6px" onclick="macroDeleteRow(' + i + ')"' + dis + '>−</button></td>';
+    h += '</tr>';
+    if (pickOpen){
+      h += '<tr><td colspan="7" style="padding:8px 10px;background:#111a22;border-radius:6px">';
+      h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' +
+           'Set the combo by hand. Needed for anything the browser cannot capture — ' +
+           'Win combos, Alt+Tab, Ctrl+W / Ctrl+T / F11.</div>';
+      for (const mp of MOD_PICK){
+        const on = pick.mods.indexOf(mp[0]) >= 0;
+        h += '<label style="margin-right:12px;font-size:13px"><input type="checkbox" ' +
+             'onchange="macroPickMod(' + mp[0] + ', this.checked)"' + (on ? ' checked' : '') +
+             '> ' + escAttr(mp[1]) + '</label>';
+      }
+      h += '<select onchange="macroPickKey(+this.value)" style="padding:2px 4px;font-size:13px;margin-right:10px">';
+      h += '<option value="0">— key —</option>';
+      for (const ko of macroKeyOptions()){
+        h += '<option value="' + ko[0] + '"' + (pick.key === ko[0] ? ' selected' : '') + '>' + escAttr(ko[1]) + '</option>';
+      }
+      h += '</select>';
+      h += '<button class="btn" style="padding:2px 10px;margin-right:6px" onclick="macroPickApply()">Set</button>';
+      h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroPickCancel()">Cancel</button>';
+      h += '</td></tr>';
+    }
+  }
+  h += '</table>';
+  if (!shown){
+    h += '<div style="padding:10px 2px;color:var(--sub);font-size:12px">No macros yet — press + to add one.</div>';
+  }
+  h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroAddRow()"' + (rec ? ' disabled' : '') + '>+</button>';
+  h += '<button class="btn" style="padding:2px 10px" onclick="macroSaveTable()"' + (rec ? ' disabled' : '') + '>Save macros to device</button>';
+  h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
+  h += '</div>';
+  box.innerHTML = h;
+}
+
+// Saves the WHOLE macro state: the shared table AND the enable mask.
+//
+// It used to write only the table. The checkbox lives in config.macro_disable,
+// which is an ordinary config field, so it reached the device only via the main
+// Save to Device button - two save buttons with the checkbox belonging to the
+// far one. Consequences, both of which looked like separate bugs: the engine
+// early-returns when no macro is enabled, so nothing fired; and a slot snapshots
+// the DEVICE's config, so saving a slot captured an all-disabled mask and the
+// checkbox came back clear after loading it.
+//
+// Delegating the field half to saveAll() rather than reimplementing it also
+// picks up the enumeration crossing for free - enabling the first macro adds the
+// keyboard interface to the USB descriptor and needs a reconnect to take effect.
+// Hand-rolling the enumeration check in a second save path is how the two get
+// out of step.
+async function macroSaveTable(){
+  const el = document.getElementById('macrosave');
+  if (!device){ if (el) el.textContent = 'No device.'; return; }
+  if (el) el.textContent = 'Writing macro table…';
+  try {
+    await hidLocked(() => macroWriteAll());
+  } catch(e){
+    if (el) el.textContent = 'Table write failed: ' + e;
+    return;
+  }
+  if (el) el.textContent = 'Saving enable state…';
+  await saveAll();   // writes macro_disable, persists to flash, reconnects if the
+                     // keyboard interface has to appear or disappear
+  if (el) el.textContent = 'Saved. Save a slot to capture this enable state for a game.';
+}
+
 const TABS = [
   {id:'device',   label:'Device'},
   {id:'haptics',  label:'Haptics'},
   {id:'triggers', label:'Triggers'},
-  {id:'gyro',     label:'Gyro'},
+  {id:'gyro',     label:'Gyro / Stick'},
+  {id:'macros',   label:'Macros'},
   {id:'slots',    label:'Slots'},
 ];
 window._tab = window._tab || 'triggers';
@@ -2076,8 +3187,31 @@ function fieldRowHTML(f){
   let html = '';
   const _d = SUB_DIVIDERS[key];
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
-  html += `<div class="row"><div><div class="label">${label}</div></div><div>`;
-  if(kind==='bool'){
+  html += `<div class="row"><div><div class="label">${label}${descMarker(key)}</div></div><div>`;
+  if(kind==='macros'){
+    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">edited below</div>`;
+    html += `</div></div><div id="macrobox">Connect a device to load macros.</div>`;
+    // Hidden mirror so saveAll()'s FIELDS walk writes the bitmap like any other
+    // field; the checkboxes drive it via macroBit().
+    // Bound the same way every other field is, so the render harness sees it and
+    // saveAll()'s FIELDS walk picks it up. Value is numeric - no quoted data goes
+    // into the attribute.
+    html += `<input type="hidden" id="f_macro_disable" oninput="config['macro_disable']=+this.value" value="${(+config['macro_disable']>>>0)}">`;
+    return html;
+  }
+  if(kind==='bits'){
+    // One checkbox per bit of a bitmask byte (e.g. gyro/right-stick X & Y invert).
+    // Each toggles its own bit of config[key] and leaves the others untouched, so
+    // the single stored byte round-trips through the normal read/save loop.
+    const cur = +config[key] || 0;
+    html += `<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end;align-items:center">`;
+    (opts||[]).forEach((lbl,i) => {
+      const mask = 1 << i;
+      html += `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">`
+            + `<input type="checkbox" ${(cur&mask)?'checked':''} onchange="config['${key}']=((+config['${key}']||0)&~${mask})|(this.checked?${mask}:0);(window._dirty=window._dirty||{})['${key}']=1" style="width:auto;margin:0"> ${lbl}</label>`;
+    });
+    html += `</div>`;
+  } else if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
       <option value="0" ${config[key]==0?'selected':''}>No</option>
       <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
@@ -2147,8 +3281,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Bridge Config <span style="font-size:13px;color:var(--sub)">v1.18.17</span></h1>
-    <p class="subtitle">awalol RAM base — field-ID protocol</p>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
@@ -2157,6 +3290,7 @@ function render(){
     html += `<div class="card"><p class="info-text">Click Connect and pick your DS5 Bridge.<br>Chrome or Edge required (WebHID).</p></div>`;
     app.innerHTML=html; return;
   }
+  html += profileBarHTML();   // loaded-profile line, under the connect box, every tab
   const tab = window._tab || 'triggers';
   html += `<div class="tabbar">` + TABS.map(t =>
       `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
@@ -2169,6 +3303,8 @@ function render(){
     html += `<div class="card"><div class="card-title">${section.title}</div>`;
     for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
+    if (section.title === 'Auto-Haptics & Speaker Effect Leak')
+      html += `<div class="card"><div class="card-title">Auto-haptics — live <span style="font-size:11px;color:var(--sub)">(updates while connected)</span></div><div id="ahbox" style="font-size:13px">Connect to see live auto-haptics activity.</div></div>`;
   }
   if (tab === 'gyro') html += IMU_CARD_HTML;
   html += `<div class="actions">
@@ -2182,6 +3318,7 @@ function render(){
   </div>
   ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
+    <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://artzox.github.io/DS5Dongle-Studio/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
     <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
   ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
@@ -2191,6 +3328,7 @@ function render(){
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
+    <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://artzox.github.io/DS5Dongle-Studio/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">browse shared effects ↗</a></span>
     <div id="effmon" style="font-size:13px;margin-top:6px">Connect and press Refresh after triggering an effect in-game.</div>
     <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
       <b style="font-size:13px">Timeline recording</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
@@ -2215,6 +3353,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
     </div>
     <div id="ceb_list" style="font-size:12px;margin-top:8px">No stages yet.</div>
+    <div id="ceb_viz" style="margin-top:8px"></div>
     <div style="margin-top:6px">
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">Assign → L2</button>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
@@ -2231,6 +3370,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">Read L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">Read R2</button>
       <div id="ce_readout" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+      <div id="ce_readviz" style="margin-top:8px"></div>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
@@ -2255,6 +3395,12 @@ function render(){
   // render() rebuilds the whole page, so the dynamic panels revert to their
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
+  try { if (typeof macroRender === 'function') macroRender(); } catch(e){}
+  // Only sweep the macro table when its tab is on screen: 32 HID round-trips.
+  if ((window._tab || 'triggers') === 'macros' && device && !window._macroRows
+      && !saving && !slotsBusy) {
+    try { refreshMacros(); } catch(e){}
+  }
   try { if (typeof cebRender === 'function') cebRender(); } catch(e){}
   try { if (typeof cebShowLevels === 'function') cebShowLevels(); } catch(e){}
 }
@@ -2320,7 +3466,7 @@ async function autoApply(){
       device = d;
       if (!device.opened) await device.open();
       await sleep(300);
-      await readAll();
+      await reloadFromDevice();
 
       const settings = (json && typeof json.settings==='object') ? json.settings : json;
       const known = new Set(FIELDS.map(f=>f[1]));

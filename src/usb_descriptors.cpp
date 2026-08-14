@@ -26,6 +26,7 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 #include "config.h"
+#include "macro.h"
 
 #ifndef ENABLE_SERIAL
 #define ENABLE_SERIAL 0
@@ -518,7 +519,11 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     // The keyboard block is the last one in the array, so it can be lifted out
     // whole; only its bInterfaceNumber has to be renumbered to 0.
     const bool wake = get_config().enable_wake;
-    const bool kbd = wake || get_config().ps_shortcut_enabled;
+    // Wake, the PS shortcut and macros all share this one keyboard interface.
+    // usb_kbd_iface_needed() is the single definition; slot_activate and the
+    // portal's ENUM_FIELDS test the same function so the three sites cannot
+    // disagree about when a reconnect is actually required.
+    const bool kbd = usb_kbd_iface_needed(get_config());
     descriptor_configuration[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
     const uint16_t total = kbd ? CONFIG_DESC_LEN_TOTAL
                                : (uint16_t) (CONFIG_DESC_LEN_TOTAL - CONFIG_DESC_LEN_WAKE_KBD);

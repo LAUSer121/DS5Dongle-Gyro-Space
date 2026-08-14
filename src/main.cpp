@@ -12,6 +12,7 @@
 #include "wake.h"
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
+#include "macro.h"
 #endif
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
@@ -149,6 +150,14 @@ static bool       g_gyro_ready = false;
 static uint64_t   g_gyro_last_us = 0;
 
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
+    const auto &cfg = get_config();
+    // Right-stick inversion (v1.18.21): flip the PHYSICAL stick axes first, so it
+    // applies whether or not gyro is on (this runs before every gyro-mode early
+    // return, and the call sites invoke it unconditionally). Center ~128; 255-v is
+    // the standard stick flip (1-LSB center offset, imperceptible). The gyro delta,
+    // with its own gyro_invert, is added on top below - the two stay independent.
+    if (cfg.rstick_invert & 1) d[2] = (uint8_t)(255 - d[2]); // RightStickX
+    if (cfg.rstick_invert & 2) d[3] = (uint8_t)(255 - d[3]); // RightStickY
     auto rd16 = [&](int off) -> int32_t {
         return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
     };
@@ -165,7 +174,6 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     // fractional remainder carries over to the next frame instead.
     static float g_gyro_acc_x = 0.0f, g_gyro_acc_y = 0.0f;
 
-    const auto &cfg = get_config();
     if (cfg.gyro_mode == 0) {
         g_gyro_ready = false;
         g_gyro_acc_x = g_gyro_acc_y = 0.0f;
@@ -320,6 +328,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         wake_on_bt_input(data + 3, len - 3);
         #ifdef ENABLE_WAKE_HID
         ps_shortcut_tick(data + 3, len - 3);
+        macro_on_input(data + 3, len - 3);
         #endif
 
         if (get_config().polling_rate_mode != 2) {
@@ -575,6 +584,13 @@ int main() {
                 state_set(outputData + 3, sizeof(SetStateData));
                 bt_write(outputData, sizeof(outputData));
             }
+            #ifdef ENABLE_WAKE_HID
+            // Keyboard-side twin of state_release_for_suspend(). Doing this
+            // lazily on the next input report is not enough: if the controller
+            // goes quiet no report arrives, and a combo caught mid-playback
+            // leaves a modifier latched at the host across the whole sleep.
+            if (susp && !was_suspended) macro_reset();
+            #endif
             was_suspended = susp;
         }
         {
@@ -610,6 +626,12 @@ int main() {
         cyw43_arch_poll();
         tud_task();
         wake_task();
+        // Drives the ordered playback walk and the long-press threshold. Without
+        // this the engine would assert the first key of a combo and never
+        // advance to release it - macro_on_input only STARTS a macro.
+        #ifdef ENABLE_WAKE_HID
+        macro_task();
+        #endif
         audio_loop();
         interrupt_loop();
 #if ENABLE_BATT_LED

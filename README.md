@@ -1,6 +1,10 @@
-# DS5Dongle — Audio Auto-Haptics Edition
+# DS5Dongle — Studio
 
-**Version 1.18.18**
+**Version 1.19.0**
+
+▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
+
+📥 **[Shared game profiles](https://artzox.github.io/DS5Dongle-Studio/profiles.html)** · 🎮 **[Trigger effects](https://artzox.github.io/DS5Dongle-Studio/effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
 
 A firmware modification for the [DS5Dongle](https://github.com/awalol/DS5Dongle)
 (a Raspberry Pi Pico 2W-based wireless DualSense dongle) that adds **audio-derived
@@ -15,7 +19,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.18.17-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.19.0-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -53,12 +57,15 @@ to RAM so native fine haptics and controller audio work without overclocking.
 - [Suggested setup](#suggested-setup)
 - [Configuration reference](#configuration-reference)
   - [Auto-Haptics & Speaker Effect Leak](#auto-haptics--speaker-effect-leak)
+  - [Native Haptics Filter](#native-haptics-filter)
   - [General Haptics & Audio](#general-haptics--audio)
   - [Trigger-to-Rumble (R2T)](#trigger-to-rumble-r2t)
   - [Adaptive Triggers (Stage 1: resistance, Stage 2: push-back kick)](#adaptive-triggers-stage-1-resistance-stage-2-push-back-kick)
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
-  - [Gyro-to-Stick](#gyro-to-stick)
+  - [Gyro Aiming](#gyro-aiming)
+  - [Right Stick Inversion](#right-stick-inversion)
+  - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
 - [Modes explained](#modes-explained)
@@ -80,6 +87,11 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
+- **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
+  keyboard combo, recorded by pressing the actual buttons and typing the actual
+  keys. Up to 32, with tap-vs-hold and captured release order. Definitions are
+  shared; which ones are live is per-profile, so Playnite switches macro sets per
+  game.
 - **Extensive DSP tuning** — intensity, smoothness, noise gate, crossover cutoff,
   and selectable filter slope (6/12/24 dB/oct) to get your auto-haptics as close as native as possible.
 - **Three operating modes** — Off (native passthrough), Mix
@@ -139,6 +151,10 @@ to RAM so native fine haptics and controller audio work without overclocking.
   motion aiming, with selectable activation (always / while L2 held / touchpad
   touch / ratchet), sensitivity, horizontal axis source (yaw or roll), and
   per-axis invert.
+- **Right-stick inversion** — invert the physical right stick's X axis, Y axis, or
+  both, in any game with no PC-side software. Independent of gyro aiming (it applies
+  whether or not gyro is on), for inverted-look setups or games that only offer
+  inversion on one axis.
 - **Native-haptics anti-alias** — optional smoothing on the native haptic stream
   (off / light / strong) to tame gritty high-frequency actuator noise.
 - **Slot backup and restore** — download every stored profile slot, names
@@ -245,7 +261,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.18.17.uf2` (Pico 2 W) or `ds5-v1.18.17-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.19.0.uf2` (Pico 2 W) or `ds5-v1.19.0-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -299,6 +315,12 @@ below.
 > are tuned. That is the single most common reason auto-haptics "doesn't work". In
 > **Off** (native) mode it isn't needed at all.
 
+*(Not sure it's running? Since 1.18.25 the **Haptics** tab shows an "Audio bridge:
+active / not detected" line right under the auto-haptics settings, plus two meters —
+the audio arriving on the dongle against the haptic the DSP is deriving from it — so
+you can watch "Haptics out" respond as you tune, and see at a glance whether audio
+is reaching the dongle at all.)*
+
 The firmware ships with safe stock defaults (auto-haptics off, standard buffer), so
 a fresh flash is safe and native passthrough works immediately. For a tuned
 auto-haptics + immersion setup, see **Suggested setup** below.
@@ -341,6 +363,7 @@ error. (The firmware does not ship with these as defaults, so there's no flashin
 surprise; apply them in the portal and save.)
 
 **Auto-Haptics & Speaker Effect Leak**
+
 | Setting | Value |
 |---|---|
 | Mode | Off (switch to Mix or Replace per game) |
@@ -367,6 +390,7 @@ surprise; apply them in the portal and save.)
 | Effect Leak Detection Band (Hz) | 2500 |
 
 **General Haptics & Audio**
+
 | Setting | Value |
 |---|---|
 | Native Haptics Gain | 1.00 |
@@ -379,6 +403,7 @@ surprise; apply them in the portal and save.)
 | Disable Speaker | No |
 
 **Device & Connection**
+
 | Setting | Value |
 |---|---|
 | Polling Rate | Real-time |
@@ -389,6 +414,7 @@ surprise; apply them in the portal and save.)
 | Wake PC on PS Button | On for auto-haptics profiles, off for native games |
 
 **Advanced — BT Latency (experimental)**
+
 | Setting | Value |
 |---|---|
 | BT Flush Timeout | Off (reliable) |
@@ -412,6 +438,7 @@ Notes on the suggested values:
 The portal groups settings into the sections below.
 
 ### Auto-Haptics & Speaker Effect Leak
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Mode | Off / Mix / Replace | Off | Off = native/rumble passthrough; Mix = native + derived; Replace = derived only |
@@ -561,11 +588,24 @@ the high-frequency content and opens the speaker only when the level jumps sharp
 (an onset), so discrete impacts pass while sustained sound stays muted. The output
 is high-passed to protect the small speaker from low-frequency popping.
 
+### Native Haptics Filter
+
+Applies only to **native** haptics — the signal a game with real DualSense support
+sends. It does nothing to derived auto-haptics.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Smoothing (anti-alias filter) | Off / Light / Strong | Light | Off = raw and gritty (the pre-1.0.4 texture); Light removes the grit while keeping transient snap; Strong is smoothest but can feel muted |
+
+*Guide:* leave this on **Light**. Reach for **Off** only if you want the older,
+harsher texture back, and **Strong** if a particular game's native haptics sound
+buzzy or harsh on your pad.
+
 ### General Haptics & Audio
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Native Haptics Gain | 1.0–2.0 | 1.0 | Multiplier on native haptic channels |
-| Native Haptics Anti-alias | Off / Light / Strong | Light | Smooths the native haptic stream (Off = raw/gritty; Strong = softest) |
 | Speaker Volume | 0–127 | 100 | Controller speaker volume (also scales haptic strength) |
 | Headset Volume | 0–127 | 100 | Headset jack volume |
 | Speaker Gain | 0–7 | 2 | Controller speaker gain stage |
@@ -580,7 +620,7 @@ Routes the rumble signal into the trigger actuators as a buzz.
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | R2T Mode | Off / Left / Right / Both | Off | Which trigger(s) buzz from rumble |
-| Only While Pressed | on/off | off | on = buzz only when the trigger is pulled past ~25%; off = buzz whenever there's rumble |
+| Only vibrate when trigger pressed | on/off | off | on = buzz only when the trigger is pulled past ~25%; off = buzz whenever there's rumble |
 | Strength | 0–100 | 100 | Amplitude multiplier on the rumble value |
 | Frequency | 1–255 | 60 | Buzz frequency of the trigger effect (higher = finer/tighter buzz) |
 
@@ -607,7 +647,7 @@ in either one.
 | Mode | Off / Gated by trigger / Always / Gated by shoulder | Off | "Gated by trigger" = the OPPOSITE trigger arms it, analog (L2 arms R2, R2 arms L2). "Gated by shoulder" = the opposite bumper arms it, digital (L1→R2, R1→L2). Any R2/L2 combination is valid |
 | Resistance strength | 0–100 | 70 | Resistance intensity (mapped to the effect's 0–7 range) |
 | Arming threshold | 1–255 | 30 | In "Gated by trigger" mode, how far the arming trigger must be pulled (~12% at default). Ignored in shoulder-gated mode (digital on/off) |
-| Start position | 0–9 | 0 | Trigger-travel zone where resistance begins (0 = from the start) |
+| Resistance start position | 0–9 | 0 | Trigger-travel zone where resistance begins (0 = from the start) |
 | Resistance shape | Constant / Ramp / Two-stage / Weapon break | Constant | Constant = flat Strength A. **Ramp** = linear A→B across the pull (racing: light→heavy gas, heavy→light brake). **Two-stage detent** = Strength A with a wall of Strength B at the detent zone — a tactile bump marking half-press from full-press (fire/alt-fire games). **Weapon break** = rigid wall then hardware snap-through at the break point — the semi-auto shot break (Strength B unused) |
 | Strength B | 0–100 | 70 | Second strength: the ramp's end value, or the detent wall |
 | — Strength 0 in shapes | | | In Ramp/Two-stage, a strength of 0 means genuinely FREE travel (zone excluded): Ramp A=0 = free at rest building to B; Detent A=0 = a pure bump with free travel around it |
@@ -639,6 +679,16 @@ any trigger in a game that doesn't. Effects are stored as the exact 11-byte
 commands the game sent — they are **not** decoded into the sliders above (a game's
 force curves don't survive that round-trip), so what you feel is the original
 effect, not an approximation.
+
+**See what an effect looks like.** Every effect — whether you build it, load it, or
+read it back off a trigger — is drawn as a diagram in the portal: trigger travel
+along the bottom, force up the side, with resistance shown as per-zone steps, a
+weapon-break wall marking where it gives way, a bow's ramp and snap point, and
+vibration as a band over the part of the pull where it plays. Sequenced stages show
+their hand-off points, and a wall or bow the sequencer cuts short before it fires is
+faded and marked ✕ — so a truncated effect is obvious at a glance. Since a trigger
+effect can't really be conveyed in words, the diagram can be screenshotted and
+shared. *(New in 1.18.25.)*
 
 **What can and can't be captured**
 
@@ -930,19 +980,25 @@ trigger sections, so a wall at zones 2-3 sits where the same numbers put it in a
 captured effect.
 
 ### Trigger effects — shared
+
+Ready-to-import adaptive-trigger effects captured from real games live on the
+**[Trigger effects page](https://artzox.github.io/DS5Dongle-Studio/effects.html)** — break-through walls, bows,
+resistance curves and vibration you can load straight onto L2 or R2 in the portal,
+then Save to a slot.
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
 
-### Gyro-to-Stick
+### Gyro Aiming
 Maps controller motion onto the right stick for motion aiming.
 
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Gyro Mode | Off / L2-held / Always / Touch-enables / Ratchet | Off | When motion aiming is active (see below) |
 | Sensitivity | 1–100 | 50 | Motion-to-stick gain (50 ≈ raw) |
-| Horizontal Axis | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
-| Invert | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
+| Horizontal source | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
+| Invert gyro aim | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
 
 *Gyro modes:*
 - **L2-held** — aim only while L2 is held (flick-stick-style precision on ADS).
@@ -955,9 +1011,112 @@ Maps controller motion onto the right stick for motion aiming.
 the controller to fine-tune aim only when aiming down sights. Raise sensitivity if
 the motion feels sluggish; use invert if the direction feels backwards.
 
-### Device & Connection
+### Right Stick Inversion
+Inverts the physical right stick in the input report the PC sees — independent of
+gyro aiming, and active in any game with no PC-side software.
+
 | Setting | Range | Default | Notes |
 |---|---|---|---|
+| Invert Right Stick | X / Y / both | off | Per-axis inversion of the physical stick (bit0 = X, bit1 = Y). Applies whether or not gyro is on. |
+
+Useful for inverted-look setups, or games that only offer inversion on one axis.
+Because it rewrites the stick values in the report itself it works everywhere, and
+it composes with gyro aiming — the stick is inverted first, then the gyro delta is
+added on top with its own invert. *(New in 1.18.21.)*
+
+### Macros (new in 1.19.0)
+
+Bind a controller button press or a touchpad swipe to a keyboard combo. For example you can press
+**R3 + D-pad Up** and map to **Ctrl+J**, if you use the RivaTuner OSD; swipe left across the touchpad
+and it receives whatever you assigned. No PC-side software is involved — the
+dongle sends the keystrokes itself over the same HID keyboard interface the wake
+feature uses.
+
+Everything is edited on the **Macros** tab.
+
+| Column | What it does |
+|---|---|
+| Checkbox | Enables this macro **for the current profile**. Per-slot — see below. |
+| Name | Up to 15 characters, stored on the dongle so your names survive a different PC or a cleared browser. |
+| Record input | Press it, then hold the buttons you want or swipe the touchpad, then press **Stop**. |
+| Record output | Press it, then type the key combo on your real keyboard, then press **Stop**. |
+| **+** / **−** | Adds or removes a macro row. (The checkbox enables; the minus deletes.) |
+
+Up to **32 macros**.
+
+#### Tap or hold — the recording decides
+
+While recording the input, the duration you hold the controller button(s) sets its mode:
+
+- **Tap** the controller button → the macro fires on press.
+- **Hold** it for roughly half a second or more → it becomes a long-press macro,
+  and the duration you actually held is stored as the threshold. The row then
+  reads e.g. `R3 + D-pad Up (hold 0.75s)`.
+
+You can bind the same controller button twice, once short and once long, exactly the way the
+PS button gives you one action on a tap and another on a hold.
+
+One consequence worth knowing: if a button press is bound to **both** a short and a long macro,
+the short one can only fire when you *release*, because until then there is no way
+to tell a short press from the start of a long one. A button press with only a short-time
+macro fires immediately on press.
+
+#### Release order is captured
+
+Recording **Alt+Tab** stores that you released Tab before Alt, and playback
+reproduces that order. This matters for combos where the modifier must outlive the
+key.
+
+Some combos cannot be captured in a browser, because Windows or the browser takes
+them first — anything with the **Win** key, **Alt+Tab** itself, and
+**Ctrl+W / Ctrl+T / F11**. The recorder tells you when it saw something it could
+not read; use the **Pick** button on that row to set the combo by hand — modifier tick-boxes plus a key list, writing exactly what a recording would.
+
+#### Touchpad swipes
+
+Four directions, distinguished by which half of the pad the swipe **starts** on
+and whether you use one or two fingers. A swipe has no release, so it always fires
+a single pulse — tap-versus-hold does not apply.
+
+Matching is exact: a macro recorded as *swipe right, left half* only fires on a
+swipe that starts on the left half.
+
+#### The two halves are stored differently, and this is the useful part
+
+| | Where it lives | Scope |
+|---|---|---|
+| The macro definitions | Their own area of the dongle's flash | **Shared by every profile** |
+| Which macros are enabled | The profile itself | **Per-slot** |
+
+So you define a macro once and then choose, per game, whether it is live. Save a
+slot and it captures the current set of ticked boxes; the Playnite automation then
+switches macro sets per game with no extra setup.
+
+Press **Save macros to device** to store both the definitions and the enable state.
+The panel warns you when the enable state has changed but not yet been saved.
+
+> **Enabling the first macro re-enumerates the controller.** Macros share the
+> keyboard interface with the wake feature, so switching from "no macros" to "at
+> least one" changes the USB descriptor and the device briefly disconnects and
+> reappears. Switching *which* macros are on costs nothing, and if **Enable Wake**
+> is already on the interface is present anyway, so there is no reconnect at all.
+> This is the same constraint as wake: a game with native DualSense support may
+> stop recognising the controller while the keyboard interface is present.
+
+#### Two limits to be aware of
+
+- **Keyboard keys only.** Media and volume keys need a different USB descriptor
+  and are not supported.
+- **Don't bind a controller button press that contains another bound press.** With both `R3` and
+  `R3 + D-pad Up` enabled, pressing R3 first fires the R3 macro and the longer
+  combo never fires — at the moment R3 goes down the firmware cannot know whether
+  a second button is coming. The portal warns you when it spots this.
+
+### Device & Connection
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Controller Type | DualSense (DS5) / DualSense Edge (DSE) / Auto-detect | Auto-detect | Which pad identity the dongle presents to the PC. Auto-detect follows the controller actually paired; force one if a game only recognises a specific model. Changing this re-enumerates the device. |
 | Polling Rate | 250 / 500 / Real-time | Real-time | USB report rate |
 | Audio Buffer Length | 16–128 | 64 | Lower = snappier haptics/lower latency; higher = more audio stability |
 | Inactive Time (min) | 5–60 | 30 | Idle timeout before disconnect |
@@ -966,6 +1125,7 @@ the motion feels sluggish; use invert if the direction feels backwards.
 | Wake PC on PS Button | on/off | off | Assert USB remote wakeup on PS press to wake the host |
 
 ### Advanced — BT Latency (experimental)
+
 | Setting | Default | Notes |
 |---|---|---|
 | BT Flush Timeout | Off | Drop stale packets instead of retransmitting. No clear benefit on a strong link; left in for tinkering. |
@@ -1110,6 +1270,13 @@ The resulting `ds5-bridge.uf2` is the firmware.
 - `src/main.cpp` / `src/state_mgr.h` — stuck-rumble fix (send state to the controller when it changes even while the speaker is active)
 - `src/wake.cpp` / `src/wake.h` — USB suspend/wake hardening: debounced controller power-off (ride out hub-induced suspends), and a grace window so a deliberate USB reconnect is not treated as a host sleep (ported from upstream PR #186)
 - `src/usb.cpp` — suspend-callback gate so the controller's Bluetooth is left alone on a USB suspend when wake is off
+- `src/macro.cpp` / `src/macro.h` — macro engine: flash-backed table, button presses and
+  gesture matching, ordered keyboard playback *(new in 1.19.0)*
+- `src/input_buttons.h` — logical button decode shared by the macro engine and the
+  portal; expands the D-pad hat into discrete direction bits *(new in 1.19.0)*
+- `src/flash_map.h` — one place defining every flash region, with `static_assert`s
+  reserving room for slot growth above the macro table *(new in 1.19.0)*
+- `CMakeLists.txt` — adds `src/macro.cpp` to the build
 
 ---
 
@@ -1168,9 +1335,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.18.17.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.18.17)
-- `ds5-v1.18.17-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.19.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.19.0)
+- `ds5-v1.19.0-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
@@ -1181,7 +1348,7 @@ don't affect you.
 - `README.md` — this file
 - `CHANGELOG.md` — version history
 - `tools/` — one-command builders for Windows and macOS, plus the portal test
-  harness
+  harness and the host-side macro engine tests
 - `boards/` — board support, including the Waveshare RP2350B-Plus-W build script
 - `automation/` — **optional** Playnite integration (see below)
 
@@ -1190,6 +1357,10 @@ don't affect you.
 The `automation/` folder adds hands-off Playnite integration: it auto-applies a
 profile per game and routes game audio to the dongle for audio-driven auto-haptics,
 switching automatically between native-haptics games and everything else.
+
+Need per-game configs to switch between? The **[Shared game profiles
+page](https://artzox.github.io/DS5Dongle-Studio/profiles.html)** collects ready-to-import profiles — import one
+into a slot and the automation can activate it per game.
 
 Quick start:
 1. **Python 3 — only if you play games *without* native DualSense support.** The
@@ -1344,9 +1515,47 @@ controller that is not connected.
 needs the device to still be attached, and needs permission in Windows Device
 Manager.
 
+**Keyboard interface** — a second HID device the dongle presents to the PC
+alongside the gamepad, used to send keystrokes. It is shared by Wake, the PS
+button shortcut and Macros: it appears when any one of them is enabled and
+disappears when none is. That appearing and disappearing is what re-enumerates
+the controller, which is why enabling your *first* macro briefly disconnects the
+pad but enabling a second one does not.
+
 **Profile slot** — a complete configuration stored on the dongle itself, so
 switching setups is one instant command rather than writing every setting.
 
 **Passthrough mode (DS4Windows)** — DS4Windows forwarding a game's rumble to the
 real controller rather than emulating a different pad.
 
+### Macros
+
+**Macro** — a controller input bound to a keyboard combination. The dongle sends
+the keystrokes itself over its keyboard interface, so nothing runs on the PC and
+it works in any application, not only games.
+
+**Combo** — two or more buttons held together and treated as one trigger, such as
+`R3 + D-pad Up`. A combo only fires once every one of its buttons is down, so
+holding the first one on its own does nothing however long you hold it.
+
+**Modifier** — Ctrl, Shift, Alt or the Windows key. Macros store modifiers in the
+same list as ordinary keys rather than in a separate field, which is what allows
+the order they are pressed and released to be recorded exactly as you performed
+it.
+
+**Release order** — which key of a combo lifts first. It matters more than it
+sounds: Alt+Tab expects Tab to be released while Alt is still held. Recording
+captures the real order; the **Pick** button assumes the usual one, last pressed
+released first.
+
+**Tap / long press** — whether a macro fires the moment the buttons go down, or
+only after they have been held past a threshold. You set this by how long you
+hold the buttons while recording rather than by typing a number.
+
+**Swipe** — a touchpad gesture used as a macro trigger. Identified by its
+direction, which half of the pad it starts on, and whether one or two fingers are
+used, so a swipe recorded on the left half only fires when it starts there.
+
+**Macro table** — the set of macro definitions, stored once on the dongle and
+shared by every profile slot. Only *which* macros are enabled is stored per slot,
+which is what lets one definition be live in one game and dormant in another.

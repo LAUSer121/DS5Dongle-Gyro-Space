@@ -215,6 +215,37 @@ struct __attribute__((packed)) Config_body {
     int16_t  gyro_cal_x;    // static gyro offset calibration (raw LSB), subtracted
     int16_t  gyro_cal_y;    //   before fusion. Runtime drift compensation makes
     int16_t  gyro_cal_z;    //   these optional; they absorb unit-to-unit offsets.
+    // Right-stick inversion (v1.18.21). Inverts the PHYSICAL right stick axes in
+    // the input report the host sees, independent of gyro aiming (which has its
+    // own gyro_invert). Applied before the gyro delta is added, so the two
+    // compose: invert the stick here, and align gyro separately if used. Same
+    // bit layout as gyro_invert. Contributed by AppendinoCom (PR #4).
+    uint8_t  rstick_invert; // bit0 = invert X (horizontal), bit1 = invert Y (vertical)
+    // Macro mask (v1.19.0). One bit per entry in the DEVICE-GLOBAL macro table.
+    // The table itself lives in its own flash sector (MACRO_FLASH_OFFSET) and is
+    // NOT per-slot - only this mask is, so a slot selects which subset of the
+    // shared macros is live. That is what lets Playnite switch macro sets per
+    // game without duplicating definitions into all 24 slots.
+    //
+    // STORED INVERTED - a SET bit means macro N is DISABLED - and this is not a
+    // style choice. Slots written by older firmware are read back 0xFF-filled
+    // past their recorded body_len, and config_valid() turns that fill into a
+    // safe default by RANGE-CLAMPING each field. A bitmap has no invalid range:
+    // 0xFFFFFFFF is the perfectly legal "all 32 enabled". Stored the obvious way
+    // round, every pre-existing slot would load with every macro switched on and
+    // would drag a spurious USB re-enumeration along with it. Inverted, the
+    // 0xFF fill reads as "all disabled", which is exactly the wanted default and
+    // needs no clamp at all.
+    //
+    // Keep the inversion at the STORAGE layer only. Firmware, wire format and
+    // portal state all speak macro_disable; the single place it flips is the
+    // checkbox's checked attribute at render time.
+    //
+    // Enumeration-critical at its all-disabled boundary: the wake keyboard
+    // interface is present iff at least one macro is enabled (see
+    // usb_descriptors.cpp), so crossing MACRO_NONE_ENABLED changes the USB
+    // descriptor. Flipping WHICH macros are on does not.
+    uint32_t macro_disable;
 };
 
 struct __attribute__((packed)) Config {
@@ -245,6 +276,10 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current c
 uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage);
 bool slot_info(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], uint8_t &valid, uint8_t &cfg_version);
 bool slot_load_body(uint8_t idx, Config_body &out);
+// Currently-loaded profile (RAM only): slot_out=0xFF + returns false when nothing
+// is tracked; otherwise fills the source slot name and sets edited when the live
+// config has diverged from the slot as loaded.
+bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SLOT_NAME_LEN]);
 Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();

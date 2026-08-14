@@ -11,6 +11,7 @@
 
 #include "bt.h"
 #include "config.h"
+#include "macro.h"
 #include "wake.h"
 #include "device/usbd.h"
 #include "pico/time.h"
@@ -38,12 +39,23 @@ constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 19;
 constexpr uint8_t FW_VER_PATCH = 0;
 
+// Width of the value the LAST successful write_config_value() emitted. The bulk
+// reader (0x0c) needs a length per field and used to carry its own hand-written
+// field-id -> length switch, with a comment saying it "must match the portal
+// FIELDS table". It drifted the first time a 4-byte field was added:
+// macro_disable (0x6c) fell to the default of 1, so the portal read only its low
+// byte - 0xFFFFFFFF arrived as 0x000000FF and showed macros 8-31 as enabled.
+// Deriving it from sizeof(T) here means the fact lives in exactly one place and
+// any future field of any width is correct on arrival.
+static uint8_t g_last_field_len = 1;
+
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
     if (bufsize < sizeof(T)) {
         return false;
     }
     memcpy(buffer, &value, sizeof(T));
+    g_last_field_len = (uint8_t) sizeof(T);
     return true;
 }
 
@@ -214,6 +226,10 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x55: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.mix_native_level=v; break; }
         case 0x63: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.mix_native_filter=v; break; }
         case 0x64: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ah_dsp_source=v; break; }
+        case 0x65: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.rstick_invert=v; break; }
+        // Macro enable bitmap, stored INVERTED (set bit = disabled) so an old
+        // slot's 0xFF tail fill defaults to "no macros". See config.h.
+        case 0x6c: { uint32_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.macro_disable=v; break; }
         case 0x56: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.effect_leak_max_burst=v; break; }
         case 0x57: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_enable=v; break; }
         case 0x58: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_condition=v; break; }
@@ -229,11 +245,11 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x62: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_l2_yield=v; break; }
         case 0x44: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.at_kick_style=v; break; }
         // Gyro aiming space (v1.19.0).
-        case 0x65: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_space=v; break; }
-        case 0x66: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_fusion=v; break; }
-        case 0x67: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_x=v; break; }
-        case 0x68: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_y=v; break; }
-        case 0x69: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_z=v; break; }
+        case 0x72: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_space=v; break; }
+        case 0x73: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_fusion=v; break; }
+        case 0x74: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_x=v; break; }
+        case 0x75: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_y=v; break; }
+        case 0x76: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_z=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -292,6 +308,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x14: return write_config_value(buffer, bufsize, config.auto_haptics_lowpass_hz);
         case 0x15: return write_config_value(buffer, bufsize, config.auto_mute_replace);
         case 0x16: return write_config_value(buffer, bufsize, config.auto_mute_mix);
+        case 0x6c: return write_config_value(buffer, bufsize, config.macro_disable);
         case 0x17: return write_config_value(buffer, bufsize, config.auto_haptics_gate);
         case 0x18: return write_config_value(buffer, bufsize, config.auto_haptics_slope);
         case 0x19: return write_config_value(buffer, bufsize, config.lightbar_off);
@@ -345,6 +362,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x55: return write_config_value(buffer, bufsize, config.mix_native_level);
         case 0x63: return write_config_value(buffer, bufsize, config.mix_native_filter);
         case 0x64: return write_config_value(buffer, bufsize, config.ah_dsp_source);
+        case 0x65: return write_config_value(buffer, bufsize, config.rstick_invert);
         // Read-only diagnostics: the rumble motor values the firmware is
         // currently receiving from the host. Non-zero here while a game
         // vibrates proves the rumble arrives as motor values (and is therefore
@@ -370,21 +388,21 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x62: return write_config_value(buffer, bufsize, config.ce_l2_yield);
         case 0x44: return write_config_value(buffer, bufsize, config.at_kick_style);
         // Gyro aiming space (v1.19.0).
-        case 0x65: return write_config_value(buffer, bufsize, config.gyro_space);
-        case 0x66: return write_config_value(buffer, bufsize, config.gyro_fusion);
-        case 0x67: return write_config_value(buffer, bufsize, config.gyro_cal_x);
-        case 0x68: return write_config_value(buffer, bufsize, config.gyro_cal_y);
-        case 0x69: return write_config_value(buffer, bufsize, config.gyro_cal_z);
+        case 0x72: return write_config_value(buffer, bufsize, config.gyro_space);
+        case 0x73: return write_config_value(buffer, bufsize, config.gyro_fusion);
+        case 0x74: return write_config_value(buffer, bufsize, config.gyro_cal_x);
+        case 0x75: return write_config_value(buffer, bufsize, config.gyro_cal_y);
+        case 0x76: return write_config_value(buffer, bufsize, config.gyro_cal_z);
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
         // Live IMU telemetry for the portal curves (read-only, raw int16 LSB):
-        // 0x6a-0x6c = gyro X/Y/Z, 0x6d-0x6f = accel X/Y/Z. Refresh is per-sample.
-        case 0x6a: { extern volatile int16_t g_diag_imu_gx; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gx); }
-        case 0x6b: { extern volatile int16_t g_diag_imu_gy; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gy); }
-        case 0x6c: { extern volatile int16_t g_diag_imu_gz; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gz); }
-        case 0x6d: { extern volatile int16_t g_diag_imu_ax; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ax); }
-        case 0x6e: { extern volatile int16_t g_diag_imu_ay; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ay); }
-        case 0x6f: { extern volatile int16_t g_diag_imu_az; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_az); }
+        // 0x77-0x79 = gyro X/Y/Z, 0x7a-0x7c = accel X/Y/Z. Refresh is per-sample.
+        case 0x77: { extern volatile int16_t g_diag_imu_gx; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gx); }
+        case 0x78: { extern volatile int16_t g_diag_imu_gy; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gy); }
+        case 0x79: { extern volatile int16_t g_diag_imu_gz; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_gz); }
+        case 0x7a: { extern volatile int16_t g_diag_imu_ax; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ax); }
+        case 0x7b: { extern volatile int16_t g_diag_imu_ay; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ay); }
+        case 0x7c: { extern volatile int16_t g_diag_imu_az; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_az); }
         // Final gyro→stick output (fields 0x70-0x71): deg/s * 100, after
         // space conversion and before accumulator truncation. Read-only.
         case 0x70: { extern volatile int16_t g_diag_stick_x; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_x); }
@@ -392,6 +410,18 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }
         case 0x37: { extern volatile uint16_t g_diag_ch01_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch01_peak); }
         case 0x38: { extern volatile uint16_t g_diag_ch23_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch23_peak); }
+        // DualSense battery, from the controller's input report (byte 52): low
+        // nibble = level 0-10, high nibble = charge state (0 discharging, 1
+        // charging, 2 full). A live value, not cleared on read; stale while the
+        // controller is disconnected, so the portal only shows it when connected.
+        case 0x68: { extern uint8_t interrupt_in_data[63]; return write_config_value(buffer, bufsize, (uint8_t)interrupt_in_data[52]); }
+        // Auto-haptics activity + level meters (peak-hold, cleared on read):
+        //   0x69 frames delivered on the audio-out endpoint (bridge active?)
+        //   0x6a derived-haptic OUTPUT peak the DSP is generating (0-255)
+        //   0x6b audio INPUT peak on ch0/1, the DSP source (0-255)
+        case 0x69: { extern volatile uint16_t g_ah_frames;   const uint16_t v = g_ah_frames;   g_ah_frames = 0;   return write_config_value(buffer, bufsize, v); }
+        case 0x6a: { extern volatile uint8_t  g_ah_out_peak; const uint8_t  v = g_ah_out_peak; g_ah_out_peak = 0; return write_config_value(buffer, bufsize, v); }
+        case 0x6b: { extern volatile uint8_t  g_ah_in_peak;  const uint8_t  v = g_ah_in_peak;  g_ah_in_peak = 0;  return write_config_value(buffer, bufsize, v); }
         // Read-only firmware version (no write handlers on purpose).
         case 0x7d: return write_config_value(buffer, bufsize, FW_VER_MAJOR);
         case 0x7e: return write_config_value(buffer, bufsize, FW_VER_MINOR);
@@ -728,6 +758,88 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
 
+        case 0x17: {
+            // READ macro entry. Payload: [idx]. Reply: 0x66 0x17 status idx
+            // <12-byte MacroEntry> <16-byte label>.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x17; buf[2] = 0x01;
+            MacroRecord rec{};
+            if (bufsize >= 1 && buffer[0] == 0xFF) {
+                // USED BITMAP. One round trip tells the portal which rows are
+                // non-empty; sweeping all 32 entries to find that out cost ~2s
+                // of HID traffic and blocked every other read behind it.
+                uint32_t used = 0;
+                for (uint8_t i2 = 0; i2 < MACRO_COUNT; ++i2) {
+                    MacroRecord r2{};
+                    if (!macro_get(i2, r2)) continue;
+                    const bool empty = (r2.entry.chord == 0) && (r2.entry.gesture == 0) &&
+                                       (r2.entry.keys[0] == 0) && (r2.entry.keys[1] == 0) &&
+                                       (r2.entry.keys[2] == 0) && (r2.entry.keys[3] == 0);
+                    if (!empty) used |= (1u << i2);
+                }
+                buf[2] = 0x00; buf[3] = 0xFF;
+                memcpy(buf + 4, &used, sizeof(used));
+                feature_data[0x84].assign(buf, buf + sizeof(buf));
+                break;
+            }
+            if (bufsize >= 1 && macro_get(buffer[0], rec)) {
+                buf[2] = 0x00; buf[3] = buffer[0];
+                memcpy(buf + 4, &rec, sizeof(rec));
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x18: {
+            // WRITE macro entry into the RAM image only. Payload:
+            // [idx] <12-byte MacroEntry> <16-byte label>. Nothing reaches flash
+            // until 0x19, so saving a 32-row list costs ONE erase, not 32.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x18; buf[2] = 0x01;
+            if (bufsize >= 1 + sizeof(MacroRecord)) {
+                MacroRecord rec{};
+                memcpy(&rec, buffer + 1, sizeof(rec));
+                if (macro_set_entry(buffer[0], rec)) { buf[2] = 0x00; buf[3] = buffer[0]; }
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x19: {
+            // COMMIT the RAM image to the macro sector.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x19;
+            buf[2] = macro_commit() ? 0x00 : 0x01;
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x1a: {
+            // SUSPEND/RESUME macro firing for the portal's record mode. Without
+            // this, recording a chord that matches an already-enabled macro
+            // types its combo into the portal while the user is capturing it.
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x1a; buf[2] = 0x00;
+            const bool on = (bufsize >= 1) && (buffer[0] != 0);
+            macro_suspend(on);
+            buf[3] = on ? 1 : 0;
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x67: {
+            // Read the currently-loaded profile (RAM only, set by slot_activate /
+            // slot_save - so it reflects loads from the portal AND the automation).
+            // Reply: 0x66 0x67 status active_slot(0xFF=none/unknown) edited name[16]
+            uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x67; buf[2] = 0x00;
+            uint8_t slot; bool edited; uint8_t nm[SLOT_NAME_LEN];
+            active_profile_get(slot, edited, nm);   // slot=0xFF when nothing tracked
+            buf[3] = slot;
+            buf[4] = edited ? 1 : 0;
+            memcpy(buf + 5, nm, SLOT_NAME_LEN);
+            // Reply on 0x81 (the poll/GET buffer), NOT 0x84: this read is polled
+            // once a second, and 0x84 is reserved for slot commands (activate/save/
+            // info) precisely so a periodic poll can't consume their replies.
+            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            break;
+        }
+
         case 0x15: {
             // READ a custom-effect state FROM A SLOT (for backup/export), without
             // activating it. The raw effect bytes live in the slot's Config_body but
@@ -793,23 +905,11 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     const uint8_t fid = buffer[1 + i2];
                     uint8_t tmp[8]{};
                     if (!get_config_field(fid, tmp, sizeof(tmp))) { ok = false; break; }
-                    // get_config_field writes the raw value; length by field type:
-                    // reuse its convention - u8=1, u16=2, f32=4. Determine via a
-                    // conservative probe: write_config_value zero-fills, so track
-                    // known u16/f32 ids explicitly.
-                    uint8_t len = 1;
-                    switch (fid) {
-                        // u16 fields (must match the portal FIELDS table)
-                        case 0x00: case 0x14: case 0x1b: case 0x1c:
-                        case 0x1f: case 0x26: case 0x40: case 0x4a: len = 2; break;
-                        case 0x01: len = 4; break; // haptics_gain f32
-                        // i16 live IMU telemetry (fields 0x6a-0x6f)
-                        case 0x6a: case 0x6b: case 0x6c: case 0x6d:
-                        case 0x6e: case 0x6f: len = 2; break;
-                        // i16 stick output diagnostics (fields 0x70-0x71)
-                        case 0x70: case 0x71: len = 2; break;
-                        default: len = 1; break;
-                    }
+                    // Length comes from the type get_config_field actually wrote
+                    // (see g_last_field_len). Previously a hand-maintained id ->
+                    // length switch lived here and silently truncated any field
+                    // whose id had not been added to it.
+                    const uint8_t len = g_last_field_len;
                     if ((uint16_t)(out + 2 + len) > sizeof(buf)) { ok = false; break; }
                     buf[out] = fid; buf[out + 1] = len;
                     memcpy(buf + out + 2, tmp, len);

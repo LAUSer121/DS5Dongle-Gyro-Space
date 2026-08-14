@@ -47,6 +47,7 @@ struct wake_cycle_t {
 };
 extern wake_cycle_t g_wake_cycle;
 bool wake_host_is_suspended(void);
+bool wake_owns_keyboard(void);
 #else
 static inline void wake_init(void) {}
 static inline void wake_on_bt_connect(void) {}
@@ -55,6 +56,7 @@ static inline void wake_on_bt_disconnect(void) {}
 static inline void wake_task(void) {}
 static inline void wake_note_usb_reconnect(void) {}
 static inline bool wake_host_is_suspended(void) { return false; }
+static inline bool wake_owns_keyboard(void) { return false; }
 #endif
 
 #endif //DS5_BRIDGE_WAKE_H
