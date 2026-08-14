@@ -13,16 +13,16 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
 > after setting its macros.
 
 ### Added
-- **Macros.** Bind a controller chord or a touchpad swipe to a keyboard combo —
+- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo —
   `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
   edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
   HID keyboard interface the wake feature already provides; nothing runs on the PC.
   - **Recorded, not typed in.** *Record input* captures the actual buttons you
     hold or the swipe you make; *Record output* captures the combo you type on
     your real keyboard.
-  - **Tap or hold is decided by the recording.** Tap the chord and it fires on
+  - **Tap or hold is decided by the recording.** Tap the controller button and it fires on
     press; hold it for ~0.5 s or more and it becomes a long-press macro with the
-    duration you held as the threshold. The same chord can carry both, the way
+    duration you held as the threshold. The same button press can carry both, the way
     the PS button does.
   - **Release order is captured**, so `Alt+Tab` replays with Tab released before
     Alt.
@@ -35,7 +35,7 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
     (`macro_disable`, field `0x6c`) is stored per slot. Define once, then pick per
     game which are live — the Playnite automation switches macro sets with no
     extra setup.
-  - The portal warns when one bound chord contains another, since the shorter one
+  - The portal warns when one bound button press contains another, since the shorter one
     then makes the longer unreachable.
 - **Host-side macro engine tests** at `tools/macro-tests/` — compiles the real
   `src/macro.cpp` against small fakes for TinyUSB, flash and time, with a fake
@@ -48,11 +48,6 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
   length table with a `default: len = 1`; the length is now derived from the
   actual C++ type of the value, so any future field of any width is correct on
   arrival with nothing to keep in sync.
-- **The portal skipped the USB re-enumeration for `disable_usb_sn` and
-  `ps_shortcut_enabled`.** Both are enumeration-critical in the firmware but were
-  missing from the portal's `ENUM_FIELDS`, so toggling the PS shortcut from the
-  portal saved the field without applying it — the keyboard interface it adds did
-  not appear until something else re-enumerated. Slot activation was unaffected.
 - **Unnecessary re-enumeration on slot switches.** The wake keyboard interface is
   shared by wake, the PS shortcut and macros, and those three were tested
   independently when deciding whether a reconnect was required. With wake already
