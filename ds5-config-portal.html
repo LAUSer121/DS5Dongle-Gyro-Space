@@ -65,6 +65,76 @@
   .toast.show { transform:translateX(-50%) translateY(0); }
   .toast.err { border-color:var(--red); }
   .info-text { color:var(--sub); font-size:14px; line-height:1.5; }
+  /* ===== Modern theme (i18n UI refresh) ===== */
+  :root {
+    --bg:#0b0e13; --card:#141921; --card2:#1a212c; --border:#232b38;
+    --text:#e8ecf2; --sub:#8b94a7;
+    --accent:#4ea1ff; --accent2:#7c5cff; --green:#34d17b; --red:#ff5c5c;
+    --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  html { scrollbar-color:#2b3547 #0b0e13; }
+  body {
+    background:
+      radial-gradient(1000px 520px at 12% -10%, rgba(78,161,255,.16), transparent 60%),
+      radial-gradient(900px 500px at 92% -12%, rgba(124,92,255,.14), transparent 60%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  .topbar { position:sticky; top:0; z-index:50; display:flex; align-items:center;
+    justify-content:space-between; gap:14px; padding:12px 2px 14px; margin:0 0 16px;
+    background:rgba(11,14,19,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border); }
+  .brand { display:flex; align-items:center; gap:12px; min-width:0; }
+  .logo { width:40px; height:40px; border-radius:12px; display:flex; align-items:center;
+    justify-content:center; font-weight:800; letter-spacing:.5px; color:#fff; font-size:14px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    box-shadow:0 6px 18px rgba(78,161,255,.35); flex-shrink:0; }
+  .brand-title { font-size:20px; font-weight:800; letter-spacing:.2px; line-height:1.1; }
+  .brand-sub { font-size:12px; color:var(--sub); margin-top:3px; }
+  .lang-switch { display:inline-flex; gap:2px; padding:4px; border-radius:999px;
+    background:var(--card); border:1px solid var(--border); flex-shrink:0; }
+  .lang-btn { border:none; background:transparent; color:var(--sub); font-size:13px; font-weight:700;
+    padding:7px 16px; border-radius:999px; cursor:pointer; transition:all .18s ease; }
+  .lang-btn:hover { color:var(--text); }
+  .lang-btn.on { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff;
+    box-shadow:0 4px 14px rgba(78,161,255,.4); }
+  .status-bar { border-radius:var(--radius); background:linear-gradient(180deg,var(--card2),var(--card));
+    border:1px solid var(--border); box-shadow:var(--shadow); }
+  .card { border-radius:var(--radius); background:linear-gradient(180deg,var(--card2),var(--card));
+    border:1px solid var(--border); box-shadow:0 6px 24px rgba(0,0,0,.22); transition:border-color .15s ease; }
+  .card:hover { border-color:#2e3a4e; }
+  .card-title { font-size:11px; font-weight:800; letter-spacing:1px; color:var(--sub); }
+  .tabbar { gap:6px; }
+  .tab { border-radius:999px; border:1px solid var(--border); background:transparent; color:var(--sub);
+    padding:8px 16px; font:600 13px system-ui; transition:all .15s ease; }
+  .tab:hover { color:var(--text); border-color:#3a4558; }
+  .tab.active { background:linear-gradient(135deg,var(--accent),var(--accent2)); border-color:transparent;
+    color:#fff; box-shadow:0 4px 16px rgba(78,161,255,.35); }
+  .btn { border-radius:10px; transition:all .15s ease; }
+  .btn-primary { background-image:linear-gradient(135deg,var(--accent),var(--accent2));
+    box-shadow:0 4px 14px rgba(78,161,255,.3); }
+  .btn-green { background-image:linear-gradient(135deg,#34d17b,#1fa35f);
+    box-shadow:0 4px 14px rgba(52,209,123,.28); }
+  .btn:hover { transform:translateY(-1px); filter:brightness(1.06); }
+  .btn:active { transform:translateY(0); }
+  .btn-outline { background:rgba(255,255,255,.02); }
+  input[type=number], select { background:#0f141c; border-radius:10px;
+    transition:border-color .15s, box-shadow .15s; }
+  input[type=number]:focus, select:focus { outline:none; border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(78,161,255,.18); }
+  .row { padding:11px 0; }
+  .row .label { font-size:15px; font-weight:600; }
+  .dot { box-shadow:0 0 10px rgba(255,92,92,.8); }
+  .dot.on { box-shadow:0 0 10px rgba(52,209,123,.9); }
+  .actions { flex-wrap:wrap; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:#2b3547; border-radius:8px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  @media (max-width:560px){
+    .topbar { flex-wrap:wrap; }
+    .lang-switch { order:3; width:100%; }
+    .lang-btn { flex:1; text-align:center; }
+  }
 </style>
 </head>
 <body>
@@ -3415,13 +3485,21 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>${t('DS5 Bridge 配置','DS5 Studio Bridge')} <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
+  let html = `<header class="topbar">
+      <div class="brand">
+        <div class="logo">DS</div>
+        <div>
+          <div class="brand-title">${t('DS5 Bridge 配置','DS5 Studio Bridge')}</div>
+          <div class="brand-sub">v1.19.0 · ${t('DualSense 无线适配器配置门户','DualSense wireless dongle config portal')}</div>
+        </div>
+      </div>
+      <div class="lang-switch" role="group" aria-label="Language / 语言">
+        <button class="lang-btn ${LANG==='zh'?'on':''}" onclick="langSet('zh')">中文</button>
+        <button class="lang-btn ${LANG==='en'?'on':''}" onclick="langSet('en')">EN</button>
+      </div>
+    </header>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`${t('已连接','Connected')} — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:t('未连接','Not connected')}</span>
-      <select style="font-size:12px;padding:4px 6px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text)" onchange="langSet(this.value)" title="Language / 语言">
-        <option value="zh" ${LANG==='zh'?'selected':''}>中文</option>
-        <option value="en" ${LANG==='en'?'selected':''}>English</option>
-      </select>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?t('断开连接','Disconnect'):t('连接','Connect')}</button>
     </div>`;
   if(!on){
