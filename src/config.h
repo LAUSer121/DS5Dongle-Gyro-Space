@@ -246,21 +246,6 @@ struct __attribute__((packed)) Config_body {
     // usb_descriptors.cpp), so crossing MACRO_NONE_ENABLED changes the USB
     // descriptor. Flipping WHICH macros are on does not.
     uint32_t macro_disable;
-    // Windows native battery display (v1.20.0). Windows has NO native battery
-    // icon for USB HID gamepads, so the dongle exposes an extra USB HID "UPS
-    // Battery" interface (Power Device page 0x84, Usage UPS) that Windows'
-    // built-in hidups.sys / HidBatt stack shows as a system battery in the
-    // tray and power settings.
-    //   0 = off            - no UPS interface at all (default)
-    //   1 = real           - mirror the controller's ACTUAL Bluetooth battery
-    //   2 = simulated      - report battery_fake as a fixed level
-    // Enumeration-critical: toggling 0 <-> non-zero changes the USB
-    // configuration descriptor, so the host must re-enumerate (the portal's
-    // ENUM_FIELDS and slot_activate's needs_reenum both list this field).
-    uint8_t battery_mode;
-    uint8_t battery_fake; // [0-100] level reported in Simulated mode; firmware
-                          // clamps reports to >= 5% so Windows never triggers
-                          // hibernate/shutdown on the emulated battery
 };
 
 struct __attribute__((packed)) Config {

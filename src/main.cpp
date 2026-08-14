@@ -27,7 +27,6 @@
 #include "dse.h"
 #include "gyro_fusion.h"
 #include "gyro_space.h"
-#include "ups_battery.h"
 #include "hardware/timer.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
@@ -365,12 +364,6 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
 // Return zero will cause the stack to STALL request
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen) {
-    // HID UPS Battery interface (Windows native battery). Must be tested BEFORE
-    // the keyboard's "instance 1" shortcut: when the keyboard interface is
-    // absent at runtime the UPS takes HID instance 1.
-    if (get_config().battery_mode != 0 && itf == ups_hid_instance()) {
-        return ups_get_report(report_id, report_type, buffer, reqlen);
-    }
 #ifdef ENABLE_WAKE_HID
     if (itf == 1) {
         if (reqlen >= 8) {
@@ -440,10 +433,6 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
-    // The UPS battery interface has no output reports - drop any SET_REPORT.
-    if (get_config().battery_mode != 0 && itf == ups_hid_instance()) {
-        return;
-    }
 #ifdef ENABLE_WAKE_HID
     if (itf == 1) {
         // Drop keyboard SET_REPORT (host LED state).
@@ -645,7 +634,6 @@ int main() {
         #endif
         audio_loop();
         interrupt_loop();
-        ups_battery_tick(); // Windows native battery (UPS) - 1 Hz input reports
 #if ENABLE_BATT_LED
         battery_led_tick();
 #endif

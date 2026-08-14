@@ -17,7 +17,7 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 20;
+constexpr uint16_t CONFIG_VERSION = 19;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -229,10 +229,6 @@ void config_valid() {
         body->enable_wake = 0;
         printf("[Config] enable_wake is invalid\n");
     }
-    // Windows native battery (UPS) display: 0=off, 1=real, 2=simulated.
-    // Fresh-flash 0xFF lands on off so existing dongles boot unchanged.
-    if (body->battery_mode > 2) body->battery_mode = 0;
-    if (body->battery_fake > 100) body->battery_fake = 80;
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below
@@ -532,7 +528,6 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    (o.disable_speaker      != n.disable_speaker)      ||
                    (o.enable_wake          != n.enable_wake)          ||
                    (o.disable_usb_sn       != n.disable_usb_sn)       ||
-                   (o.battery_mode         != n.battery_mode)         ||
                    // The keyboard interface is shared by wake, the PS shortcut
                    // and macros, so what matters is whether it is PRESENT - not
                    // which of the three asked for it. Testing them separately

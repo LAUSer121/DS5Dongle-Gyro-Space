@@ -97,9 +97,9 @@
 //------------- CLASS -------------//
 #define CFG_TUD_AUDIO             1
 #ifdef ENABLE_WAKE_HID
-#define CFG_TUD_HID               3 // gamepad + wake keyboard + HID UPS battery
+#define CFG_TUD_HID               2
 #else
-#define CFG_TUD_HID               2 // gamepad + HID UPS battery
+#define CFG_TUD_HID               1
 #endif
 #define CFG_TUD_CDC               ENABLE_SERIAL
 #define CFG_TUD_MSC               0

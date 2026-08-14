@@ -27,9 +27,6 @@
 #include "tusb.h"
 #include "config.h"
 #include "macro.h"
-#include "ups_battery.h"
-
-#include <cstring>
 
 #ifndef ENABLE_SERIAL
 #define ENABLE_SERIAL 0
@@ -54,7 +51,6 @@ enum {
 #ifdef ENABLE_WAKE_HID
     ITF_NUM_HID_KBD,
 #endif
-    ITF_NUM_UPS, // HID UPS Battery (Windows native battery), runtime-gated by battery_mode
     ITF_NUM_TOTAL,
 
     CONFIG_DESC_LEN_AUDIO_IAD =
@@ -72,10 +68,7 @@ enum {
 #else
         0,
 #endif
-    // UPS battery interface adds the same 25 bytes as the keyboard:
-    //   9 (interface) + 9 (HID class) + 7 (EP IN) = 25
-    CONFIG_DESC_LEN_UPS = 25,
-    CONFIG_DESC_LEN_TOTAL = CONFIG_DESC_LEN_BASE + CONFIG_DESC_LEN_WAKE_KBD + CONFIG_DESC_LEN_UPS
+    CONFIG_DESC_LEN_TOTAL = CONFIG_DESC_LEN_BASE + CONFIG_DESC_LEN_WAKE_KBD
 #if ENABLE_SERIAL
         + TUD_CDC_DESC_LEN
 #endif
@@ -484,43 +477,7 @@ uint8_t descriptor_configuration[] = {
     0x08, 0x00, // wMaxPacketSize: 8 (boot keyboard report)
     0x0A, // bInterval: 10ms
 #endif
-    // --- INTERFACE DESCRIPTOR (HID UPS Battery) ---
-    // Present only when get_config().battery_mode != 0. Windows binds its
-    // built-in hidups.sys / HidBatt stack to this interface and shows a system
-    // battery (tray icon + power settings) - the only native battery display
-    // available for a USB-connected HID device.
-    // EP IN 0x88 avoids the CDC notification EP 0x85 / CDC data EP 0x86 (when
-    // ENABLE_SERIAL is on) and the keyboard EP 0x87.
-    0x09, // bLength
-    0x04, // bDescriptorType (INTERFACE)
-    ITF_NUM_UPS, // bInterfaceNumber
-    0x00, // bAlternateSetting: 0
-    0x01, // bNumEndpoints: 1 (IN only)
-    0x03, // bInterfaceClass: HID
-    0x00, // bInterfaceSubClass: None
-    0x00, // bInterfaceProtocol: None
-    0x00, // iInterface
-
-    // HID Descriptor
-    0x09, // bLength
-    0x21, // bDescriptorType (HID)
-    0x11, 0x01, // bcdHID: 1.11
-    0x00, // bCountryCode
-    0x01, // bNumDescriptors
-    0x22, // bDescriptorType: Report
-    (UPS_REPORT_DESC_LEN & 0xFF), // wDescriptorLength lo
-    (UPS_REPORT_DESC_LEN >> 8),   // wDescriptorLength hi
-
-    // Endpoint Descriptor (HID IN: EP8)
-    0x07, // bLength
-    0x05, // bDescriptorType (ENDPOINT)
-    0x88, // bEndpointAddress: IN EP8
-    0x03, // bmAttributes: Interrupt
-    0x08, 0x00, // wMaxPacketSize: 8
-    0x0A, // bInterval: 10ms
 };
-static_assert(sizeof(descriptor_configuration) == CONFIG_DESC_LEN_TOTAL,
-              "configuration descriptor array length must match CONFIG_DESC_LEN_TOTAL");
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
@@ -546,57 +503,34 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     descriptor_configuration[offset - 8] = bInterval;
     if (ds_mode()) {
         descriptor_configuration[offset - 16] = 0x21;
-    } else {
+    }else {
         descriptor_configuration[offset - 16] = 0x95;
     }
 
+    // Wake / Game Bar are runtime features. Advertise REMOTE_WAKEUP only when wake is
+    // on, and include the keyboard interface (the LAST descriptor block) only when wake
+    // OR the Game Bar shortcut is on. With both off this is byte-identical to the base.
+    // KEYBOARD-ONLY MODE. With wake on we must stay on the USB bus even after the
+    // controller is switched off, or there is nothing for the host to suspend and
+    // the bridge never learns the PC slept. But leaving the WHOLE device present
+    // means DS4Windows still sees a gamepad that isn't there. So in that state we
+    // present a cut-down configuration containing ONLY the wake keyboard: the host
+    // keeps a device it can be woken from, and no controller appears anywhere.
+    // The keyboard block is the last one in the array, so it can be lifted out
+    // whole; only its bInterfaceNumber has to be renumbered to 0.
     const bool wake = get_config().enable_wake;
+    // Wake, the PS shortcut and macros all share this one keyboard interface.
+    // usb_kbd_iface_needed() is the single definition; slot_activate and the
+    // portal's ENUM_FIELDS test the same function so the three sites cannot
+    // disagree about when a reconnect is actually required.
     const bool kbd = usb_kbd_iface_needed(get_config());
-    // Windows native battery (UPS) interface: present only when battery_mode is
-    // non-zero. Both tail blocks (keyboard, UPS) are 25 bytes each.
-    const bool ups = get_config().battery_mode != 0;
-
-    // Build the descriptor in RAM instead of mutating the static array: the
-    // keyboard and UPS blocks are independently present/absent at runtime, so
-    // in-place patching would leak stale block bytes across re-enumerations
-    // (e.g. UPS first, then keyboard - the keyboard block was overwritten).
-    static CFG_TUSB_MEM_ALIGN uint8_t config_desc[CONFIG_DESC_LEN_TOTAL];
-
-    // Always-present prefix: audio + gamepad HID, then CDC when enabled.
-    memcpy(config_desc, descriptor_configuration, CONFIG_DESC_LEN_BASE);
-    uint32_t off = CONFIG_DESC_LEN_BASE;
-#if ENABLE_SERIAL
-    memcpy(config_desc + off, &descriptor_configuration[off], TUD_CDC_DESC_LEN);
-    off += TUD_CDC_DESC_LEN;
-#endif
-    constexpr uint32_t kbd_off = CONFIG_DESC_LEN_BASE
-#if ENABLE_SERIAL
-        + TUD_CDC_DESC_LEN
-#endif
-        ;
-    constexpr uint32_t ups_off = kbd_off + CONFIG_DESC_LEN_WAKE_KBD;
-
-    if (kbd) {
-        memcpy(config_desc + off, &descriptor_configuration[kbd_off], CONFIG_DESC_LEN_WAKE_KBD);
-        off += CONFIG_DESC_LEN_WAKE_KBD;
-    }
-    if (ups) {
-        memcpy(config_desc + off, &descriptor_configuration[ups_off], CONFIG_DESC_LEN_UPS);
-        if (!kbd) {
-            // Keyboard block absent: renumber the UPS interface into its slot so
-            // interface numbers stay contiguous 0..N-1 (its HID instance is
-            // computed dynamically by ups_hid_instance(), so no other site
-            // hardcodes the interface number).
-            config_desc[off + 2] = ITF_NUM_HID_KBD;
-        }
-        off += CONFIG_DESC_LEN_UPS;
-    }
-
-    config_desc[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
-    config_desc[2] = (uint8_t) (off & 0xFF);       // wTotalLength lo
-    config_desc[3] = (uint8_t) (off >> 8);         // wTotalLength hi
-    config_desc[4] = (uint8_t) (ITF_NUM_TOTAL - (kbd ? 1 : 0) - (ups ? 1 : 0)); // bNumInterfaces
-    return config_desc;
+    descriptor_configuration[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
+    const uint16_t total = kbd ? CONFIG_DESC_LEN_TOTAL
+                               : (uint16_t) (CONFIG_DESC_LEN_TOTAL - CONFIG_DESC_LEN_WAKE_KBD);
+    descriptor_configuration[2] = (uint8_t) (total & 0xFF);                  // wTotalLength lo
+    descriptor_configuration[3] = (uint8_t) (total >> 8);                    // wTotalLength hi
+    descriptor_configuration[4] = kbd ? ITF_NUM_TOTAL : (ITF_NUM_TOTAL - 1); // bNumInterfaces
+    return descriptor_configuration;
 }
 
 //--------------------------------------------------------------------+
@@ -991,12 +925,8 @@ _Static_assert(sizeof(desc_hid_report_kbd) == 45, "keyboard report descriptor le
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
-    // UPS battery first: when the keyboard interface is absent at runtime the
-    // UPS becomes HID instance 1 (ups_hid_instance() computes the real number),
-    // so this must be tested before the keyboard's "instance 1" shortcut.
-    if (get_config().battery_mode != 0 && itf == ups_hid_instance()) {
-        return ups_report_descriptor();
-    }
+    // In keyboard-only mode the keyboard is the ONLY HID interface, so it is
+    // instance 0 rather than 1.
 #ifdef ENABLE_WAKE_HID
     // HID instance 1 is the wake-only boot keyboard added by ENABLE_WAKE_HID.
     if (itf == 1) return desc_hid_report_kbd;

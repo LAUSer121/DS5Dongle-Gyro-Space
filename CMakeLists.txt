@@ -118,7 +118,6 @@ add_executable(ds5-bridge
         src/quaternion.cpp
         src/gyro_fusion.cpp
         src/gyro_space.cpp
-        src/ups_battery.cpp
 )
 
 if (ENABLE_BATT_LED)
