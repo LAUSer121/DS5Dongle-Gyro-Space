@@ -3500,6 +3500,7 @@ function render(){
     </header>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`${t('已连接','Connected')} — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:t('未连接','Not connected')}</span>
+      ${on?`<a class="btn btn-outline" href="ds5-lights-portal.html" target="_blank" rel="noopener" style="text-decoration:none">💡 ${t('灯带控制','Lightbar')}</a>`:''}
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?t('断开连接','Disconnect'):t('连接','Connect')}</button>
     </div>`;
   if(!on){
