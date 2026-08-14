@@ -361,7 +361,8 @@ async function connect(){
     const filters=[{vendorId:SONY_VID,productId:DS5_PID},{vendorId:SONY_VID,productId:DSE_PID}];
     const devices=await navigator.hid.requestDevice({filters});
     if(!devices.length) return;
-    device=pickDs5(devices) || devices[0];
+    device=pickDs5(devices);
+    if(!device){ toast('Cannot identify the DS5 gamepad interface — is this the DS5 dongle?', true); return; }
     if(!device.opened) await device.open();
     await readAll();
     savedSnapshot = {...config}; // baseline for change detection on save
@@ -1053,7 +1054,7 @@ async function autoApply(){
       if (!d && viaGesture){
         const picked = await navigator.hid.requestDevice({ filters: [
           {vendorId:SONY_VID, productId:DS5_PID}, {vendorId:SONY_VID, productId:DSE_PID} ]});
-        d = picked && (pickDs5(picked) || picked[0]);
+        d = picked && (pickDs5(picked));
       }
       if (!d){
         showConnectButton('No granted device yet — click to connect and apply.');

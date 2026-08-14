@@ -678,7 +678,16 @@ async function connect(){
       toast(t('没有找到设备 — 请确认适配器已插入、手柄已开启，然后刷新页面重试。','No device found — make sure the dongle is plugged in and the controller is on, then refresh and retry.'), true);
       return;
     }
-    device=pickDs5(devices) || devices[0];
+    // NEVER fall back to devices[0]: with the UPS battery / wake-keyboard
+    // interfaces present, WebHID returns several HIDDevices with the same Sony
+    // VID/PID, and the wrong one cannot serve the portal's feature reports.
+    // pickDs5 identifies the GAMEPAD interface by its Generic Desktop/Game Pad
+    // collection; anything else is an error, not a guess.
+    device=pickDs5(devices);
+    if(!device){
+      toast(t('找到了 HID 设备但无法识别 DS5 手柄接口 — 请确认这是 DS5 适配器','Found HID devices but could not identify the DS5 gamepad interface — make sure this is the DS5 dongle'), true);
+      return;
+    }
     if(!device.opened) await device.open();
     if (device.addEventListener) device.addEventListener('inputreport', onInputReport);
     await reloadFromDevice();   // full read with the 1s poll suspended (see helper)
@@ -697,7 +706,11 @@ async function connectAll(){
     // filters array is the documented way to show every HID device.
     const devices=await navigator.hid.requestDevice({filters: []});
     if(!devices.length) return;
-    device=pickDs5(devices) || devices[0];
+    device=pickDs5(devices);
+    if(!device){
+      toast(t('找到了 HID 设备但无法识别 DS5 手柄接口 — 请确认这是 DS5 适配器','Found HID devices but could not identify the DS5 gamepad interface — make sure this is the DS5 dongle'), true);
+      return;
+    }
     if(!device.opened) await device.open();
     if (device.addEventListener) device.addEventListener('inputreport', onInputReport);
     await reloadFromDevice();
