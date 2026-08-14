@@ -3,11 +3,12 @@
 //
 // Conventions:
 //   - q is the body -> world orientation (world +Y = up).
-//   - controller axes: +X = right, +Y = forward, +Z = up.
-//   - gyro[] arrives in the same body frame: main.cpp un-mirrors the raw DS5
-//     IMU axes (sensor +X = left, +Y = back, +Z = up; i.e. rotated 180 deg
-//     about Z) before calling in, so the fusion and every mode below operate
-//     on consistent right-handed body axes.
+//   - controller axes: +X = right, +Y = forward, +Z = up (right-handed).
+//   - gyro[] arrives in this same body frame: main.cpp maps the raw DS5
+//     sensor axes (sensor +X = left, +Y = up, +Z = back; byte15 = pitch,
+//     byte17 = yaw, byte19 = roll) as body = (-sensorX, -sensorZ, +sensorY),
+//     so pitch-up / roll-right / yaw-left are positive and gyro and accel
+//     share one consistent right-handed frame in any grip.
 //   - At the neutral flat grip the controller +Y (forward) points along
 //     world -Z, so rotating "right" (positive yaw) maps to +world X.
 //   - WORLD_SPACE output is grip-independent: it uses the world yaw axis for

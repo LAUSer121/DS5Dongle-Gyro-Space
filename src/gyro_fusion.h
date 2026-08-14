@@ -31,8 +31,9 @@ struct GyroFusion {
 void gyro_fusion_init(GyroFusion *f, const float accel_raw[3]);
 
 // Run one fusion step.
-//   gyro_degps : angular velocity in deg/s, sensor frame (X=pitch, Y=roll, Z=yaw)
-//   accel_raw  : accelerometer in raw int16 units, sensor frame
+//   gyro_degps : angular velocity in deg/s, body frame (X=right, Y=forward,
+//                Z=up; pitch-up / roll-right / yaw-left are positive)
+//   accel_raw  : accelerometer in raw int16 units, same body frame
 //   dt         : elapsed time in seconds since the previous update
 //   gain       : [0-100] gravity-correction strength (50 = default)
 void gyro_fusion_update(GyroFusion *f, const float gyro_degps[3],

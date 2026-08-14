@@ -6,10 +6,12 @@
 // Steam Input Gyro Space. Output axes are aim-space: +x = aim right,
 // +y = aim up. The caller integrates gyro_x/gyro_y over time onto the stick.
 //
-// Coordinate convention (body frame): +X = right, +Y = forward, +Z = up.
-// main.cpp rotates the raw DS5 IMU axes (which are mounted 180 deg about Z:
-// sensor +X = left, +Y = back) into this frame before calling in, so both the
-// fusion and every mode below operate on consistent right-handed body axes.
+// Coordinate convention (body frame): +X = right, +Y = forward, +Z = up
+// (right-handed). main.cpp maps the raw DS5 sensor axes (sensor +X = left,
+// +Y = up, +Z = back; byte15 = pitch, byte17 = yaw, byte19 = roll) into this
+// frame as body = (-sensorX, -sensorZ, +sensorY) before calling in, so both
+// the fusion and every mode below operate on one consistent right-handed body
+// frame in any grip.
 //
 #ifndef DS5_GYRO_SPACE_H
 #define DS5_GYRO_SPACE_H

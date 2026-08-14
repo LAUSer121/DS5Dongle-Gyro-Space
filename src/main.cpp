@@ -187,27 +187,42 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (cfg.gyro_mode == 6 && !(d[8] & 0x01)) active = false;         // L1
     if (cfg.gyro_mode == 7 && !(d[8] & 0x02)) active = false;         // R1
 
-    // Hardware-verified IMU layout: AngularVelocityX(pitch)=15, Z(yaw)=17,
-    // Y(roll)=19; AccelerometerX=21, Y=23, Z=25 (all int16 LE).
+    // Hardware-verified DS5 raw sensor layout (matches SDL, JoyShockLibrary and
+    // the Linux hid-playstation driver byte for byte, plus this repo's own
+    // empirical turn-test note):
+    //   gyro byte15 = pitch rate: positive = nose DOWN
+    //        byte17 = yaw rate:   positive = turn LEFT
+    //        byte19 = roll rate:  positive = roll LEFT (right side up)
+    //   accel bytes 21/23/25 = specific force along the sensor axes
+    //        (left, up, back); at flat rest byte23 = +1 g.
+    // Sensor frame: +X = left, +Y = up, +Z = back. (The old comment that said
+    // "rotated 180 deg about Z, +Y = back" was wrong: byte17 is yaw, i.e.
+    // rotation about the UP axis, not about the back axis.)
     float gyro[3] = {
         (float)rd16(15) * GYRO_DEG_PER_LSB,  // pitch rate (deg/s)
         (float)rd16(19) * GYRO_DEG_PER_LSB,  // roll rate (deg/s)
         (float)rd16(17) * GYRO_DEG_PER_LSB,  // yaw rate (deg/s)
     };
-    float accel[3] = {(float)rd16(21), (float)rd16(23), (float)rd16(25)};
+    // Body frame is X=right, Y=forward, Z=up; the same axis mapping is applied
+    // to gyro and accel: body = (-sensorX, -sensorZ, +sensorY).  The accel
+    // bytes therefore enter as (X, Z, Y) = (21, 25, 23).
+    float accel[3] = {(float)rd16(21), (float)rd16(25), (float)rd16(23)};
 
     // Static calibration offsets (raw LSB) - unit-to-unit zero-offset trimming.
     gyro[0] -= (float)cfg.gyro_cal_x * GYRO_DEG_PER_LSB;
     gyro[1] -= (float)cfg.gyro_cal_y * GYRO_DEG_PER_LSB;
     gyro[2] -= (float)cfg.gyro_cal_z * GYRO_DEG_PER_LSB;
 
-    // The DualSense IMU is mounted rotated 180 deg about Z relative to the body
-    // frame used by the aiming pipeline: sensor +X points left and +Y points
-    // back (raw pitch/roll report inverted signs; yaw matches). Rotate the
-    // sensor readings into the body frame (X=right, Y=forward, Z=up) so the
-    // fusion quaternion and every quaternion-based space mode see consistent
-    // axes. The raw body-frame modes (YAW/ROLL/LOCAL) are sign-corrected for
-    // body-frame input inside gyro_space.cpp, so their output is unchanged.
+    // Map the raw sensor readings into the aiming-pipeline body frame
+    // (X=right, Y=forward, Z=up, right-handed):
+    //   gyro  = (-pitch, -roll, +yaw)   (pitch/roll read inverted vs. body)
+    //   accel = (-ax, -az, +ay)         (sensor Y=up -> body Z; sensor Z=back
+    //                                    -> body -Y)
+    // This keeps gyro and accel in the same right-handed frame, so the fusion
+    // quaternion and every quaternion-based space mode (YAW_ROLL / PLAYER /
+    // WORLD / LASER) see consistent axes in any grip. The raw body-frame modes
+    // (YAW/ROLL/LOCAL) are sign-corrected for this body-frame input inside
+    // gyro_space.cpp, so their output is unchanged.
     gyro[0] = -gyro[0];
     gyro[1] = -gyro[1];
     accel[0] = -accel[0];
