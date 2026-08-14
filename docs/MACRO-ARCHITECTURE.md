@@ -1,10 +1,14 @@
 # Macro subsystem — architecture
 
-Controller chords and touchpad swipes trigger keyboard combos over the HID
+Controller button presses and touchpad swipes trigger keyboard combos over the HID
 keyboard interface the wake feature already provides.
 
-Status: **architecture + foundations landed, engine and portal not yet written.**
-Nothing in this document has run on hardware.
+Status: **shipped in 1.19.0** — firmware engine, portal UI and both test harnesses,
+verified on hardware (Pico 2 W).
+
+This document records *why* the subsystem is shaped the way it is. Several of the
+decisions below look wrong at a glance and are not — the inverted enable mask and
+the slot-sector reservation in particular. Read those before changing them.
 
 ---
 
@@ -109,6 +113,12 @@ firmware with a larger record still reads today's tables.
 
 ## 3. Data model
 
+> Terminology: the docs say **button press** / **combo**; the code calls the field
+> `chord` (`MacroEntry.chord`, `best_chord()`, `macroChordName()`). The identifiers
+> are left alone deliberately — renaming them would decouple this document from
+> the source it describes.
+
+
 `src/macro.h`. 12-byte entry, 28-byte record with its label.
 
 ```c
@@ -168,7 +178,7 @@ phantom press. Everything goes through `button_mask()`.
 
 19 bits defined (4 D-pad directions expanded from the hat, 4 face, 4
 shoulder/trigger-click, Create/Options/L3/R3, PS/touchpad-click/mute). **Append
-only** — these values are persisted inside every stored chord, so renumbering
+only** — these values are persisted inside every stored `chord`, so renumbering
 silently rebinds every macro a user saved.
 
 Verified behaviour: idle → `0x00000`; hat 0 → `UP`; hat 7 → `UP|LEFT`; hat `0x0F`
@@ -183,7 +193,7 @@ Touch points decode at bytes 32 (finger 1) and 36 (finger 2), `bit7 set = lifted
 
 ### 5.1 Chord matching
 
-- **Longest chord wins**, and a matched chord suppresses any bound subset of
+- **Longest button press wins**, and a matched one suppresses any bound subset of
   itself. Otherwise binding both R3 and R3+Up fires both.
 - Capture the **peak simultaneous set**, not the union over the recording window.
   Press R3, then Up a moment later, and a union also catches anything brushed in
@@ -192,16 +202,16 @@ Touch points decode at bytes 32 (finger 1) and 36 (finger 2), `bit7 set = lifted
 
 ### 5.2 Firing rules
 
-The recording duration itself sets the mode — tap the chord while recording and
+The recording duration itself sets the mode — tap the buttons while recording and
 it stores short, hold it and it stores long with the captured threshold. No extra
-UI control in the row, and two rows can share one chord with different modes,
+UI control in the row, and two rows can share one button press with different modes,
 which is exactly how PS → Win+G / Win+Tab generalises.
 
 | Chord has | Fires |
 |---|---|
 | only a short macro | on **press** — snappy |
 | both short and long | short fires on **release** (you cannot know it is short until then) |
-| only a long macro | at the threshold, chord still held |
+| only a long macro | at the threshold, buttons still held |
 
 That latency difference is real and belongs in the UI, not in a user's
 discovery process.
@@ -211,7 +221,7 @@ discovery process.
 Touch-down records `(x, y, t)`; touch-up classifies if `dt` is 40–600 ms and
 travel exceeds threshold. 4 directions × start zone (left/right half) × finger
 count = 16 gestures in one byte. Gestures have no release, so they always fire a
-pulse — hold semantics apply to chords only.
+pulse — hold semantics apply to button presses only.
 
 ### 5.4 Every output is a pulse
 
@@ -254,25 +264,17 @@ const bool kbd = wake || get_config().ps_shortcut_enabled
 Only the **all-disabled crossing** is enumeration-critical. Flipping *which*
 macros are on must not cost a reconnect.
 
-### 7.1 Pre-existing drift, fixed in this pass
+### 7.1 Which list covers what
 
-`slot_activate()`'s `needs_reenum` set and the portal's `ENUM_FIELDS` had come
-apart:
+`slot_activate()`'s `needs_reenum` and the portal's `ENUM_FIELDS` are deliberately
+different sizes. The firmware list also carries `ps_shortcut_enabled` and
+`disable_usb_sn`, because a **slot body** can carry any field value. The portal
+list only needs the fields the portal can actually change, and neither of those
+two is exposed in its UI — so they can never differ between two portal saves.
 
-| | firmware | portal (before) |
-|---|---|---|
-| `controller_mode`, `polling_rate_mode`, `audio_buffer_length`, `disable_mic`, `disable_speaker`, `enable_wake` | yes | yes |
-| `disable_usb_sn` | yes | **missing** |
-| `ps_shortcut_enabled` | yes | **missing** |
-
-Consequence: toggling the PS shortcut from the portal saved the field but skipped
-the reconnect, so the keyboard interface it adds did not appear until something
-else re-enumerated. Slot activation was unaffected — it uses the firmware's list.
-Both lists now carry all eight plus the macro crossing. This is the
-"enumerate every path" shape again: the fix belongs in one pass across every
-list, not a third entry added to one of them.
-
----
+If either is ever exposed in the portal, it must be added to `ENUM_FIELDS` at the
+same time, and `kbdIfaceNeeded()` must actually read `ps_shortcut_enabled` rather
+than seeing `undefined`.
 
 ## 8. Command map
 
@@ -291,10 +293,14 @@ version):
 | `0x18` | write macro entry `idx` into the RAM image |
 | `0x19` | commit the RAM image to flash (one erase per save, not 32) |
 | `0x1a` | suspend/resume macro firing (portal record mode) |
-| `0x1b` | read live chord + gesture state (record-mode feedback) |
 
-`0x1a` matters more than it looks: without it, recording a chord that matches an
+`0x1a` matters more than it looks: without it, recording a combo that matches an
 already-enabled macro types into the portal while the user is capturing it.
+
+A fifth command for reading the live button state was designed and then dropped:
+the portal subscribes to the gamepad's own `inputreport` stream instead, which is
+full-rate and needs no round trip. (Note `0x1b` is already `bt_flush_timeout` as a
+config field id — the two namespaces are separate, but do not reuse it here.)
 
 ---
 
@@ -303,7 +309,7 @@ already-enabled macro types into the portal while the user is capturing it.
 New `macros` tab, new `SECTION_TAB` entry. The row is:
 
 ```
-[✓] [Record input] [chord field] [Record output] [combo field] [+] [−]
+[✓] [Name] [Record input] [input field] [Record output] [combo field] [+] [−]
 ```
 
 - Input capture needs `device.addEventListener('inputreport', …)`. The portal
@@ -332,12 +338,12 @@ every custom effect. Wire macros into `exportProfile`, `exportHtml` and
 
 | Stage | Scope | State |
 |---|---|---|
-| 0 | Slot reservation, macro sector anchor, `macro_disable`, `ENUM_FIELDS` fix | **done, compile-verified** |
-| 1 | `input_buttons.h` + JS transcription + cross-check test | header done |
-| 2 | `macro.cpp`: table load/commit, chord FSM, playback walk | not started |
-| 3 | Gesture detector feeding the same table | not started |
-| 4 | Portal tab, recorders, export/backup wiring, harness counts | not started |
-| 5 | Retire `ps_shortcut.cpp` into two default entries | not started |
+| 0 | Slot reservation, macro sector anchor, `macro_disable` | shipped |
+| 1 | `input_buttons.h` + JS transcription | shipped |
+| 2 | `macro.cpp`: table load/commit, button-press FSM, playback walk | shipped |
+| 3 | Gesture detector feeding the same table | shipped |
+| 4 | Portal tab, recorders, manual picker, harness | shipped |
+| 5 | Retire `ps_shortcut.cpp` into two default entries | **not started** |
 
 ---
 
@@ -345,9 +351,15 @@ every custom effect. Wire macros into `exportProfile`, `exportHtml` and
 
 - **New-field rule:** `macro_disable` must be re-saved into existing slots or a
   later profile apply reverts it. Tell users on release.
-- Should a matched chord be **suppressed from the game**? Deferred — you cannot
-  know R3 is part of a chord until the second button arrives, so suppression
+- Should a matched combo be **suppressed from the game**? Deferred — you cannot
+  know R3 is part of a combo until the second button arrives, so suppression
   costs latency on the modifier button. Pick combos games do not use for now.
 - Bulk table read (15 × 60-byte pages) if the 32-entry per-entry sweep feels slow.
   Do not pre-optimise it.
-- Config page is at **245/256 after this change, 11 bytes headroom.**
+- Config page is at **245/256, 11 bytes headroom.**
+- **Export/backup gap still open.** The macro table lives outside `Config_body`,
+  so a slot backup captures the enable mask but not the definitions. Same shape as
+  the v1.16.0 bug where slot backups silently lost custom effects.
+- **`ps_shortcut.cpp` still runs in parallel.** It writes the same keyboard
+  instance as the macro engine with no arbitration between them. Retiring it into
+  two default table entries is stage 5.
