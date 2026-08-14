@@ -2103,12 +2103,11 @@ async function saveAll(){
     // effect leak, mute, lightbar, volumes) applies live on save. So only trigger
     // a reconnect when one of those enumeration-time fields actually changed —
     // this avoids an unnecessary disconnect/reconnect on every save.
-    // MUST stay in step with slot_activate()'s needs_reenum set in config.cpp.
-    // These two lists had drifted: the firmware counted disable_usb_sn and
-    // ps_shortcut_enabled, the portal did not - so toggling the PS shortcut from
-    // here saved the field but skipped the reconnect, and the wake keyboard
-    // interface it adds did not appear until something else re-enumerated.
-    // Slot activation was unaffected because it uses the firmware's list.
+    // Covers the fields the PORTAL can change. It is deliberately a subset of
+    // slot_activate()'s needs_reenum set in config.cpp: that one also lists
+    // ps_shortcut_enabled and disable_usb_sn, which a SLOT body can carry but
+    // which are not exposed here, so they can never differ between two portal
+    // saves. Adding either of them to the portal later means adding it here too.
     const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length',
                          'disable_mic','disable_speaker','enable_wake',
                          'disable_usb_sn'];
@@ -2116,10 +2115,13 @@ async function saveAll(){
     for (const k of ENUM_FIELDS){
       if (savedSnapshot[k] !== config[k]) { needReconnect = true; break; }
     }
-    // ps_shortcut_enabled and macro_disable are NOT listed above: neither changes
-    // the descriptor on its own, only whether the shared keyboard INTERFACE is
-    // present. Mirrors usb_kbd_iface_needed() in macro.h - keep the two in step.
-    // enable_wake stays in the list because it also moves bcdUSB / BOS.
+    // macro_disable is NOT listed above: it does not change the descriptor on its
+    // own, only whether the shared keyboard INTERFACE is present. Mirrors
+    // usb_kbd_iface_needed() in macro.h - keep the two in step. enable_wake stays
+    // in the list because it also moves bcdUSB / BOS regardless of the keyboard.
+    // NOTE kbdIfaceNeeded() reads ps_shortcut_enabled, which the portal does not
+    // expose, so it always evaluates as off here. Harmless while the field stays
+    // unexposed; expose it and this comparison becomes wrong until it is read.
     if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
       needReconnect = true;
     }
@@ -2923,8 +2925,8 @@ function macroRender(){
 // Delegating the field half to saveAll() rather than reimplementing it also
 // picks up the enumeration crossing for free - enabling the first macro adds the
 // keyboard interface to the USB descriptor and needs a reconnect to take effect.
-// Hand-rolling that here is precisely how disable_usb_sn and ps_shortcut_enabled
-// went missing from ENUM_FIELDS in the first place.
+// Hand-rolling the enumeration check in a second save path is how the two get
+// out of step.
 async function macroSaveTable(){
   const el = document.getElementById('macrosave');
   if (!device){ if (el) el.textContent = 'No device.'; return; }
