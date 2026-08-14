@@ -164,6 +164,12 @@ const SECTIONS = [
     [0x0f,'disable_mic','u8','Disable Mic','bool'],
     [0x10,'disable_speaker','u8','Disable Speaker','bool'],
   ]},
+  { title: 'Macros', fields: [
+    // The bitmap is stored INVERTED (set bit = disabled) so an old slot's 0xFF
+    // tail fill defaults to "no macros" - see config.h. The UI shows ENABLED
+    // checkboxes; macroBit() is the single place that inversion happens.
+    [0x6c,'macro_disable','u32','Macros','macros'],
+  ]},
   { title: 'Device & Connection', fields: [
     [0x0b,'controller_mode','u8','Controller Type','select',{0:'DualSense (DS5)',1:'DualSense Edge (DSE)',2:'Auto-detect'}],
     [0x09,'polling_rate_mode','u8','Polling Rate','select',{0:'250 Hz',1:'500 Hz',2:'Real-time'}],
@@ -677,6 +683,7 @@ async function readField(fieldId, type){
     const dv = new DataView(raw.buffer, raw.byteOffset + base);
     if (type === 'u8')  return dv.getUint8(0);
     if (type === 'u16') return dv.getUint16(0, true);
+    if (type === 'u32') return dv.getUint32(0, true);
     if (type === 'f32') return dv.getFloat32(0, true);
     return 0;
   }
@@ -700,7 +707,8 @@ async function readAll(){
       if (got) break;
       if (attempt < BULK_READ_TRIES - 1) await sleep(BULK_READ_BACKOFF_MS);
     }
-    if (got){ bulkSupported = true; config = got; savedSnapshot = {...got}; return; }
+    if (got){ bulkSupported = true; config = got; savedSnapshot = {...got};
+              window._macroRows = null; return; }
     // Bulk still didn't complete. Do NOT latch bulkSupported=false here: a
     // wake-time link wobble makes bulk miss too, and disabling the fast path on a
     // transient miss pinned the whole session onto the slow per-field path (which
@@ -737,12 +745,26 @@ async function readAll(){
   // unset so the next (settled) connect re-probes the fast path.
   if (bulkSupported === null && failures === 0) bulkSupported = false;
   config = fresh;
+  // The macro TABLE is device-global so it does not change with a profile, but a
+  // reconnect gives us a new handle and the cached rows may predate it. Drop the
+  // cache so the panel re-reads once, under the gate, rather than showing stale
+  // rows next to a freshly-read enable mask.
+  window._macroRows = null;
+  // Both exit paths must refresh the baseline. The bulk path above already did;
+  // this one did not, so after any read that fell back to per-field - which is
+  // most likely right after a reconnect, when bulk tends to miss - savedSnapshot
+  // still described the PREVIOUS device state. Two consequences: the macro panel
+  // claimed unsaved changes that did not exist, and, more seriously, saveAll()'s
+  // ENUM_FIELDS/kbdIfaceNeeded comparison used a stale baseline, so the next save
+  // could trigger a reconnect that was not needed or skip one that was.
+  savedSnapshot = {...fresh};
 }
 
 async function writeField(fieldId, type, value){
   let bytes;
   if (type === 'u8')  bytes = [value & 0xff];
   else if (type === 'u16'){ bytes = [value & 0xff, (value>>8)&0xff]; }
+  else if (type === 'u32'){ const v = value>>>0; bytes = [v & 0xff, (v>>>8)&0xff, (v>>>16)&0xff, (v>>>24)&0xff]; }
   else if (type === 'f32'){ const b=new Uint8Array(new Float32Array([value]).buffer); bytes=[...b]; }
   await sendCmd(0x01, [fieldId, ...bytes]);
 }
@@ -756,11 +778,13 @@ let bulkSupported = null; // null = unknown, probe on first use
 function encField(type, value){
   if (type === 'u8')  return [value & 0xff];
   if (type === 'u16') return [value & 0xff, (value>>8)&0xff];
+  if (type === 'u32'){ const v = value>>>0; return [v & 0xff, (v>>>8)&0xff, (v>>>16)&0xff, (v>>>24)&0xff]; }
   return [...new Uint8Array(new Float32Array([value]).buffer)]; // f32
 }
 function decField(type, bytes){
   if (type === 'u8')  return bytes[0];
   if (type === 'u16') return bytes[0] | (bytes[1]<<8);
+  if (type === 'u32') return ((bytes[0] | (bytes[1]<<8) | (bytes[2]<<16) | (bytes[3]<<24)) >>> 0);
   return new Float32Array(new Uint8Array(bytes.slice(0,4)).buffer)[0];
 }
 async function bulkWriteFields(entries){ // entries: [{fid,type,value}] -> true if ALL applied
@@ -809,7 +833,7 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
   const r = await readCmdReplyOn(SLOT_REPORT, 0x0d, slot, 12); // slot field-read reply is on SLOT_REPORT (0x84)
   if (!r || r[2] !== 0x00) return null;
   // reply: 66 0d status slot fid <value bytes...>
-  const sz = fdef[2] === 'u16' ? 2 : (fdef[2] === 'f32' ? 4 : 1);
+  const sz = fdef[2] === 'u16' ? 2 : ((fdef[2] === 'f32' || fdef[2] === 'u32') ? 4 : 1);
   return decField(fdef[2], Array.from(r.slice(5, 5 + sz)));
 }
 
@@ -2079,10 +2103,25 @@ async function saveAll(){
     // effect leak, mute, lightbar, volumes) applies live on save. So only trigger
     // a reconnect when one of those enumeration-time fields actually changed —
     // this avoids an unnecessary disconnect/reconnect on every save.
-    const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'];
+    // MUST stay in step with slot_activate()'s needs_reenum set in config.cpp.
+    // These two lists had drifted: the firmware counted disable_usb_sn and
+    // ps_shortcut_enabled, the portal did not - so toggling the PS shortcut from
+    // here saved the field but skipped the reconnect, and the wake keyboard
+    // interface it adds did not appear until something else re-enumerated.
+    // Slot activation was unaffected because it uses the firmware's list.
+    const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length',
+                         'disable_mic','disable_speaker','enable_wake',
+                         'disable_usb_sn'];
     let needReconnect = false;
     for (const k of ENUM_FIELDS){
       if (savedSnapshot[k] !== config[k]) { needReconnect = true; break; }
+    }
+    // ps_shortcut_enabled and macro_disable are NOT listed above: neither changes
+    // the descriptor on its own, only whether the shared keyboard INTERFACE is
+    // present. Mirrors usb_kbd_iface_needed() in macro.h - keep the two in step.
+    // enable_wake stays in the list because it also moves bcdUSB / BOS.
+    if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
+      needReconnect = true;
     }
 
     if (!needReconnect){
@@ -2259,17 +2298,655 @@ const SECTION_TAB = {
   'Right Stick':'gyro',
   'Device & Connection':'device',
   'Advanced — BT Latency (experimental)':'device',
+  'Macros':'macros',
 };
 // Order: connection first, then the feature areas, with Slots (where you save
 // what you just set up) last. Custom effects are NOT a separate tab: every
 // custom effect is a TRIGGER effect, and its settings cross-reference the
 // resistance mode on the same trigger (the gate hand-off warning names it), so
 // splitting them put a warning on one tab and its fix on another.
+// ===================== Macros =============================================
+// Rows are edited here and written to a DEVICE-GLOBAL table (fw cmds 0x17 read,
+// 0x18 write-to-RAM, 0x19 commit). Only the enable bitmap lives in Config_body,
+// so a slot selects WHICH of the shared macros are live.
+//
+// PORTAL HARD RULE observed throughout: no quoted data is interpolated into an
+// event attribute. Every generated handler takes numeric arguments only.
+
+const MACRO_COUNT = 32;
+const MACRO_KEYS = 4;            // keys per combo INCLUDING modifiers (src/macro.h)
+const MACRO_REC_LEN = 28;        // 12-byte entry + 16-byte label
+const MACRO_NONE_ENABLED = 0xFFFFFFFF;
+
+// Transcription of src/input_buttons.h. Bit values are persisted inside every
+// stored chord, so this list is APPEND ONLY and must match the header exactly.
+// tools/macro-tests covers the firmware side; portal-macro-test.js cross-checks
+// these two tables against each other.
+const BTN = [
+  ['DPAD_UP',    1<<0,  'D-pad Up'],
+  ['DPAD_DOWN',  1<<1,  'D-pad Down'],
+  ['DPAD_LEFT',  1<<2,  'D-pad Left'],
+  ['DPAD_RIGHT', 1<<3,  'D-pad Right'],
+  ['SQUARE',     1<<4,  'Square'],
+  ['CROSS',      1<<5,  'Cross'],
+  ['CIRCLE',     1<<6,  'Circle'],
+  ['TRIANGLE',   1<<7,  'Triangle'],
+  ['L1',         1<<8,  'L1'],
+  ['R1',         1<<9,  'R1'],
+  ['L2',         1<<10, 'L2 (click)'],
+  ['R2',         1<<11, 'R2 (click)'],
+  ['CREATE',     1<<12, 'Create'],
+  ['OPTIONS',    1<<13, 'Options'],
+  ['L3',         1<<14, 'L3'],
+  ['R3',         1<<15, 'R3'],
+  ['PS',         1<<16, 'PS'],
+  ['TOUCHPAD',   1<<17, 'Touchpad click'],
+  ['MUTE',       1<<18, 'Mute'],
+];
+// Hat value -> direction bits. THE D-PAD IS AN ENUM, NOT A BITMASK: "Up" is hat
+// value 0, indistinguishable from "no button", and the idle value 8 would read
+// as a phantom press. Mirrors HAT_TO_DPAD in input_buttons.h.
+const HAT_TO_DPAD = [1, 1|8, 8, 8|2, 2, 2|4, 4, 4|1, 0];
+
+function macroButtonMask(d){
+  if (!d || d.byteLength < 10) return 0;
+  const b0 = d.getUint8(7), b1 = d.getUint8(8), b2 = d.getUint8(9);
+  let hat = b0 & 0x0F; if (hat > 8) hat = 8;
+  let m = HAT_TO_DPAD[hat];
+  if (b0 & 0x10) m |= 1<<4;
+  if (b0 & 0x20) m |= 1<<5;
+  if (b0 & 0x40) m |= 1<<6;
+  if (b0 & 0x80) m |= 1<<7;
+  for (let i=0;i<8;i++) if (b1 & (1<<i)) m |= 1<<(8+i);
+  if (b2 & 0x01) m |= 1<<16;
+  if (b2 & 0x02) m |= 1<<17;
+  if (b2 & 0x04) m |= 1<<18;
+  return m >>> 0;
+}
+function macroChordName(mask){
+  if (!mask) return '';
+  return BTN.filter(b => (mask & b[1])).map(b => b[2]).join(' + ');
+}
+
+// Gesture byte: bits 0-1 direction, bit2 zone, bit3 fingers, bit7 valid.
+const GEST_VALID = 0x80, GEST_ZONE_RIGHT = 0x04, GEST_TWO_FINGER = 0x08;
+const GEST_DIRS = ['Swipe up','Swipe down','Swipe left','Swipe right'];
+function macroGestureName(g){
+  if (!g || !(g & GEST_VALID)) return '';
+  let t = GEST_DIRS[g & 0x03];
+  t += (g & GEST_ZONE_RIGHT) ? ' (right half)' : ' (left half)';
+  if (g & GEST_TWO_FINGER) t += ', two fingers';
+  return t;
+}
+
+// event.code -> HID usage. Modifiers are usages 0xE0-0xE7 so they sit in keys[]
+// like anything else; the firmware folds that range into the modifier byte.
+const KEYMAP = (() => {
+  const m = {ControlLeft:0xE0, ShiftLeft:0xE1, AltLeft:0xE2, MetaLeft:0xE3,
+             ControlRight:0xE4, ShiftRight:0xE5, AltRight:0xE6, MetaRight:0xE7,
+             Enter:0x28, Escape:0x29, Backspace:0x2A, Tab:0x2B, Space:0x2C,
+             Minus:0x2D, Equal:0x2E, BracketLeft:0x2F, BracketRight:0x30,
+             Backslash:0x31, Semicolon:0x33, Quote:0x34, Backquote:0x35,
+             Comma:0x36, Period:0x37, Slash:0x38, CapsLock:0x39,
+             PrintScreen:0x46, ScrollLock:0x47, Pause:0x48, Insert:0x49,
+             Home:0x4A, PageUp:0x4B, Delete:0x4C, End:0x4D, PageDown:0x4E,
+             ArrowRight:0x4F, ArrowLeft:0x50, ArrowDown:0x51, ArrowUp:0x52};
+  for (let i=0;i<26;i++) m['Key'+String.fromCharCode(65+i)] = 0x04+i;
+  m['Digit1']=0x1E; m['Digit2']=0x1F; m['Digit3']=0x20; m['Digit4']=0x21; m['Digit5']=0x22;
+  m['Digit6']=0x23; m['Digit7']=0x24; m['Digit8']=0x25; m['Digit9']=0x26; m['Digit0']=0x27;
+  for (let i=1;i<=12;i++) m['F'+i] = 0x39+i;
+  return m;
+})();
+const USAGE_NAME = (() => {
+  const r = {}; for (const k in KEYMAP) r[KEYMAP[k]] = k;
+  const pretty = {0xE0:'Ctrl',0xE1:'Shift',0xE2:'Alt',0xE3:'Win',
+                  0xE4:'RCtrl',0xE5:'RShift',0xE6:'RAlt',0xE7:'RWin'};
+  for (const u in pretty) r[u] = pretty[u];
+  for (let i=0;i<26;i++) r[0x04+i] = String.fromCharCode(65+i);
+  return r;
+})();
+function macroComboName(keys, rel){
+  const used = keys.filter(k => k);
+  if (!used.length) return '';
+  return used.map(k => USAGE_NAME[k] || ('0x'+k.toString(16))).join(' + ');
+}
+
+// ---- manual key picker ----------------------------------------------------
+// Required, not a convenience: Windows takes the Win key and Alt+Tab before the
+// page ever sees them, and the browser keeps Ctrl+W / Ctrl+T / F11. Those combos
+// are UNREACHABLE by recording - including Win+G and Win+Tab, which the firmware
+// already ships hardcoded as the PS shortcut. The picker writes the same keys[]
+// and rel_order the recorder produces, so playback is identical either way.
+const MOD_PICK = [[0xE0,'Ctrl'], [0xE1,'Shift'], [0xE2,'Alt'], [0xE3,'Win']];
+
+// Non-modifier usages, in a browsable order rather than usage-code order.
+function macroKeyOptions(){
+  const out = [];
+  for (let i=0;i<26;i++) out.push([0x04+i, String.fromCharCode(65+i)]);
+  const digits = [[0x1E,'1'],[0x1F,'2'],[0x20,'3'],[0x21,'4'],[0x22,'5'],
+                  [0x23,'6'],[0x24,'7'],[0x25,'8'],[0x26,'9'],[0x27,'0']];
+  for (const d of digits) out.push(d);
+  for (let i=1;i<=12;i++) out.push([0x39+i, 'F'+i]);
+  const named = [[0x28,'Enter'],[0x29,'Escape'],[0x2A,'Backspace'],[0x2B,'Tab'],
+                 [0x2C,'Space'],[0x2D,'Minus'],[0x2E,'Equal'],[0x2F,'['],[0x30,']'],
+                 [0x31,'Backslash'],[0x33,'Semicolon'],[0x34,'Quote'],[0x35,'Backquote'],
+                 [0x36,'Comma'],[0x37,'Period'],[0x38,'Slash'],[0x39,'CapsLock'],
+                 [0x46,'PrintScreen'],[0x47,'ScrollLock'],[0x48,'Pause'],[0x49,'Insert'],
+                 [0x4A,'Home'],[0x4B,'PageUp'],[0x4C,'Delete'],[0x4D,'End'],[0x4E,'PageDown'],
+                 [0x4F,'Right'],[0x50,'Left'],[0x51,'Down'],[0x52,'Up']];
+  for (const n of named) out.push(n);
+  return out;
+}
+
+window._macroPick = window._macroPick || null;   // {row, mods:[usage], key:usage}
+
+function macroPickOpen(i){
+  const rows = window._macroRows || [];
+  const m = rows[i]; if (!m) return;
+  const ks = (m.keys || []).filter(k => k);
+  window._macroPick = {
+    row: i,
+    mods: ks.filter(k => k >= 0xE0 && k <= 0xE7),
+    key:  ks.find(k => k < 0xE0 || k > 0xE7) || 0
+  };
+  macroRender();
+}
+function macroPickCancel(){ window._macroPick = null; macroRender(); }
+function macroPickMod(u, on){
+  const p = window._macroPick; if (!p) return;
+  const at = p.mods.indexOf(u);
+  if (on && at < 0) p.mods.push(u);          // press order = the order you tick
+  if (!on && at >= 0) p.mods.splice(at, 1);
+}
+function macroPickKey(u){ const p = window._macroPick; if (p) p.key = u|0; }
+function macroPickApply(){
+  const p = window._macroPick; if (!p) return;
+  const rows = window._macroRows || [];
+  const m = rows[p.row];
+  if (!m){ window._macroPick = null; macroRender(); return; }
+  const seq = p.mods.concat(p.key ? [p.key] : []);
+  if (!seq.length){ alert('Choose at least one key.'); return; }
+  if (seq.length > MACRO_KEYS){
+    alert('A macro holds at most ' + MACRO_KEYS + ' keys, including modifiers.');
+    return;
+  }
+  m.keys = [seq[0]||0, seq[1]||0, seq[2]||0, seq[3]||0];
+  // Reverse press order: last pressed lifts first. Correct for every combo of
+  // this shape - Win+G releases G then Win, Alt+Tab releases Tab then Alt.
+  let rel = 0;
+  for (let i=0;i<seq.length;i++) rel |= ((seq.length-1-i) << (2*i));
+  m.rel_order = rel & 0xff;
+  window._macroPick = null;
+  macroRender();
+}
+
+// ---- state ---------------------------------------------------------------
+window._macroRows = window._macroRows || null;   // survives render(), like _cebStages
+window._macroRec  = null;                        // {row, which, ...} while recording
+
+function macroBlankRow(){
+  return {chord:0, gesture:0, flags:0, hold_cs:0, keys:[0,0,0,0], rel_order:0, label:'', present:false};
+}
+function macroRowEmpty(m){
+  return !m || (!m.chord && !m.gesture && !m.keys.some(k=>k));
+}
+// A row is listed if it holds a definition OR the user just added it with +.
+// Device index is fixed (it maps to a bit of the enable mask), so rows keep
+// their index and the list is simply the present subset.
+function macroPresentCount(){
+  const rows = window._macroRows || [];
+  let n = 0; for (let i=0;i<MACRO_COUNT;i++) if (rows[i] && rows[i].present) n++;
+  return n;
+}
+// Mirror of usb_kbd_iface_needed() in src/macro.h. The keyboard interface is
+// shared, so a reconnect is needed only when its PRESENCE changes.
+function kbdIfaceNeeded(c){
+  if (!c) return false;
+  return !!(+c.enable_wake) || !!(+c.ps_shortcut_enabled) ||
+         ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED);
+}
+function macroSetLabel(i, v){
+  const rows = window._macroRows || [];
+  if (!rows[i]) return;
+  // 16 bytes on the device, ASCII only - the label is stored in the macro record
+  // and read back, so a fresh browser on another PC still shows your names.
+  rows[i].label = String(v || '').replace(/[^\x20-\x7e]/g, '').slice(0, 15);
+}
+function macroBit(i){ return ((+config.macro_disable>>>0) & (1<<i)) === 0; }
+function macroSetBit(i, on){
+  let v = (+config.macro_disable>>>0);
+  if (on) v &= ~(1<<i); else v |= (1<<i);
+  config.macro_disable = v>>>0;
+  const h = document.getElementById('f_macro_disable');
+  if (h) h.value = String(v>>>0);
+  macroRender();
+}
+
+// ---- transport -----------------------------------------------------------
+// Which rows are non-empty, in ONE round trip (fw cmd 0x17 with idx 0xFF).
+// Sweeping all 32 to discover that cost ~2s of HID traffic and, because every
+// transaction shares the single reply buffer behind hidLocked(), it queued up
+// in front of the profile-name and slot reads too.
+async function macroUsedMask(){
+  await sendCmd(0x17, [0xFF]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x17, 0xFF, 12);
+  if (!r || r[2] !== 0x00) return null;
+  return ((r[4] | (r[5]<<8) | (r[6]<<16) | (r[7]<<24)) >>> 0);
+}
+
+async function macroReadAll(){
+  const rows = [];
+  const used = await macroUsedMask();
+  for (let i=0;i<MACRO_COUNT;i++){
+    // Skip the read entirely for rows the device says are empty.
+    if (used !== null && !(used & (1<<i))){ rows.push(macroBlankRow()); continue; }
+    await sendCmd(0x17, [i]);
+    const r = await readCmdReplyOn(SLOT_REPORT, 0x17, i, 12);
+    if (!r || r[2] !== 0x00){ rows.push(macroBlankRow()); continue; }
+    const dv = new DataView(r.buffer, r.byteOffset);
+    const row = {
+      chord: dv.getUint32(4, true),
+      gesture: r[8], flags: r[9], hold_cs: r[10],
+      keys: [r[11], r[12], r[13], r[14]],
+      rel_order: r[15],
+      label: ''
+    };
+    let lbl = ''; for (let k=0;k<16;k++){ const c = r[16+k]; if (!c) break; lbl += String.fromCharCode(c); }
+    row.label = lbl;
+    row.present = !macroRowEmpty(row);
+    rows.push(row);
+  }
+  return rows;
+}
+async function macroWriteAll(){
+  const rows = window._macroRows || [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    const m = rows[i] || macroBlankRow();
+    const a = new Array(1+MACRO_REC_LEN).fill(0);
+    a[0] = i;
+    a[1] = m.chord & 0xff; a[2] = (m.chord>>>8)&0xff; a[3] = (m.chord>>>16)&0xff; a[4] = (m.chord>>>24)&0xff;
+    a[5] = m.gesture & 0xff; a[6] = m.flags & 0xff; a[7] = m.hold_cs & 0xff;
+    a[8] = m.keys[0]|0; a[9] = m.keys[1]|0; a[10] = m.keys[2]|0; a[11] = m.keys[3]|0;
+    a[12] = m.rel_order & 0xff;
+    for (let k=0;k<16;k++) a[13+k] = m.label.charCodeAt(k) || 0;
+    await sendCmd(0x18, a);
+    await new Promise(r => setTimeout(r, 8));
+  }
+  await sendCmd(0x19, []);   // one erase for the whole table
+  await new Promise(r => setTimeout(r, 60));
+}
+async function macroSuspendFiring(on){
+  try { await sendCmd(0x1a, [on ? 1 : 0]); } catch(e){}
+}
+
+let _macroBusy = false;
+async function refreshMacros(){
+  const box = document.getElementById('macrobox');
+  if (!device){ if (box) box.textContent = 'Connect a device to load macros.'; return; }
+  // Gate on saving/slotsBusy BEFORE taking the HID lock, exactly as the 1 Hz
+  // diagnostic poll does. hidLocked() alone is not enough: the main config read
+  // path (reloadFromDevice -> readAll -> readField) does NOT go through the lock,
+  // it is protected by the `saving` flag instead. So a macro sweep started from
+  // render() ran concurrently with the post-activate config read, and two
+  // in-flight WebHID feature transactions on one device make readField retry and
+  // then throw - which surfaced as "values cannot be read" and, when it hit the
+  // 0x7d/0x7e/0x7f reads, as "FW: pre-1.0.5 (no version fields)".
+  if (saving || slotsBusy) return;
+  if (_macroBusy) return;            // render() fires often; one sweep at a time
+  _macroBusy = true;
+  if (box) box.textContent = 'Reading macros…';
+  try {
+    window._macroRows = await hidLocked(() => macroReadAll());
+  } catch(e){
+    if (box) box.textContent = 'Could not read macros: ' + e;
+    return;
+  } finally {
+    _macroBusy = false;
+  }
+  macroRender();
+}
+
+// ---- recording -----------------------------------------------------------
+// Input capture reads the gamepad's own input reports. The portal opens the
+// device but never subscribed to them before, so this is the first use of the
+// full-rate stream - no firmware round-trip and no polling granularity.
+function macroOnInputReport(ev){
+  const st = window._macroRec;
+  if (!st || st.which !== 0) return;
+  const m = macroButtonMask(ev.data);
+  if (m && !st.firstDown) st.firstDown = performance.now();
+  // PEAK simultaneous set, not the union over the window: pressing R3 then Up
+  // then brushing Square would otherwise capture all three.
+  if (macroPop(m) > macroPop(st.peak)) { st.peak = m; st.peakAt = performance.now(); }
+  if (!m && st.firstDown && !st.upAt) st.upAt = performance.now();
+
+  // Touchpad. Same shape as touch_task() in macro.cpp: record on touch-down,
+  // keep the last coordinates seen WHILE DOWN, classify on lift.
+  const f1 = macroTouchPoint(ev.data, 0), f2 = macroTouchPoint(ev.data, 1);
+  if (!f1) return;
+  const now = performance.now();
+  if (f1.down && !st.tDown){
+    st.tDown = true; st.tStart = now; st.tEnd = 0;
+    st.tX0 = f1.x; st.tY0 = f1.y; st.tLastX = f1.x; st.tLastY = f1.y;
+    st.tTwo = !!(f2 && f2.down);
+  } else if (f1.down){
+    st.tLastX = f1.x; st.tLastY = f1.y;
+    if (f2 && f2.down) st.tTwo = true;
+  } else if (st.tDown){
+    st.tDown = false; st.tEnd = now;
+    const g = macroClassifySwipe(st);
+    if (g) st.gesture = g;
+  }
+  macroRecStatus();
+}
+function macroPop(v){ let n=0; v=v>>>0; while(v){ n += v&1; v >>>= 1; } return n; }
+
+// Mirror of touch_point() in src/input_buttons.h. bit7 SET means the finger is
+// LIFTED, and X/Y stop updating once it is - so the lift report carries stale
+// coordinates and a swipe must be classified from the last sample taken while
+// the finger was still down. macro.cpp does the same.
+function macroTouchPoint(d, which){
+  const off = which ? 36 : 32;
+  if (!d || d.byteLength < off + 4) return null;
+  const b0 = d.getUint8(off), b1 = d.getUint8(off+1), b2 = d.getUint8(off+2), b3 = d.getUint8(off+3);
+  return { down: (b0 & 0x80) === 0,
+           x: b1 | ((b2 & 0x0F) << 8),
+           y: (b2 >> 4) | (b3 << 4) };
+}
+// Thresholds must match macro.cpp: GEST_MIN_MS/GEST_MAX_MS/GEST_MIN_DX/GEST_MIN_DY.
+const GEST_MIN_MS = 40, GEST_MAX_MS = 600, GEST_MIN_DX = 300, GEST_MIN_DY = 200;
+const TOUCH_X_MAX = 1919;
+
+function macroClassifySwipe(st){
+  if (!st.tStart || !st.tEnd) return 0;
+  const dt = st.tEnd - st.tStart;
+  if (dt < GEST_MIN_MS || dt > GEST_MAX_MS) return 0;
+  const dx = st.tLastX - st.tX0, dy = st.tLastY - st.tY0;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  let g = GEST_VALID;
+  if (adx >= ady){
+    if (adx < GEST_MIN_DX) return 0;
+    g |= (dx > 0) ? 3 : 2;        // GEST_DIR_RIGHT : GEST_DIR_LEFT
+  } else {
+    if (ady < GEST_MIN_DY) return 0;
+    g |= (dy > 0) ? 1 : 0;        // GEST_DIR_DOWN : GEST_DIR_UP
+  }
+  if (st.tX0 > (TOUCH_X_MAX / 2)) g |= GEST_ZONE_RIGHT;
+  if (st.tTwo) g |= GEST_TWO_FINGER;
+  return g;
+}
+
+function macroOnKeyDown(e){
+  const st = window._macroRec;
+  if (!st || st.which !== 1) return;
+  e.preventDefault(); e.stopPropagation();
+  const u = KEYMAP[e.code];
+  if (!u){ st.unknown = true; return; }
+  if (st.press.indexOf(u) < 0 && st.press.length < 4) st.press.push(u);
+  if (e.code === 'MetaLeft' || e.code === 'MetaRight') st.sawMeta = true;
+  macroRecStatus();
+}
+function macroOnKeyUp(e){
+  const st = window._macroRec;
+  if (!st || st.which !== 1) return;
+  e.preventDefault(); e.stopPropagation();
+  const u = KEYMAP[e.code];
+  if (u && st.release.indexOf(u) < 0) st.release.push(u);
+  macroRecStatus();
+}
+function macroRecStatus(){
+  const st = window._macroRec; if (!st) return;
+  const el = document.getElementById('macrorec');
+  if (!el) return;
+  if (st.which === 1){
+    el.textContent = 'Recording keyboard — ' + (st.press.map(u => USAGE_NAME[u] || u).join(' + ') || 'press your combo');
+  } else {
+    const seen = st.gesture ? macroGestureName(st.gesture)
+               : (st.peak ? macroChordName(st.peak) : '');
+    el.textContent = 'Recording controller — ' + (seen || 'press buttons or swipe the touchpad') +
+                     '   (press Stop when done)';
+  }
+}
+
+async function macroRecord(row, which){
+  if (window._macroRec){ await macroRecordStop(); return; }
+  window._macroRec = {row, which, peak:0, peakAt:0, firstDown:0, upAt:0,
+                      press:[], release:[], sawMeta:false, unknown:false,
+                      tDown:false, tStart:0, tEnd:0, tX0:0, tY0:0,
+                      tLastX:0, tLastY:0, tTwo:false, gesture:0};
+  if (which === 0){
+    await macroSuspendFiring(true);   // don't let an enabled macro type into the portal
+    try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
+  } else {
+    window.addEventListener('keydown', macroOnKeyDown, true);
+    window.addEventListener('keyup', macroOnKeyUp, true);
+  }
+  macroRender();
+}
+
+async function macroRecordStop(){
+  const st = window._macroRec; if (!st) return;
+  window._macroRec = null;
+  const rows = window._macroRows || [];
+  const m = rows[st.row] || (rows[st.row] = macroBlankRow());
+
+  if (st.which === 0){
+    try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
+    await macroSuspendFiring(false);
+    // A swipe wins only when no real buttons were held. The touchpad CLICK is a
+    // button, so a pressed swipe would otherwise register as both.
+    const chordNoPad = (st.peak >>> 0) & ~(1<<17);
+    if (st.gesture && !chordNoPad){
+      m.gesture = st.gesture & 0xff;
+      m.chord = 0;
+      m.flags &= ~1;          // a swipe has no release, so it can only pulse
+      m.hold_cs = 0;
+    } else if (st.peak){
+      m.chord = chordNoPad >>> 0;
+      m.gesture = 0;
+      // The hold you performed sets the mode: a tap records short, a hold
+      // records long with the duration you actually held.
+      const held = (st.upAt && st.peakAt) ? (st.upAt - st.peakAt) : 0;
+      if (held >= 400){ m.flags |= 1; m.hold_cs = Math.min(255, Math.round(held/10)); }
+      else { m.flags &= ~1; m.hold_cs = 0; }
+    }
+  } else {
+    window.removeEventListener('keydown', macroOnKeyDown, true);
+    window.removeEventListener('keyup', macroOnKeyUp, true);
+    if (st.press.length){
+      m.keys = [st.press[0]||0, st.press[1]||0, st.press[2]||0, st.press[3]||0];
+      // Release permutation: slot i lifts at position ((rel>>2i)&3). Anything
+      // the browser could not observe falls back to reverse press order, which
+      // is right for essentially every real combo.
+      let rel = 0, ok = true;
+      for (let i=0;i<st.press.length;i++){
+        const p = st.release.indexOf(st.press[i]);
+        if (p < 0 || p > 3){ ok = false; break; }
+        rel |= (p << (2*i));
+      }
+      if (!ok){ rel = 0; for (let i=0;i<st.press.length;i++) rel |= ((st.press.length-1-i) << (2*i)); }
+      m.rel_order = rel & 0xff;
+    }
+    if (st.sawMeta || st.unknown){
+      alert('Some keys could not be captured.\n\nWindows takes the Win key and Alt+Tab before the browser sees them, and the browser keeps Ctrl+W / Ctrl+T / F11.\n\nUse the Pick button on this row to set the combo by hand.');
+    }
+  }
+  macroRender();
+}
+
+function macroAddRow(){
+  const rows = window._macroRows || (window._macroRows = []);
+  for (let i=0;i<MACRO_COUNT;i++){
+    if (!rows[i]) rows[i] = macroBlankRow();
+    if (!rows[i].present){
+      rows[i] = macroBlankRow();
+      rows[i].present = true;
+      macroSetBit(i, true);   // a macro you just added is on by default
+      return;                 // macroSetBit re-renders
+    }
+  }
+  alert('All ' + MACRO_COUNT + ' macros are in use.');
+}
+function macroDeleteRow(i){
+  const rows = window._macroRows || [];
+  if (!rows[i]) return;
+  rows[i] = macroBlankRow();     // present:false - drops out of the list
+  macroSetBit(i, false);         // and out of the enable mask; re-renders
+}
+
+// A bound chord that CONTAINS another bound chord is unreachable: at the moment
+// the shorter one completes the firmware cannot know the longer one is coming,
+// so it fires and the held branch never re-evaluates. Warn rather than guess
+// with an arm delay, which would tax every short macro's latency.
+function macroSubsetWarnings(){
+  const rows = window._macroRows || [];
+  const out = [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    const a = rows[i]; if (!a || !a.chord || !macroBit(i)) continue;
+    for (let j=0;j<MACRO_COUNT;j++){
+      if (i===j) continue;
+      const b = rows[j]; if (!b || !b.chord || !macroBit(j)) continue;
+      if (a.chord !== b.chord && (b.chord & a.chord) === a.chord){
+        out.push('Row ' + (i+1) + ' (' + macroChordName(a.chord) + ') is contained in row ' +
+                 (j+1) + ' (' + macroChordName(b.chord) + ') — row ' + (j+1) + ' will never fire.');
+      }
+    }
+  }
+  return out;
+}
+
+function macroRender(){
+  const box = document.getElementById('macrobox');
+  if (!box) return;
+  const rows = window._macroRows;
+  if (!rows){ box.textContent = device ? 'Reading macros…' : 'Connect a device to load macros.'; return; }
+  const rec = window._macroRec;
+  const pick = window._macroPick;
+
+  let h = '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
+          'Definitions are stored on the dongle and shared by every slot. The checkboxes are per-slot: ' +
+          'save a slot to capture which macros are live for that game.</div>';
+
+  // Only meaningful once a real read has established the baseline; before that
+  // an absent key would compare as 0 and flag every fresh connect as dirty.
+  const dirty = !!savedSnapshot && ('macro_disable' in savedSnapshot) &&
+                ((+savedSnapshot.macro_disable>>>0) !== (+config['macro_disable']>>>0));
+  if (dirty){
+    h += '<div style="border:1px solid #a60;background:#2a1c00;padding:6px 8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         'Enable state changed — press <b>Save macros to device</b> to apply it. ' +
+         'Until then the dongle still uses the previous set.</div>';
+  }
+
+  const warn = macroSubsetWarnings();
+  if (warn.length){
+    h += '<div style="border:1px solid #a60;background:#2a1c00;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         warn.map(w => '⚠ ' + w).join('<br>') + '</div>';
+  }
+  if (rec){
+    h += '<div id="macrorec" style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
+         (rec.which === 0 ? 'Recording controller — hold the buttons you want, then press Stop. Hold for ~0.5s or more to record a long press.'
+                          : 'Recording keyboard — press your combo, then press Stop.') + '</div>';
+  }
+
+  const anyRow = (rows||[]).some(r => r && r.present);
+  h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  if (anyRow) h += '<tr style="color:var(--sub);font-size:11px"><th style="width:34px"></th><th style="text-align:left">Name</th><th></th><th style="text-align:left">Controller input</th><th></th><th style="text-align:left">Keyboard output</th><th style="width:30px"></th></tr>';
+
+  let shown = 0;
+  for (let i=0;i<MACRO_COUNT;i++){
+    const m = rows[i];
+    if (!m || !m.present) continue;   // only rows that exist; + creates one
+    shown++;
+    const inLbl  = m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord);
+    const inTxt  = inLbl ? (inLbl + ((m.flags & 1) ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
+    const outTxt = macroComboName(m.keys, m.rel_order) || '—';
+    const recIn  = rec && rec.row === i && rec.which === 0;
+    const recOut = rec && rec.row === i && rec.which === 1;
+    const dis    = rec ? ' disabled' : '';
+    h += '<tr style="border-top:1px solid var(--line,#333)">';
+    h += '<td><input type="checkbox" onchange="macroSetBit(' + i + ', this.checked)"' + (macroBit(i) ? ' checked' : '') + '></td>';
+    h += '<td style="padding:2px 6px"><input type="text" maxlength="15" placeholder="unnamed" ' +
+         'style="width:104px;padding:2px 4px;font-size:12px" oninput="macroSetLabel(' + i + ', this.value)" ' +
+         'value="' + escAttr(m.label || '') + '"></td>';
+    h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button></td>';
+    h += '<td style="padding:2px 8px;color:' + (inLbl ? 'inherit' : 'var(--sub)') + '">' + inTxt + '</td>';
+    const pickOpen = pick && pick.row === i;
+    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',1)"' + (rec && !recOut ? ' disabled' : '') + '>' + (recOut ? 'Stop' : 'Record output') + '</button>';
+    h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickOpen(' + i + ')"' + (rec || pickOpen ? ' disabled' : '') + ' title="Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture">Pick</button></td>';
+    h += '<td style="padding:2px 8px;color:' + (outTxt !== '—' ? 'inherit' : 'var(--sub)') + '">' + outTxt + '</td>';
+    h += '<td><button class="btn btn-outline" style="padding:2px 6px" onclick="macroDeleteRow(' + i + ')"' + dis + '>−</button></td>';
+    h += '</tr>';
+    if (pickOpen){
+      h += '<tr><td colspan="7" style="padding:8px 10px;background:#111a22;border-radius:6px">';
+      h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' +
+           'Set the combo by hand. Needed for anything the browser cannot capture — ' +
+           'Win combos, Alt+Tab, Ctrl+W / Ctrl+T / F11.</div>';
+      for (const mp of MOD_PICK){
+        const on = pick.mods.indexOf(mp[0]) >= 0;
+        h += '<label style="margin-right:12px;font-size:13px"><input type="checkbox" ' +
+             'onchange="macroPickMod(' + mp[0] + ', this.checked)"' + (on ? ' checked' : '') +
+             '> ' + escAttr(mp[1]) + '</label>';
+      }
+      h += '<select onchange="macroPickKey(+this.value)" style="padding:2px 4px;font-size:13px;margin-right:10px">';
+      h += '<option value="0">— key —</option>';
+      for (const ko of macroKeyOptions()){
+        h += '<option value="' + ko[0] + '"' + (pick.key === ko[0] ? ' selected' : '') + '>' + escAttr(ko[1]) + '</option>';
+      }
+      h += '</select>';
+      h += '<button class="btn" style="padding:2px 10px;margin-right:6px" onclick="macroPickApply()">Set</button>';
+      h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroPickCancel()">Cancel</button>';
+      h += '</td></tr>';
+    }
+  }
+  h += '</table>';
+  if (!shown){
+    h += '<div style="padding:10px 2px;color:var(--sub);font-size:12px">No macros yet — press + to add one.</div>';
+  }
+  h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroAddRow()"' + (rec ? ' disabled' : '') + '>+</button>';
+  h += '<button class="btn" style="padding:2px 10px" onclick="macroSaveTable()"' + (rec ? ' disabled' : '') + '>Save macros to device</button>';
+  h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
+  h += '</div>';
+  box.innerHTML = h;
+}
+
+// Saves the WHOLE macro state: the shared table AND the enable mask.
+//
+// It used to write only the table. The checkbox lives in config.macro_disable,
+// which is an ordinary config field, so it reached the device only via the main
+// Save to Device button - two save buttons with the checkbox belonging to the
+// far one. Consequences, both of which looked like separate bugs: the engine
+// early-returns when no macro is enabled, so nothing fired; and a slot snapshots
+// the DEVICE's config, so saving a slot captured an all-disabled mask and the
+// checkbox came back clear after loading it.
+//
+// Delegating the field half to saveAll() rather than reimplementing it also
+// picks up the enumeration crossing for free - enabling the first macro adds the
+// keyboard interface to the USB descriptor and needs a reconnect to take effect.
+// Hand-rolling that here is precisely how disable_usb_sn and ps_shortcut_enabled
+// went missing from ENUM_FIELDS in the first place.
+async function macroSaveTable(){
+  const el = document.getElementById('macrosave');
+  if (!device){ if (el) el.textContent = 'No device.'; return; }
+  if (el) el.textContent = 'Writing macro table…';
+  try {
+    await hidLocked(() => macroWriteAll());
+  } catch(e){
+    if (el) el.textContent = 'Table write failed: ' + e;
+    return;
+  }
+  if (el) el.textContent = 'Saving enable state…';
+  await saveAll();   // writes macro_disable, persists to flash, reconnects if the
+                     // keyboard interface has to appear or disappear
+  if (el) el.textContent = 'Saved. Save a slot to capture this enable state for a game.';
+}
+
 const TABS = [
   {id:'device',   label:'Device'},
   {id:'haptics',  label:'Haptics'},
   {id:'triggers', label:'Triggers'},
   {id:'gyro',     label:'Gyro / Stick'},
+  {id:'macros',   label:'Macros'},
   {id:'slots',    label:'Slots'},
 ];
 window._tab = window._tab || 'triggers';
@@ -2350,6 +3027,17 @@ function fieldRowHTML(f){
   const _d = SUB_DIVIDERS[key];
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
   html += `<div class="row"><div><div class="label">${label}${descMarker(key)}</div></div><div>`;
+  if(kind==='macros'){
+    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">edited below</div>`;
+    html += `</div></div><div id="macrobox">Connect a device to load macros.</div>`;
+    // Hidden mirror so saveAll()'s FIELDS walk writes the bitmap like any other
+    // field; the checkboxes drive it via macroBit().
+    // Bound the same way every other field is, so the render harness sees it and
+    // saveAll()'s FIELDS walk picks it up. Value is numeric - no quoted data goes
+    // into the attribute.
+    html += `<input type="hidden" id="f_macro_disable" oninput="config['macro_disable']=+this.value" value="${(+config['macro_disable']>>>0)}">`;
+    return html;
+  }
   if(kind==='bits'){
     // One checkbox per bit of a bitmask byte (e.g. gyro/right-stick X & Y invert).
     // Each toggles its own bit of config[key] and leaves the others untouched, so
@@ -2432,7 +3120,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.18.25</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
@@ -2545,6 +3233,12 @@ function render(){
   // render() rebuilds the whole page, so the dynamic panels revert to their
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
+  try { if (typeof macroRender === 'function') macroRender(); } catch(e){}
+  // Only sweep the macro table when its tab is on screen: 32 HID round-trips.
+  if ((window._tab || 'triggers') === 'macros' && device && !window._macroRows
+      && !saving && !slotsBusy) {
+    try { refreshMacros(); } catch(e){}
+  }
   try { if (typeof cebRender === 'function') cebRender(); } catch(e){}
   try { if (typeof cebShowLevels === 'function') cebShowLevels(); } catch(e){}
 }
