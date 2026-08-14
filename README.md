@@ -2,7 +2,7 @@
 
 **Version 1.19.0**
 
-▶️ **[Configure in your browser](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in. · 💡 **[Lightbar control](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-lights-portal.html)** — set the lightbar color and effects (rainbow / breathing / fade) after connecting.
+▶️ **[Configure in your browser](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
 📥 **[Shared game profiles](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html)** · 🎮 **[Trigger effects](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
 

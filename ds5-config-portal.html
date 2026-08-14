@@ -75,8 +75,8 @@
   html { scrollbar-color:#2b3547 #0b0e13; }
   body {
     background:
-      radial-gradient(1000px 520px at 12% -10%, rgba(78,161,255,.16), transparent 60%),
-      radial-gradient(900px 500px at 92% -12%, rgba(124,92,255,.14), transparent 60%),
+      radial-gradient(1000px 520px at 12% -10%, rgba(78,161,255,.10), transparent 60%),
+      radial-gradient(900px 500px at 92% -12%, rgba(124,92,255,.08), transparent 60%),
       var(--bg);
     -webkit-font-smoothing:antialiased;
   }
@@ -127,6 +127,19 @@
   .dot { box-shadow:0 0 10px rgba(255,92,92,.8); }
   .dot.on { box-shadow:0 0 10px rgba(52,209,123,.9); }
   .actions { flex-wrap:wrap; }
+  .swatch { width:30px; height:30px; border-radius:50%; cursor:pointer;
+    border:2px solid rgba(255,255,255,.25); transition:transform .15s ease, border-color .15s ease; }
+  .swatch:hover { transform:scale(1.12); }
+  .swatch.on { border-color:#fff; box-shadow:0 0 10px rgba(255,255,255,.5); }
+  .seg { display:inline-flex; gap:3px; padding:4px; border-radius:999px;
+    background:rgba(255,255,255,.05); border:1px solid var(--border); flex-wrap:wrap; }
+  .seg button { border:none; background:transparent; color:var(--sub); font-size:12.5px; font-weight:700;
+    padding:6px 12px; border-radius:999px; cursor:pointer; transition:all .15s ease; }
+  .seg button:hover { color:var(--text); }
+  .seg button.on { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+  input[type=color] { width:44px; height:34px; border:none; padding:0; background:transparent; cursor:pointer; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding:2px; }
+  input[type=color]::-webkit-color-swatch { border-radius:8px; border:1px solid var(--border); }
   ::-webkit-scrollbar { width:10px; height:10px; }
   ::-webkit-scrollbar-thumb { background:#2b3547; border-radius:8px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -645,12 +658,14 @@ async function connect(){
     if(!devices.length) return;
     device=pickDs5(devices) || devices[0];
     if(!device.opened) await device.open();
+    if (device.addEventListener) device.addEventListener('inputreport', onInputReport);
     await reloadFromDevice();   // full read with the 1s poll suspended (see helper)
     render();
+    refreshStatus();
   }catch(e){ toast('Connect failed: '+e.message,true); }
 }
 
-async function disconnect(){ if(device&&device.opened) await device.close(); device=null; render(); }
+async function disconnect(){ lightsStop(); if(device&&device.opened) await device.close(); device=null; lastInput=null; inputRate=0; render(); }
 
 // Send a 0x80 command: [0x66, cmd_id, ...args], padded to the full 63-byte
 // feature report size (WebHID requires the exact declared report length).
@@ -2492,6 +2507,7 @@ setInterval(()=>{
     await readLoadedProfile();                              // every tab: keep the bar current
     if (document.getElementById('ahbox')) await readAhMeter();   // Haptics tab: live auto-haptics meter
     if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
+    refreshStatus();                                          // zeroes inputRate every second
   });
 }, 1000);
 
@@ -3303,11 +3319,159 @@ async function macroSaveTable(){
   if (el) el.textContent = 'Saved. Save a slot to capture this enable state for a game.';
 }
 
+// ===== Lights tab: lightbar + player indicator + mic indicator =====
+// Sent to the dongle as a standard DualSense 0x02 output report (47-byte
+// payload), which the dongle forwards to the controller over Bluetooth.
+const LIGHTS = { r:0, g:66, b:255, bri:0, eff:'static', player:0x04, mic:0, timer:null, hue:0, bt:0 };
+const LIGHTS_PRESETS = [
+  ['#0042ff','PS Blue'], ['#ff3131','Red'], ['#1fc13c','Green'], ['#ffd500','Yellow'],
+  ['#ff7a00','Orange'], ['#00d4ff','Cyan'], ['#9b59f6','Purple'], ['#ffffff','White'],
+];
+function lightsHexRgb(hex){ const v = parseInt(hex.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
+function lightsHsvRgb(h, s, v){
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  const seg = Math.floor(h / 60) % 6;
+  let r = 0, g = 0, b = 0;
+  if (seg === 0) { r = c; g = x; } else if (seg === 1) { r = x; g = c; }
+  else if (seg === 2) { g = c; b = x; } else if (seg === 3) { g = x; b = c; }
+  else if (seg === 4) { r = x; b = c; } else { r = c; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+function lightsReport(r, g, b, fade){
+  const p = new Uint8Array(47);
+  p[1]  = 0xF7 | 0x04 | 0x10 | 0x01; // AllowLedColor | AllowPlayerIndicators | AllowMuteLight
+  p[8]  = LIGHTS.mic & 0xFF;         // MuteLightMode: 0 off, 1 on, 2 blink
+  p[38] = 0x03;                      // AllowLightBrightnessChange | AllowColorLightFadeAnimation
+  p[41] = fade & 0xFF;               // 0 none, 1 fade in, 2 fade out
+  p[42] = LIGHTS.bri & 0xFF;         // 0 high, 1 mid, 2 low
+  p[43] = LIGHTS.player & 0xFF;      // player indicator LEDs
+  p[44] = (r === undefined ? LIGHTS.r : r) & 0xFF;
+  p[45] = (g === undefined ? LIGHTS.g : g) & 0xFF;
+  p[46] = (b === undefined ? LIGHTS.b : b) & 0xFF;
+  return p;
+}
+function lightsSend(r, g, b, fade){
+  if (!device || !device.opened) return;
+  device.sendReport(0x02, lightsReport(r, g, b, fade)).catch(() => lightsStop());
+}
+function lightsStop(){ if (LIGHTS.timer !== null) { clearInterval(LIGHTS.timer); LIGHTS.timer = null; } }
+function lightsPaintAt(r, g, b){
+  const ring = document.getElementById('lightsRing');
+  if (!ring) return;
+  const c = `rgb(${r},${g},${b})`;
+  ring.style.background = `radial-gradient(circle at 35% 30%, ${c}, rgba(0,0,0,.4))`;
+  ring.style.boxShadow = `0 0 30px 6px rgba(${r},${g},${b},.5)`;
+}
+function lightsPaint(){ lightsPaintAt(LIGHTS.r, LIGHTS.g, LIGHTS.b); }
+function lightsSync(){
+  document.querySelectorAll('#lightsBriSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === LIGHTS.bri));
+  document.querySelectorAll('#lightsEffSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === LIGHTS.eff));
+  document.querySelectorAll('#lightsPlayerSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === LIGHTS.player));
+  document.querySelectorAll('#lightsMicSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === LIGHTS.mic));
+  document.querySelectorAll('#lightsPreset .swatch').forEach(s => s.classList.toggle('on', s.dataset.hex === ('#' + [LIGHTS.r, LIGHTS.g, LIGHTS.b].map(x => x.toString(16).padStart(2, '0')).join(''))));
+}
+function lightsPick(hex){
+  const [r, g, b] = lightsHexRgb(hex);
+  LIGHTS.r = r; LIGHTS.g = g; LIGHTS.b = b;
+  LIGHTS.eff = (LIGHTS.eff === 'rainbow' || LIGHTS.eff === 'breath') ? 'static' : LIGHTS.eff;
+  const picker = document.getElementById('lightsPicker'); if (picker) picker.value = hex;
+  lightsStop(); lightsPaint(); lightsSend(); lightsSync();
+}
+function lightsBri(v){ LIGHTS.bri = v; lightsSend(); lightsSync(); }
+function lightsEffect(e){
+  LIGHTS.eff = e; lightsStop();
+  if (e === 'rainbow') {
+    LIGHTS.hue = 0;
+    LIGHTS.timer = setInterval(() => {
+      const [r, g, b] = lightsHsvRgb(LIGHTS.hue, 1, 1);
+      LIGHTS.hue = (LIGHTS.hue + 2) % 360;
+      lightsPaintAt(r, g, b); lightsSend(r, g, b, 0);
+    }, 33);
+  } else if (e === 'breath') {
+    LIGHTS.bt = 0;
+    LIGHTS.timer = setInterval(() => {
+      LIGHTS.bt += 0.09;
+      const k = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(LIGHTS.bt));
+      const r = Math.round(LIGHTS.r * k), g = Math.round(LIGHTS.g * k), b = Math.round(LIGHTS.b * k);
+      lightsPaintAt(r, g, b); lightsSend(r, g, b, 0);
+    }, 30);
+  } else {
+    lightsSend(undefined, undefined, undefined, e === 'fadein' ? 1 : (e === 'fadeout' ? 2 : 0));
+  }
+  lightsSync();
+}
+function lightsPlayer(v){ LIGHTS.player = v; lightsSend(); lightsSync(); }
+function lightsMic(v){ LIGHTS.mic = v; lightsSend(); lightsSync(); }
+function lightsHTML(){
+  const sw = LIGHTS_PRESETS.map(p => `<button class="swatch" style="background:${p[0]}" data-hex="${p[0]}" title="${p[1]}" onclick="lightsPick('${p[0]}')"></button>`).join('');
+  const seg = (id, items) => `<div class="seg" id="${id}">` + items.map(([v, on, z, e]) =>
+    `<button data-v="${v}" class="${on ? 'on' : ''}" onclick="lightsSel('${id}','${v}')">${t(z, e)}</button>`).join('') + `</div>`;
+  // lightbar preset picker is color-only; the effect/brightness/player/mic
+  // rows use dedicated handlers.
+  return `<div class="card">
+    <div class="card-title">${t('灯带 / 指示灯','Lightbar & Indicators')}</div>
+    <div style="display:flex;justify-content:center;padding:8px 0 14px"><div id="lightsRing" style="width:110px;height:110px;border-radius:50%;background:#111;transition:background .25s, box-shadow .25s"></div></div>
+    <div id="lightsPreset" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${sw}</div>
+    <div class="row"><span class="label">${t('自定义颜色','Custom color')}</span><input type="color" id="lightsPicker" value="#0042ff" onchange="lightsPick(this.value)"></div>
+    <div class="row"><span class="label">${t('亮度','Brightness')}</span>${seg('lightsBriSeg', [[0, LIGHTS.bri===0, '高','High'], [1, LIGHTS.bri===1, '中','Mid'], [2, LIGHTS.bri===2, '低','Low']])}</div>
+    <div class="row"><span class="label">${t('效果','Effect')}</span>${seg('lightsEffSeg', [['static', LIGHTS.eff==='static', '静态','Static'], ['rainbow', LIGHTS.eff==='rainbow', '彩虹','Rainbow'], ['breath', LIGHTS.eff==='breath', '呼吸','Breathing'], ['fadein', LIGHTS.eff==='fadein', '淡入','Fade In'], ['fadeout', LIGHTS.eff==='fadeout', '淡出','Fade Out']])}</div>
+    <div class="row"><span class="label">${t('玩家指示灯','Player indicator')}</span>${seg('lightsPlayerSeg', [[0, LIGHTS.player===0, '关闭','Off'], [4, LIGHTS.player===4, '1','1'], [10, LIGHTS.player===10, '2','2'], [21, LIGHTS.player===21, '3','3'], [27, LIGHTS.player===27, '4','4'], [31, LIGHTS.player===31, '全部','All']])}</div>
+    <div class="row"><span class="label">${t('麦克风指示灯','Mic indicator')}</span>${seg('lightsMicSeg', [[0, LIGHTS.mic===0, '关闭','Off'], [1, LIGHTS.mic===1, '开启','On'], [2, LIGHTS.mic===2, '闪烁','Blink']])}</div>
+    <div style="font-size:11.5px;color:var(--sub);margin-top:10px;line-height:1.55">${t('灯带与指示灯通过标准 DualSense 输出报告直接发送给手柄；彩虹/呼吸为软件驱动，淡入淡出使用手柄内置动画。','Lightbar & indicator LEDs are sent as standard DualSense output reports; Rainbow/Breathing are software-driven, Fade uses the controller\'s built-in animation.')}</div>
+  </div>`;
+}
+function lightsSel(id, v){
+  if (id === 'lightsBriSeg') lightsBri(+v);
+  else if (id === 'lightsEffSeg') lightsEffect(v);
+  else if (id === 'lightsPlayerSeg') lightsPlayer(+v);
+  else if (id === 'lightsMicSeg') lightsMic(+v);
+}
+
+// ===== Device status: live input-report rows =====
+// The dongle forwards the controller's BT input report to the PC as a 63-byte
+// USB report. WebHID delivers it via inputreport events; we cache the bytes
+// and decode the standard DualSense status fields for the Device tab.
+let lastInput = null, inputRate = 0;
+function onInputReport(e){
+  if (e.reportId !== 0x01) return;
+  const d = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength);
+  lastInput = d.slice(0, 63);
+  inputRate++;
+}
+function statusRow(k, v){
+  return `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span style="color:var(--sub)">${k}</span><b>${v}</b></div>`;
+}
+function statusHTML(){
+  if (!lastInput) return `<span style="color:var(--sub)">${t('等待输入报告…','Waiting for input reports…')}</span>`;
+  const seq = lastInput[6] !== undefined ? lastInput[6] : '—';
+  const bat = lastInput[52] || 0;
+  const st1 = lastInput[53] || 0;
+  const lvl = bat & 0x0F, st = (bat >> 4) & 0x0F;
+  const pct = Math.min(lvl * 10, 100);
+  const charge = st === 1 ? t('充电中','charging') : st === 2 ? t('已充满','full') : st >= 0x0F ? t('电量异常','error') : t('未充电','not charging');
+  const hs = (st1 & 1) ? t('已连接','connected') : t('未连接','not connected');
+  const mc = (st1 & 2) ? t('已连接','connected') : t('未连接','not connected');
+  const hw = `SONY 0x${(device ? device.productId : 0).toString(16).toUpperCase()}${fwVer ? ` · ${t('固件','FW')} v${fwVer.maj}.${fwVer.min}.${fwVer.pat} (${t('配置','config')} v${fwVer.cfgv})` : ''}`;
+  return statusRow(t('报文序号','Report seq'), seq)
+       + statusRow(t('充电状态','Charging'), charge)
+       + statusRow(t('电池电量','Battery'), `${pct}%`)
+       + statusRow(t('麦克风状态','Microphone'), mc)
+       + statusRow(t('耳机状态','Headset'), hs)
+       + statusRow(t('报告速率','Report rate'), `${inputRate} Hz`)
+       + statusRow(t('硬件信息','Hardware'), hw);
+}
+function refreshStatus(){
+  const el = document.getElementById('statusbox');
+  if (el) el.innerHTML = statusHTML();
+  inputRate = 0;
+}
+
 const TABS = [
   {id:'device',   label:'Device',  zh:'设备'},
   {id:'haptics',  label:'Haptics', zh:'触觉'},
   {id:'triggers', label:'Triggers',zh:'扳机'},
   {id:'gyro',     label:'Gyro / Stick', zh:'陀螺仪 / 摇杆'},
+  {id:'lights',   label:'Lights',  zh:'灯带'},
   {id:'macros',   label:'Macros',  zh:'宏'},
   {id:'slots',    label:'Slots',   zh:'槽位'},
 ];
@@ -3500,7 +3664,6 @@ function render(){
     </header>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`${t('已连接','Connected')} — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:t('未连接','Not connected')}</span>
-      ${on?`<a class="btn btn-outline" href="ds5-lights-portal.html" target="_blank" rel="noopener" style="text-decoration:none">💡 ${t('灯带控制','Lightbar')}</a>`:''}
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?t('断开连接','Disconnect'):t('连接','Connect')}</button>
     </div>`;
   if(!on){
@@ -3524,6 +3687,7 @@ function render(){
       html += `<div class="card"><div class="card-title">${t('自动触觉 — 实时','Auto-haptics — live')} <span style="font-size:11px;color:var(--sub)">${t('（连接时更新）','(updates while connected)')}</span></div><div id="ahbox" style="font-size:13px">${t('连接后可查看实时自动触觉活动。','Connect to see live auto-haptics activity.')}</div></div>`;
   }
   if (tab === 'gyro') html += IMU_CARD_HTML;
+  if (tab === 'lights') html += lightsHTML();
   html += `<div class="actions">
     <button class="btn btn-green" onclick="saveAll()">${t('?????','Save to Device')}</button>
     <button class="btn btn-outline" onclick="readAll().then(render)">${t('????','Re-read')}</button>
@@ -3594,7 +3758,9 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
     </div></div>` : '') + `
-  ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
+  ` + (tab==='device' ? `<div class="card"><div class="card-title">${t('设备状态','Device Status')}</div>
+    <div id="statusbox" style="font-size:13px">${t('等待输入报告…','Waiting for input reports…')}</div></div>
+  <div class="card"><div class="card-title">Diagnostic</div>
     <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
       <span style="font-size:12px;color:var(--sub)">Wake troubleshooting — what the dongle observed across sleeps since it was powered up:</span><br>
@@ -3603,6 +3769,7 @@ function render(){
     </div></div>` : '') + `
   `;
   app.innerHTML=html;
+  if (tab === 'lights') { lightsPaint(); lightsSync(); }
   // Only sweep the slots when their list is actually on screen. render() runs on
   // every tab switch and on some dropdown changes, and the sweep costs one HID
   // round-trip per slot (~60 ms each), so refreshing it from a tab that doesn't
