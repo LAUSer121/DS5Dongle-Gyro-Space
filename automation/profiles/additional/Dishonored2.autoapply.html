@@ -180,11 +180,19 @@ function isWakeKeyboardIface(d){
   const cols = (d && d.collections) || [];
   return cols.length > 0 && cols.every(c => c.usagePage === 0x01 && c.usage === 0x06);
 }
+// Is this HIDDevice the dongle's GAMEPAD interface? The Windows battery
+// (UPS) feature adds another HID collection under the same Sony VID/PID, and
+// feature reports only work on the gamepad interface, so prefer it when present.
+function isGamepadIface(d){
+  const cols = (d && d.collections) || [];
+  return cols.some(c => c.usagePage === 0x01 && c.usage === 0x05); // Generic Desktop / Game Pad
+}
 function pickDs5(list){
   const m = (list || []).filter(x => x && x.vendorId === SONY_VID
                                   && (x.productId === DS5_PID || x.productId === DSE_PID));
-  return m.find(x => !isWakeKeyboardIface(x)) || m[0] || null;
+  return m.find(x => isGamepadIface(x)) || m.find(x => !isWakeKeyboardIface(x)) || m[0] || null;
 }
+
 
 // Unthrottled sleep. Chromium throttles main-thread timers on hidden/minimized
 // pages to >=1 per second, which would turn the many short waits between HID
