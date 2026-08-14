@@ -64,7 +64,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
-  - [Right Stick](#right-stick)
+  - [Right Stick Inversion](#right-stick)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
@@ -1011,7 +1011,7 @@ Maps controller motion onto the right stick for motion aiming.
 the controller to fine-tune aim only when aiming down sights. Raise sensitivity if
 the motion feels sluggish; use invert if the direction feels backwards.
 
-### Right Stick
+### Right Stick Inversion
 Inverts the physical right stick in the input report the PC sees — independent of
 gyro aiming, and active in any game with no PC-side software.
 
