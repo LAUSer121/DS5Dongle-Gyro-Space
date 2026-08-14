@@ -804,7 +804,7 @@ async function _refreshSlotsOnce(){
   const box = document.getElementById('slotbox');
   if (!box) return;
   if (!device || !device.opened){
-    box.innerHTML = t('????????','Connect to manage slots.');
+    box.innerHTML = t('连接后可管理槽位。','Connect to manage slots.');
     // Self-heal: after a save/activate reconnect cycle this runs before the
     // new handle exists; retry shortly instead of staying stuck until a
     // manual page refresh.
@@ -2546,7 +2546,7 @@ const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Acce
   </div>
   <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">waiting for sensor stream…</div>
   <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-    <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">${t('● ??','● Record')}</button>
+    <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">${t('● 录制','● Record')}</button>
     <span id="recStatus" style="font-size:12px;color:var(--sub)">Not recording</span>
   </div>
 </div>`;
@@ -3452,6 +3452,19 @@ function onInputReport(e){
 function statusRow(k, v){
   return `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span style="color:var(--sub)">${k}</span><b>${v}</b></div>`;
 }
+// Windows-style battery glyph (outline + tip + fill), colored like Windows:
+// green above 50%, amber 20-50%, red below 20%.
+function batIcon(pct){
+  pct = Math.max(0, Math.min(100, +pct || 0));
+  const col = pct > 50 ? '#4caf50' : pct >= 20 ? '#f0b429' : '#e0704a';
+  const w = 22, h = 11;
+  const fillW = Math.max(0, (w - 7) * pct / 100);
+  return `<svg width="${w+3}" height="${h+3}" viewBox="0 0 ${w+3} ${h+3}" style="vertical-align:-2px" aria-label="battery ${pct}%">
+    <rect x="0.5" y="1.5" width="${w-2.5}" height="${h-3}" rx="2.5" fill="none" stroke="${col}" stroke-width="1.2"/>
+    <rect x="${w-1.5}" y="3.5" width="2.5" height="${h-7}" rx="1" fill="${col}"/>
+    <rect x="2" y="3" width="${fillW}" height="${h-6}" rx="1" fill="${col}"/>
+  </svg>`;
+}
 function statusHTML(){
   if (!lastInput) return `<span style="color:var(--sub)">${t('等待输入报告…','Waiting for input reports…')}</span>`;
   const seq = lastInput[6] !== undefined ? lastInput[6] : '—';
@@ -3464,12 +3477,13 @@ function statusHTML(){
   const mc = (st1 & 2) ? t('已连接','connected') : t('未连接','not connected');
   const hw = `SONY 0x${(device ? device.productId : 0).toString(16).toUpperCase()}${fwVer ? ` · ${t('固件','FW')} v${fwVer.maj}.${fwVer.min}.${fwVer.pat} (${t('配置','config')} v${fwVer.cfgv})` : ''}`;
   const bm = +config['battery_mode'] || 0;
-  const bmTxt = bm === 2 ? t(`模拟 ${Math.min(Math.max(+config['battery_fake'] || 80, 5), 100)}%`, `simulated ${Math.min(Math.max(+config['battery_fake'] || 80, 5), 100)}%`)
+  const bmPct = bm === 2 ? Math.min(Math.max(+config['battery_fake'] || 80, 5), 100) : (bm === 1 ? pct : null);
+  const bmTxt = bm === 2 ? t(`模拟 ${bmPct}%`, `simulated ${bmPct}%`)
                : bm === 1 ? t('真实（蓝牙）','real (BT)') : t('关闭','off');
   return statusRow(t('报文序号','Report seq'), seq)
        + statusRow(t('充电状态','Charging'), charge)
        + statusRow(t('电池电量','Battery'), `${pct}%`)
-       + statusRow(t('Windows 电池','Windows battery'), bmTxt)
+       + statusRow(t('Windows 电池','Windows battery'), `${bmPct === null ? '' : batIcon(bmPct) + ' '}${bmTxt}`)
        + statusRow(t('麦克风状态','Microphone'), mc)
        + statusRow(t('耳机状态','Headset'), hs)
        + statusRow(t('报告速率','Report rate'), `${inputRate} Hz`)
@@ -3575,8 +3589,8 @@ function fieldRowHTML(f){
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${t(SUB_DIV_ZH[_d.label] || '', _d.label)}</div>`;
   html += `<div class="row"><div><div class="label">${lbl}${descMarker(key)}</div></div><div>`;
   if(kind==='macros'){
-    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">${t('?????','edited below')}</div>`;
-    html += `</div></div><div id="macrobox">${t('?????????','Connect a device to load macros.')}</div>`;
+    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">${t('在下方编辑','edited below')}</div>`;
+    html += `</div></div><div id="macrobox">${t('连接设备后加载宏。','Connect a device to load macros.')}</div>`;
     // Hidden mirror so saveAll()'s FIELDS walk writes the bitmap like any other
     // field; the checkboxes drive it via macroBit().
     // Bound the same way every other field is, so the render harness sees it and
@@ -3708,57 +3722,57 @@ function render(){
   if (tab === 'gyro') html += IMU_CARD_HTML;
   if (tab === 'lights') html += lightsHTML();
   html += `<div class="actions">
-    <button class="btn btn-green" onclick="saveAll()">${t('?????','Save to Device')}</button>
-    <button class="btn btn-outline" onclick="readAll().then(render)">${t('????','Re-read')}</button>
-    <button class="btn btn-outline" onclick="exportProfile()">${t('????','Export Profile')}</button>
-    <button class="btn btn-outline" onclick="exportHtml()">${t('?? HTML','Export HTML')}</button>
-    <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">${t('????','Import Profile')}</button>
+    <button class="btn btn-green" onclick="saveAll()">${t('保存到设备','Save to Device')}</button>
+    <button class="btn btn-outline" onclick="readAll().then(render)">${t('重新读取','Re-read')}</button>
+    <button class="btn btn-outline" onclick="exportProfile()">${t('导出配置','Export Profile')}</button>
+    <button class="btn btn-outline" onclick="exportHtml()">${t('导出 HTML','Export HTML')}</button>
+    <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">${t('导入配置','Import Profile')}</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProfile(event)">
-    <button class="btn btn-outline" onclick="rebootBootloader()">${t('???????','Reboot to Bootloader')}</button>
+    <button class="btn btn-outline" onclick="rebootBootloader()">${t('重启进入引导模式','Reboot to Bootloader')}</button>
   </div>
-  ` + (tab==='slots' ? `<div class="card"><div class="card-title">${t('????','Profile Slots')} <span style="font-size:11px;color:var(--sub)">(${t('??????? — ?? 1.1.2+','stored on the dongle — fw 1.1.2+')})</span></div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('?????????????????????????????????????? slot-activate.html ????','Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).')}</div>
+  ` + (tab==='slots' ? `<div class="card"><div class="card-title">${t('配置槽位','Profile Slots')} <span style="font-size:11px;color:var(--sub)">(${t('存储在适配器上 — 固件 1.1.2+','stored on the dongle — fw 1.1.2+')})</span></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('将当前设置保存到编号槽位；之后激活槽位是一条即时命令（自动化通过 slot-activate.html 使用）。','Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).')}</div>
     <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
-    <div id="slotbox" style="font-size:13px">${t('????????','Connect to manage slots.')}</div></div>` : '') + `
-  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">${t('??????? & ?????','Trigger Effect Monitor &amp; Custom Effects')} <span style="font-size:11px;color:var(--sub)">(${t('????????','capture real game effects')})</span></div>
+    <div id="slotbox" style="font-size:13px">${t('连接后可管理槽位。','Connect to manage slots.')}</div></div>` : '') + `
+  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">${t('扳机效果监视器 &amp; 自定义效果','Trigger Effect Monitor &amp; Custom Effects')} <span style="font-size:11px;color:var(--sub)">(${t('捕获真实游戏效果','capture real game effects')})</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
-    <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">${t('???????','Refresh captured effects')}</button>
-    <span style="font-size:12px;color:var(--sub)"> · ${t('????????? →','Load custom effect file →')} </span>
+    <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">${t('刷新已捕获效果','Refresh captured effects')}</button>
+    <span style="font-size:12px;color:var(--sub)"> · ${t('加载自定义效果文件 →','Load custom effect file →')} </span>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileL2').click()">L2</button>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
     <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">browse shared effects ↗</a></span>
-    <div id="effmon" style="font-size:13px;margin-top:6px">${t('???????????????????','Connect and press Refresh after triggering an effect in-game.')}</div>
+    <div id="effmon" style="font-size:13px;margin-top:6px">${t('连接后，在游戏中触发一次效果，再按刷新。','Connect and press Refresh after triggering an effect in-game.')}</div>
     <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
-      <b style="font-size:13px">${t('?????','Timeline recording')}</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">${t('● ??','● Record')}</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">${t('?????','Stop &amp; fetch')}</button>
-      <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">${t('?????','Not recording.')}</div>
+      <b style="font-size:13px">${t('时间轴录制','Timeline recording')}</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">${t('● 录制','● Record')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">${t('停止 &amp; 获取','Stop &amp; fetch')}</button>
+      <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">${t('未在录制。','Not recording.')}</div>
     </div></div>
-  <div class="card"><div class="card-title">${t('???????','Build a Custom Effect')} <span style="font-size:11px;color:var(--sub)">(${t('?????? — ??????','author stages by hand — no game capture needed')})</span></div>
+  <div class="card"><div class="card-title">${t('构建自定义效果','Build a Custom Effect')} <span style="font-size:11px;color:var(--sub)">(${t('手动编排阶段 — 无需游戏捕获','author stages by hand — no game capture needed')})</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Add up to 5 stages. Mechanical stages (weapon breaks, resistances) are played <b>in sequence as you pull</b>, ordered by their start zone — so two walls at different depths give a genuine two-stage pull, which the trigger sliders can't do. A vibration stage can be mixed in and takes over at its own depth (it replaces the wall there — the controller plays one trigger effect at a time). Each stage needs a <b>different start zone</b>, and stages want <b>room between them</b> — a stage squeezed into one or two zones can be skipped by a normal pull. Zones are 0–9 ≈ 0–100% of the pull. Weapon-break limits: wall start 2–7, break point 3–8. Bow limits: draw start 0–7, draw end 1–8. Values outside those are clamped, and the list shows what was actually encoded. A <b>bow</b> builds resistance through the draw and then <b>pushes the trigger back</b> at the end — the one thing resistance and weapon break can't do. Put any vibration on a <b>later</b> stage — a vibration on the first stage buzzes at rest.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px">
       <select id="ceb_type" onchange="cebTypeChanged()">
-        <option value="break">${t('???????????','Weapon break (wall that gives way)')}</option>
-        <option value="bow">${t('? / ?????????','Bow / snap (draws, then pushes back)')}</option>
-        <option value="resistance">${t('??','Resistance')}</option>
-        <option value="vibration">${t('??','Vibration')}</option>
+        <option value="break">${t('武器破坏（挡墙让位）','Weapon break (wall that gives way)')}</option>
+        <option value="bow">${t('弓 / 回弹（先拉弦，再回推）','Bow / snap (draws, then pushes back)')}</option>
+        <option value="resistance">${t('阻力','Resistance')}</option>
+        <option value="vibration">${t('振动','Vibration')}</option>
       </select>
-      <label>${t('???','Start zone')} <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
-      <label id="ceb_endlbl">${t('???','Break zone')} <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
-      <label id="ceb_strlbl">${t('?? %','Strength %')} <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
-      <label id="ceb_snaplbl" style="display:none">${t('???? %','Snap force %')} <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
-      <label id="ceb_freqlbl" style="display:none">${t('??','Frequency')} <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">${t('????','Add stage')}</button>
+      <label>${t('起始区','Start zone')} <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
+      <label id="ceb_endlbl">${t('断裂区','Break zone')} <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
+      <label id="ceb_strlbl">${t('力度 %','Strength %')} <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_snaplbl" style="display:none">${t('回弹力度 %','Snap force %')} <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_freqlbl" style="display:none">${t('频率','Frequency')} <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">${t('添加阶段','Add stage')}</button>
     </div>
-    <div id="ceb_list" style="font-size:12px;margin-top:8px">${t('?????','No stages yet.')}</div>
+    <div id="ceb_list" style="font-size:12px;margin-top:8px">${t('还没有阶段。','No stages yet.')}</div>
     <div id="ceb_viz" style="margin-top:8px"></div>
     <div style="margin-top:6px">
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">${t('??? L2','Assign → L2')}</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">${t('??? R2','Assign → R2')}</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">${t('?????','Save to file')}</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">${t('????','Clear list')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">${t('分配 → L2','Assign → L2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">${t('分配 → R2','Assign → R2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">${t('保存到文件','Save to file')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">${t('清空列表','Clear list')}</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
