@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.19.0**
+**Version 1.20.0**
 
 ▶️ **[Configure in your browser](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -67,6 +67,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Right Stick Inversion](#right-stick-inversion)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
+  - [Windows Native Battery (UPS) (new in 1.20.0)](#windows-native-battery-ups-new-in-1200)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
 - [Modes explained](#modes-explained)
 - [Notes & known behavior](#notes--known-behavior)
@@ -87,6 +88,11 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
+- **Windows native battery display** — an extra USB HID "UPS Battery" interface
+  makes Windows show the dongle as a system battery in the tray / power settings
+  (the only native battery icon possible over USB), either mirroring the
+  controller's real Bluetooth battery or a simulated fixed level you set in the
+  portal. Can be turned off entirely.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
   keyboard combo, recorded by pressing the actual buttons and typing the actual
   keys. Up to 32, with tap-vs-hold and captured release order. Definitions are
@@ -1124,6 +1130,35 @@ The panel warns you when the enable state has changed but not yet been saved.
 | Disable Pico LED | on/off | off | Turn off the Pico's onboard LED |
 | Wake PC on PS Button | on/off | off | Assert USB remote wakeup on PS press to wake the host |
 
+### Windows Native Battery (UPS) (new in 1.20.0)
+
+Windows does not show a battery for USB HID gamepads — the DualSense's charge
+level is only visible over Bluetooth, and the dongle's USB link carries no
+battery report. To get a native battery icon, the dongle can present an extra
+USB HID **UPS Battery** interface (Power Device usage page), which Windows'
+built-in `hidups.sys` / HidBatt stack turns into a system battery in the tray
+and in Power Settings — the same mechanism commercial UPS devices use.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Windows Native Battery (UPS) | Off / Real / Simulated | Off | **Off** removes the extra USB interface entirely. **Real** mirrors the controller's actual Bluetooth battery (level + charging state). **Simulated** reports a fixed level you set. Changing between Off and any mode re-enumerates the device, so the portal reconnects on save. |
+| Simulated battery level | 0–100 % | 80 | The level reported in Simulated mode. The firmware clamps the *reported* level to a 5 % minimum so Windows never treats the emulated battery as critical. |
+
+**Caveats**
+
+- This is a *system battery*: Windows power management sees it like a desktop
+  PC/UPS battery. Keep the level at a safe value (the 5 % floor is enforced in
+  firmware) or the OS may trigger its configured critical-battery action
+  (hibernate/shutdown) when the emulated level is very low.
+- "Real" mode reflects the *controller's* battery, not a battery inside the
+  dongle itself. The tray icon therefore shows the DualSense's charge.
+- First-time users may need to unplug/replug the dongle (or just re-save with
+  the mode set) for Windows to enumerate the new HID interface. If the battery
+  icon does not appear, check Device Manager for a "HID UPS Battery" device
+  under Batteries.
+- On macOS/Linux the same interface appears as a UPS/power device, not a
+  system battery.
+
 ### Advanced — BT Latency (experimental)
 
 | Setting | Default | Notes |
@@ -1150,7 +1185,8 @@ The panel warns you when the enable state has changed but not yet been saved.
 
 - **Saving / PlayStation app:** Settings are written to flash and applied
   immediately. Most settings apply live with no reconnect; only a few that require
-  USB re-enumeration (polling rate, audio buffer, mic/speaker enable, wake) trigger
+  USB re-enumeration (polling rate, audio buffer, mic/speaker enable, wake, the
+  Windows battery mode) trigger
   a brief reconnect on save. If you have the PlayStation accessory app open, after
   saving you may need to **wait 2–3 seconds** before reopening the setting to see
   the updated value, or simply **open it a second time** — the display lags

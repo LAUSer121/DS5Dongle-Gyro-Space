@@ -339,6 +339,8 @@ const FIELD_ZH = {
   rstick_invert: { label:'反转右摇杆', opts:['X（水平）','Y（垂直）'] },
   bt_flush_timeout: { label:'蓝牙刷新超时（0=关闭）', opts:{0:'关闭（可靠）',4:'约 2.5ms（低延迟）',6:'约 3.75ms',10:'约 6.25ms',16:'约 10ms'} },
   bt_qos_latency_us: { label:'蓝牙 QoS 延迟（0=关闭）', opts:{0:'关闭',5000:'5ms（激进）',10000:'10ms',15000:'15ms',20000:'20ms（宽松）'} },
+  battery_mode: { label:'Windows 原生电池（UPS）', opts:{0:'关闭',1:'真实电量（蓝牙手柄）',2:'模拟电量（固定值）'} },
+  battery_fake: { label:'模拟电量（%，最低 5%）' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -392,6 +394,12 @@ const SECTIONS = [
     [0x07,'disable_inactive_disconnect','u8','Disable Inactive Disconnect','bool'],
     [0x08,'disable_pico_led','u8','Disable Pico LED','bool'],
     [0x11,'enable_wake','u8','Wake PC on PS Button','bool'],
+    // Windows native battery (v1.20.0): battery_mode toggling changes the USB
+    // descriptor, so it is listed in ENUM_FIELDS below (reconnect on save).
+    // Simulated levels below 5% are clamped by the firmware so Windows never
+    // treats the emulated battery as critical (hibernate/shutdown).
+    [0x6d,'battery_mode','u8','Windows Native Battery (UPS)','select',{0:'Off',1:'Real (Bluetooth controller)',2:'Simulated (fixed level)'}],
+    [0x6e,'battery_fake','u8','Simulated battery level (%) — min 5 shown','number',[0,100]],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -567,6 +575,9 @@ const DESCRIPTIONS = {
   // Advanced - BT Latency
   bt_flush_timeout: "Caps how long Bluetooth batches reports - lower cuts latency but can drop packets.",
   bt_qos_latency_us: "Requests a Bluetooth latency target - aggressive is snappier but less reliable.",
+  // Windows native battery (UPS)
+  battery_mode: "Adds an extra USB HID UPS Battery interface so Windows shows a system battery for the dongle in the tray / power settings (the only native battery display possible over USB). Real mirrors the controller's actual Bluetooth battery; Simulated reports a fixed level. Changing this re-enumerates the device, so the portal reconnects on save.",
+  battery_fake: "Level reported to Windows in Simulated mode. The firmware clamps reports to 5% minimum so the emulated battery never trips Windows' critical action (hibernate/shutdown).",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
@@ -2336,7 +2347,7 @@ async function saveAll(){
     // saves. Adding either of them to the portal later means adding it here too.
     const ENUM_FIELDS = ['controller_mode','polling_rate_mode','audio_buffer_length',
                          'disable_mic','disable_speaker','enable_wake',
-                         'disable_usb_sn'];
+                         'disable_usb_sn','battery_mode'];
     let needReconnect = false;
     for (const k of ENUM_FIELDS){
       if (savedSnapshot[k] !== config[k]) { needReconnect = true; break; }
@@ -3452,9 +3463,13 @@ function statusHTML(){
   const hs = (st1 & 1) ? t('已连接','connected') : t('未连接','not connected');
   const mc = (st1 & 2) ? t('已连接','connected') : t('未连接','not connected');
   const hw = `SONY 0x${(device ? device.productId : 0).toString(16).toUpperCase()}${fwVer ? ` · ${t('固件','FW')} v${fwVer.maj}.${fwVer.min}.${fwVer.pat} (${t('配置','config')} v${fwVer.cfgv})` : ''}`;
+  const bm = +config['battery_mode'] || 0;
+  const bmTxt = bm === 2 ? t(`模拟 ${Math.min(Math.max(+config['battery_fake'] || 80, 5), 100)}%`, `simulated ${Math.min(Math.max(+config['battery_fake'] || 80, 5), 100)}%`)
+               : bm === 1 ? t('真实（蓝牙）','real (BT)') : t('关闭','off');
   return statusRow(t('报文序号','Report seq'), seq)
        + statusRow(t('充电状态','Charging'), charge)
        + statusRow(t('电池电量','Battery'), `${pct}%`)
+       + statusRow(t('Windows 电池','Windows battery'), bmTxt)
        + statusRow(t('麦克风状态','Microphone'), mc)
        + statusRow(t('耳机状态','Headset'), hs)
        + statusRow(t('报告速率','Report rate'), `${inputRate} Hz`)
@@ -3549,6 +3564,10 @@ const SUB_DIVIDERS = {
 // place identical markup into grid cells without duplicating any of it.
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
+  // Simulated battery level only makes sense while battery_mode == 2; the
+  // mode select re-renders on change (reRender list below), so the slider row
+  // appears/disappears with it. The value itself is always saved.
+  if (key === 'battery_fake' && +config['battery_mode'] !== 2) return '';
   const _zh = FIELD_ZH[key];
   const lbl = (_zh && _zh.label) ? _zh.label : label;
   let html = '';
@@ -3587,7 +3606,7 @@ function fieldRowHTML(f){
     // NOTE: never embed a JSON array here - its double quotes close the onchange
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
-    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','battery_mode'].includes(key);
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
     { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl2] of pairs){ const l3 = (_zh && _zh.opts && _zh.opts[String(v)] != null) ? _zh.opts[String(v)] : lbl2; html += `<option value="${v}" ${config[key]==v?'selected':''}>${l3}</option>`; } }
     html += `</select>`;
@@ -3654,7 +3673,7 @@ function render(){
         <div class="logo">DS</div>
         <div>
           <div class="brand-title">${t('DS5 Bridge 配置','DS5 Studio Bridge')}</div>
-          <div class="brand-sub">v1.19.0 · ${t('DualSense 无线适配器配置门户','DualSense wireless dongle config portal')}</div>
+          <div class="brand-sub">v1.20.0 · ${t('DualSense 无线适配器配置门户','DualSense wireless dongle config portal')}</div>
         </div>
       </div>
       <div class="lang-switch" role="group" aria-label="Language / 语言">
