@@ -1654,7 +1654,7 @@ function ceActiveWindows(list){
 // sleeps since it was last powered up, rather than leaving us to guess.
 async function readWakeDiag(){
   const box = document.getElementById('wakediag');
-  if (box) box.innerHTML = 'Reading…';
+  if (box) box.innerHTML = t('正在读取…','Reading…');
   try {
     const r = await hidLocked(async () => {
       await sendCmd(0x16, []);
@@ -1668,42 +1668,52 @@ async function readWakeDiag(){
                 c: { req: r[22], acc: r[23], dcd: r[24], reiss: r[25], resumed: r[26],
                      key: r[27], hidWait: r[28], hidTo: r[29], end: r[30] } };
     const warn = [];
-    if (d.recSusp) warn.push(`${d.recSusp} suspend${d.recSusp===1?' was':'s were'} genuinely missed by the USB callback and only caught by polling — the backstop did its job, but it means the USB stack is dropping suspend notifications.`);
-    if (d.cb && !d.rwEn) warn.push('The host did NOT permit remote wakeup on the last suspend. Enable "Allow this device to wake the computer" for the dongle in Device Manager.');
-    if (d.disc && !d.discOk) warn.push('The last disconnect found no live Bluetooth link — the controller was already gone.');
-    if (d.wakes && !d.tudOk && !d.dcd) warn.push('Wake attempts were made but the USB bus was not suspended at the time.');
-    if (d.reissue) warn.push(`${d.reissue} resume pulse${d.reissue===1?' was':'s were'} re-sent because the host did not come back after the first — the host is missing or ignoring the wake signal, not the dongle failing to send it.`);
-    let h = `<table style="font-size:12px"><tr><td style="padding-right:10px">Suspends seen (callback)</td><td><b>${d.cb}</b></td></tr>`
-      + `<tr><td>…genuinely missed, caught by polling</td><td><b>${d.recSusp}</b></td></tr>`
-      + `<tr><td>Resumes recovered by polling</td><td>${d.recRes}</td></tr>`
-      + `<tr><td>Controller disconnects</td><td>${d.disc} (last ${d.discOk ? 'had a live link' : 'found none'})</td></tr>`
-      + `<tr><td>Wake requests</td><td>${d.wakes} (last: TinyUSB ${d.tudOk ? 'accepted' : 'refused'}${d.dcd ? `, forced ${d.dcd}x` : ''})</td></tr>`
-      + `<tr><td>Resume pulses re-sent</td><td>${d.reissue}</td></tr>`
-      + `<tr><td>Host permitted remote wakeup</td><td><b>${d.rwEn ? 'yes' : 'NO'}</b></td></tr>`
-      + `<tr><td>Suspended right now</td><td>${d.nowSusp ? 'yes' : 'no'}</td></tr></table>`;
+    if (d.recSusp) warn.push(t(
+      `${d.recSusp} 次挂起被 USB 回调遗漏，仅靠轮询补回 — 兜底生效，但说明 USB 栈在丢弃挂起通知。`,
+      `${d.recSusp} suspend${d.recSusp===1?' was':'s were'} genuinely missed by the USB callback and only caught by polling — the backstop did its job, but it means the USB stack is dropping suspend notifications.`));
+    if (d.cb && !d.rwEn) warn.push(t(
+      '主机在最近一次挂起时未允许远程唤醒。请在设备管理器中为该适配器启用“允许此设备唤醒计算机”。',
+      'The host did NOT permit remote wakeup on the last suspend. Enable "Allow this device to wake the computer" for the dongle in Device Manager.'));
+    if (d.disc && !d.discOk) warn.push(t(
+      '最近一次断开时没有找到活动的蓝牙链路 — 手柄早已断开。',
+      'The last disconnect found no live Bluetooth link — the controller was already gone.'));
+    if (d.wakes && !d.tudOk && !d.dcd) warn.push(t(
+      '曾尝试唤醒，但当时 USB 总线并未挂起。',
+      'Wake attempts were made but the USB bus was not suspended at the time.'));
+    if (d.reissue) warn.push(t(
+      `${d.reissue} 个恢复脉冲因主机在第一次后未回来而重发 — 是主机丢失或忽略唤醒信号，不是适配器发送失败。`,
+      `${d.reissue} resume pulse${d.reissue===1?' was':'s were'} re-sent because the host did not come back after the first — the host is missing or ignoring the wake signal, not the dongle failing to send it.`));
+    let h = `<table style="font-size:12px"><tr><td style="padding-right:10px">${t('挂起次数（回调）','Suspends seen (callback)')}</td><td><b>${d.cb}</b></td></tr>`
+      + `<tr><td>${t('…真正遗漏、由轮询补回','…genuinely missed, caught by polling')}</td><td><b>${d.recSusp}</b></td></tr>`
+      + `<tr><td>${t('由轮询恢复的唤醒','Resumes recovered by polling')}</td><td>${d.recRes}</td></tr>`
+      + `<tr><td>${t('手柄断开','Controller disconnects')}</td><td>${d.disc} (${t('上次','last')} ${d.discOk ? t('有活动链路','had a live link') : t('未找到','found none')})</td></tr>`
+      + `<tr><td>${t('唤醒请求','Wake requests')}</td><td>${d.wakes} (${t('上次：TinyUSB','last: TinyUSB')} ${d.tudOk ? t('已接受','accepted') : t('拒绝','refused')}${d.dcd ? `, ${t('强制','forced')} ${d.dcd}x` : ''})</td></tr>`
+      + `<tr><td>${t('重发的恢复脉冲','Resume pulses re-sent')}</td><td>${d.reissue}</td></tr>`
+      + `<tr><td>${t('主机允许远程唤醒','Host permitted remote wakeup')}</td><td><b>${d.rwEn ? t('是','yes') : t('否','NO')}</b></td></tr>`
+      + `<tr><td>${t('当前已挂起','Suspended right now')}</td><td>${d.nowSusp ? t('是','yes') : t('否','no')}</td></tr></table>`;
     if (warn.length) h += `<div style="margin-top:6px;font-size:11px;color:#e0a030">⚠ ${warn.join('<br>⚠ ')}</div>`;
     // The decisive part: what happened during the MOST RECENT sleep, rather than
     // totals that mix in every button press since the dongle was powered up.
     const c = d.c;
     if (c.req || c.resumed){
-      const step = !c.req      ? 'no wake was ever requested — the controller never reconnected, or the bridge did not think the PC was asleep'
-                 : !c.acc && !c.dcd ? 'the wake request was refused and no fallback ran'
-                 : !c.resumed  ? 'the wake signal was sent but the PC never came back'
-                 : c.hidTo     ? 'the PC came back but its keyboard channel never opened, so the wake keypress could not be sent'
-                 : !c.key      ? 'the PC came back but the wake keypress was not sent'
-                 : 'the wake keypress was delivered — this sleep looks successful';
+      const step = !c.req      ? t('从未请求唤醒 — 手柄没有重连，或适配器不认为电脑已休眠','no wake was ever requested — the controller never reconnected, or the bridge did not think the PC was asleep')
+                 : !c.acc && !c.dcd ? t('唤醒请求被拒绝且没有回退运行','the wake request was refused and no fallback ran')
+                 : !c.resumed  ? t('唤醒信号已发出但电脑没有回来','the wake signal was sent but the PC never came back')
+                 : c.hidTo     ? t('电脑回来了但其键盘通道从未打开，唤醒按键无法发出','the PC came back but its keyboard channel never opened, so the wake keypress could not be sent')
+                 : !c.key      ? t('电脑回来了但唤醒按键未发出','the PC came back but the wake keypress was not sent')
+                 : t('唤醒按键已送达 — 这次休眠看起来成功','the wake keypress was delivered — this sleep looks successful');
       h += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--line,#333)">`
-        + `<b style="font-size:12px">Most recent sleep</b>`
-        + `<table style="font-size:12px"><tr><td style="padding-right:10px">Wake requests during it</td><td>${c.req} (${c.acc} accepted${c.dcd?`, ${c.dcd} forced`:''})</td></tr>`
-        + `<tr><td>Resume pulses re-sent</td><td>${c.reiss}</td></tr>`
-        + `<tr><td>PC came back</td><td><b>${c.resumed ? 'yes' : 'NO'}</b></td></tr>`
-        + `<tr><td>Wake keypress sent</td><td><b>${c.key ? 'yes' : 'no'}</b>${c.hidTo ? ' — keyboard channel never opened' : (c.hidWait ? ' (waited for the keyboard channel)' : '')}</td></tr></table>`
-        + `<div style="margin-top:4px;font-size:11px;color:#e0a030">Where it got to: ${step}.</div></div>`;
+        + `<b style="font-size:12px">${t('最近一次休眠','Most recent sleep')}</b>`
+        + `<table style="font-size:12px"><tr><td style="padding-right:10px">${t('期间的唤醒请求','Wake requests during it')}</td><td>${c.req} (${c.acc} ${t('已接受','accepted')}${c.dcd?`, ${t('强制','forced')} ${c.dcd}x`:''})</td></tr>`
+        + `<tr><td>${t('重发的恢复脉冲','Resume pulses re-sent')}</td><td>${c.reiss}</td></tr>`
+        + `<tr><td>${t('电脑回来了','PC came back')}</td><td><b>${c.resumed ? t('是','yes') : t('否','NO')}</b></td></tr>`
+        + `<tr><td>${t('唤醒按键已发送','Wake keypress sent')}</td><td><b>${c.key ? t('是','yes') : t('否','no')}</b>${c.hidTo ? ` — ${t('键盘通道从未打开','keyboard channel never opened')}` : (c.hidWait ? ` (${t('等待键盘通道','waited for the keyboard channel')})` : '')}</td></tr></table>`
+        + `<div style="margin-top:4px;font-size:11px;color:#e0a030">${t('进展到：','Where it got to: ')}${step}.</div></div>`;
     }
-    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">Totals reset when the dongle loses power, and include button presses made while awake. The <b>Most recent sleep</b> block is the one to read after a failed wake.</div>`;
+    h += `<div style="margin-top:6px;font-size:11px;color:var(--sub)">${t('通电期间的总计在适配器断电时清零，并包含唤醒状态下的按键。失败唤醒后要看 <b>最近一次休眠</b> 那一块。','Totals reset when the dongle loses power, and include button presses made while awake. The <b>Most recent sleep</b> block is the one to read after a failed wake.')}</div>`;
     if (box) box.innerHTML = h;
   } catch(e){
-    if (box) box.innerHTML = `<span style="color:#e0a030">Read failed: ${e && e.message ? e.message : e}</span>`;
+    if (box) box.innerHTML = `<span style="color:#e0a030">${t('读取失败：','Read failed: ')}${e && e.message ? e.message : e}</span>`;
   }
 }
 
@@ -2449,17 +2459,17 @@ async function readDiag(){
   } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null}; }
 }
 function rssiLabel(r){
-  if (r === null || r === undefined) return 'n/a';
+  if (r === null || r === undefined) return t('无','n/a');
   // The Pico W radio (CYW43) reports Bluetooth Classic RSSI relative to a
   // "golden receive range", not absolute dBm: values near 0 mean the signal is
   // in the ideal range; larger magnitude (either sign) means it's drifting out
   // of that range. So small |r| = good link, large |r| = marginal.
   const mag = Math.abs(r);
   let q;
-  if (mag <= 10) q = 'strong';
-  else if (mag <= 20) q = 'good';
-  else if (mag <= 30) q = 'fair';
-  else q = 'weak';
+  if (mag <= 10) q = t('强','strong');
+  else if (mag <= 20) q = t('良好','good');
+  else if (mag <= 30) q = t('一般','fair');
+  else q = t('弱','weak');
   return `${r} (${q})`;
 }
 // Auto-haptics live meter, shown on the Haptics tab right under its settings so
@@ -2468,16 +2478,16 @@ function rssiLabel(r){
 // peak / 0x6b audio-in peak), which are peak-hold + cleared on read.
 function ahMeterHTML(ahf, ahi, aho){
   if (ahf === null || ahf === undefined)
-    return `<span style="color:var(--sub)">Connect to see live auto-haptics activity.</span>`;
+    return `<span style="color:var(--sub)">${t('连接后可查看实时自动触觉活动。','Connect to see live auto-haptics activity.')}</span>`;
   const active = ahf > 0;
   const bar = (v, c) => `<span style="display:inline-block;width:160px;height:10px;background:#222;border-radius:3px;vertical-align:middle;overflow:hidden"><span style="display:block;width:${Math.min(100, Math.round((v/255)*100))}%;height:100%;background:${c}"></span></span>`;
-  let h = `Audio bridge: ${active ? '<b style="color:#4caf50">active</b>' : '<b style="color:#e0a030">not detected</b>'} `
-    + `<span style="color:var(--sub)">${active ? `(${ahf} audio frames in the last second)` : '(no audio arriving on the dongle — auto-haptics derives from PC audio, so start ds5audio.py)'}</span>`
-    + `<div style="margin-top:6px">Audio in (ch0/1):&nbsp; ${bar(ahi, '#4a90d9')} <span style="color:var(--sub)">${ahi}/255</span></div>`
-    + `<div style="margin-top:4px">Haptics out (derived):&nbsp; ${bar(aho, '#a070d0')} <span style="color:var(--sub)">${aho}/255</span></div>`;
+  let h = `${t('音频桥：','Audio bridge: ')}${active ? `<b style="color:#4caf50">${t('活动','active')}</b>` : `<b style="color:#e0a030">${t('未检测到','not detected')}</b>`} `
+    + `<span style="color:var(--sub)">${active ? `(${ahf} ${t('音频帧/秒','audio frames in the last second')})` : `(${t('适配器没有收到音频 — 自动触觉从电脑音频推导，请启动 ds5audio.py','no audio arriving on the dongle — auto-haptics derives from PC audio, so start ds5audio.py')})`}</span>`
+    + `<div style="margin-top:6px">${t('音频输入（ch0/1）：','Audio in (ch0/1): ')}&nbsp; ${bar(ahi, '#4a90d9')} <span style="color:var(--sub)">${ahi}/255</span></div>`
+    + `<div style="margin-top:4px">${t('触觉输出（推导）：','Haptics out (derived): ')}&nbsp; ${bar(aho, '#a070d0')} <span style="color:var(--sub)">${aho}/255</span></div>`;
   if (active && ahi > 20 && aho < 4)
-    h += `<div style="color:#e0a030;margin-top:4px">⚠ audio is arriving but almost no haptic is being derived — check Auto-Haptics Mode is on and the cutoff / intensity aren't too low</div>`;
-  h += `<div style="color:var(--sub);font-size:11px;margin-top:5px">Live peak over the last second — change a setting above and watch "Haptics out" respond (needs ds5audio.py running and game audio playing).</div>`;
+    h += `<div style="color:#e0a030;margin-top:4px">⚠ ${t('音频到达但几乎没有推导出触觉 — 请检查自动触觉模式已开启，且截止/强度没有过低','audio is arriving but almost no haptic is being derived — check Auto-Haptics Mode is on and the cutoff / intensity aren\'t too low')}</div>`;
+  h += `<div style="color:var(--sub);font-size:11px;margin-top:5px">${t('最近一秒的实时峰值 — 修改上方设置并观察“触觉输出”的响应（需要 ds5audio.py 运行且游戏有声音）。','Live peak over the last second — change a setting above and watch "Haptics out" respond (needs ds5audio.py running and game audio playing).')}</div>`;
   return h;
 }
 async function readAhMeter(){
@@ -2493,27 +2503,27 @@ async function refreshDiag(){
   if(el){
     let extra = '';
     if (d.c01 !== null && d.c01 !== undefined)
-      extra += `<br>Audio signal: ch0-1 (speaker/DSP source)=${d.c01}, ch2-3 (native actuators)=${d.c23}  (ch0-1 must be >0 for auto-haptics/effect-leak — if 0 here, the audio routing isn't putting game sound on those channels)`;
+      extra += `<br>${t('音频信号：ch0-1（扬声器/DSP 源）=','Audio signal: ch0-1 (speaker/DSP source)=')}${d.c01}, ${t('ch2-3（原生执行器）=','ch2-3 (native actuators)=')}${d.c23}  (${t('ch0-1 必须 >0 自动触觉/效果泄漏才能工作 — 如果这里是 0，说明音频路由没有把游戏声音送到这些声道','ch0-1 must be >0 for auto-haptics/effect-leak — if 0 here, the audio routing isn\'t putting game sound on those channels')})`;
     if (d.gy !== null && d.gy !== undefined)
-      extra += `<br>Gyro |raw| (horizontal): ${d.gy}  (0 = gyro off or controller still — wave it to calibrate sensitivity)`;
+      extra += `<br>${t('陀螺仪 |原始|（水平）：','Gyro |raw| (horizontal): ')}${d.gy}  (${t('0 = 陀螺仪关闭或手柄静止 — 挥动一下以校准灵敏度','0 = gyro off or controller still — wave it to calibrate sensitivity')})`;
     if (d.sy !== null && d.sy !== undefined){
       const f = [];
-      if (d.sy & 1)  f.push('game-owns-L2');
-      if (d.sy & 2)  f.push('game-owns-R2');
-      if (d.sy & 4)  f.push('synth-L2');
-      if (d.sy & 8)  f.push('synth-R2');
-      if (d.sy & 16) f.push('AT-engaged');
-      if (d.sy & 32) f.push('KICK');
-      extra += `<br>Trigger synthesis: ${f.length ? f.join(' · ') : 'idle'}  (game-owns = your r2t/at yield; use Force override to take over)`;
+      if (d.sy & 1)  f.push(t('游戏控制-L2','game-owns-L2'));
+      if (d.sy & 2)  f.push(t('游戏控制-R2','game-owns-R2'));
+      if (d.sy & 4)  f.push(t('合成-L2','synth-L2'));
+      if (d.sy & 8)  f.push(t('合成-R2','synth-R2'));
+      if (d.sy & 16) f.push(t('自适应扳机已启用','AT-engaged'));
+      if (d.sy & 32) f.push(t('踢击','KICK'));
+      extra += `<br>${t('扳机合成：','Trigger synthesis: ')}${f.length ? f.join(' · ') : t('空闲','idle')}  (${t('game-owns = 你的 r2t/at 让位；用“强制覆盖”接管','game-owns = your r2t/at yield; use Force override to take over')})`;
       if (d.ke !== null && d.ke !== undefined)
-        extra += `<br>Push-back envelope: ${d.ke}/255  (must rise with rumble/gunfire while AT-engaged; kick fires at >=32 - if this stays 0 during rumble, the selected source isn't producing signal)`;
+        extra += `<br>${t('回推包络：','Push-back envelope: ')}${d.ke}/255  (${t('自适应扳机启用时必须随震动/枪声上升；踢击在 >=32 触发 — 如果震动时一直是 0，说明所选源没有产生信号','must rise with rumble/gunfire while AT-engaged; kick fires at >=32 - if this stays 0 during rumble, the selected source isn\'t producing signal')})`;
     }
     if (d.rl !== null && d.rl !== undefined) {
       const rq = [];
-      if (d.rf & 1) rq.push('EnableRumbleEmulation');
-      if (d.rf & 2) rq.push('UseRumbleNotHaptics');
-      if (d.rf & 4) rq.push('Improved');
-      extra += `<br>Rumble from host: peak L=${d.rl} R=${d.rr} since last read, requested: ${rq.length ? rq.join(' + ') : 'none'}  (peak-hold, so any burst in the last second registers. Non-zero = the game sends motor values, which Mix carries via Converted Rumble Strength. Zero while you feel vibration = it is delivered as haptic audio on ch3/4 instead, carried by Native Passthrough)`;
+      if (d.rf & 1) rq.push(t('启用震动仿真','EnableRumbleEmulation'));
+      if (d.rf & 2) rq.push(t('用震动而非触觉','UseRumbleNotHaptics'));
+      if (d.rf & 4) rq.push(t('改进','Improved'));
+      extra += `<br>${t('来自主机的震动：','Rumble from host: ')}${t('自上次读取以来峰值 L=','peak L=')}${d.rl} ${t('R=','R=')}${d.rr}，${t('请求：','requested: ')}${rq.length ? rq.join(' + ') : t('无','none')}  (${t('峰值保持，所以最后一秒内的任何爆发都会记录。非零 = 游戏发送电机值，混合模式通过“转换震动强度”承载。如果你感觉到震动但这里是 0，说明它是作为 ch3/4 的触觉音频传送的，由“原生直通”承载','peak-hold, so any burst in the last second registers. Non-zero = the game sends motor values, which Mix carries via Converted Rumble Strength. Zero while you feel vibration = it is delivered as haptic audio on ch3/4 instead, carried by Native Passthrough')})`;
     }
     // Battery from the DualSense input report: low nibble = level 0-10 (x10 = %),
     // high nibble = charge state. Shown first as it is the headline device stat.
@@ -2523,11 +2533,11 @@ async function refreshDiag(){
     if (d.bat){
       const lvl = d.bat & 0x0F, st = (d.bat >> 4) & 0x0F;
       const pct = Math.min(lvl * 10, 100);
-      const status = st === 1 ? 'charging' : st === 2 ? 'full' : st >= 0x0F ? 'charge error' : 'on battery';
+      const status = st === 1 ? t('充电中','charging') : st === 2 ? t('已充满','full') : st >= 0x0F ? t('电量异常','charge error') : t('未充电','on battery');
       const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
-      batLine = `Battery: <b style="color:${col}">${pct}%</b> · ${status}<br>`;
+      batLine = `${t('电池：','Battery: ')}<b style="color:${col}">${pct}%</b> · ${status}<br>`;
     }
-    el.innerHTML = batLine + `Live audio stream: bytes_read=${d.br}, detected channels=${d.ch}  (4=native, 2=Windows/DS4Windows stereo)<br>Bluetooth signal: ${rssiLabel(d.rssi)}${extra}`;
+    el.innerHTML = batLine + `${t('实时音频流：','Live audio stream: ')}bytes_read=${d.br}, detected channels=${d.ch}  (${t('4=原生，2=Windows/DS4Windows 立体声','4=native, 2=Windows/DS4Windows stereo')})<br>${t('蓝牙信号：','Bluetooth signal: ')}${rssiLabel(d.rssi)}${extra}`;
   }
 }
 setInterval(()=>{
@@ -2544,30 +2554,32 @@ setInterval(()=>{
 // Two canvases on the Gyro tab: 3-axis gyroscope and 3-axis accelerometer, fed
 // from read-only firmware diagnostics at ~10 Hz so the sensor wave can be seen
 // while tuning gyro aiming. Polling only runs while the Gyro tab is on screen.
-const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Accelerometer Live Curves <span style="font-size:11px;color:var(--sub)">(raw LSB · ~10 Hz · fields 0x77-0x7C)</span></div>
-  <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Move the controller to see the sensor wave. Top: gyroscope 3 axes (rate, raw int16). Bottom: accelerometer 3 axes (raw int16). Curves stream only while this tab is open.</div>
+// Built as a function (not a load-time const) so the t() calls re-evaluate when
+// the user switches the portal language.
+function imuCardHTML(){ return `<div class="card"><div class="card-title">${t('陀螺仪与加速度计实时曲线','Gyro &amp; Accelerometer Live Curves')} <span style="font-size:11px;color:var(--sub)">(raw LSB · ~10 Hz · fields 0x77-0x7C)</span></div>
+  <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('挥动手柄查看传感器波形。上：陀螺仪 3 轴（角速度，原始 int16）。下：加速度计 3 轴（原始 int16）。曲线仅在此标签页打开时流动。','Move the controller to see the sensor wave. Top: gyroscope 3 axes (rate, raw int16). Bottom: accelerometer 3 axes (raw int16). Curves stream only while this tab is open.')}</div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:6px">
-    <span><span style="color:#ff4d6d;font-weight:bold">—</span> GX (pitch)</span>
-    <span><span style="color:#4dc3ff;font-weight:bold">—</span> GY (roll)</span>
-    <span><span style="color:#ffd166;font-weight:bold">—</span> GZ (yaw)</span>
+    <span><span style="color:#ff4d6d;font-weight:bold">—</span> ${t('GX（俯仰）','GX (pitch)')}</span>
+    <span><span style="color:#4dc3ff;font-weight:bold">—</span> ${t('GY（横滚）','GY (roll)')}</span>
+    <span><span style="color:#ffd166;font-weight:bold">—</span> ${t('GZ（偏航）','GZ (yaw)')}</span>
     <span style="margin-left:12px"><span style="color:#06d6a0;font-weight:bold">—</span> AX</span>
     <span><span style="color:#b388ff;font-weight:bold">—</span> AY</span>
     <span><span style="color:#ff8fab;font-weight:bold">—</span> AZ</span>
   </div>
   <div id="imuCurveBox">
-    <div style="font-size:11px;color:var(--sub);margin-bottom:2px">Gyroscope (raw int16 LSB)</div>
+    <div style="font-size:11px;color:var(--sub);margin-bottom:2px">${t('陀螺仪（原始 int16 LSB）','Gyroscope (raw int16 LSB)')}</div>
     <canvas id="gyroCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
-    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">Accelerometer (raw int16 LSB)</div>
+    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">${t('加速度计（原始 int16 LSB）','Accelerometer (raw int16 LSB)')}</div>
     <canvas id="accelCurve" style="width:100%;height:140px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
-    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">Stick Output (deg/s ×100 · fields 0x70-0x71) <span style="color:#ff4d6d">—</span> X <span style="color:#4dc3ff">—</span> Y</div>
+    <div style="font-size:11px;color:var(--sub);margin:10px 0 2px">${t('摇杆输出（度/秒 ×100 · fields 0x70-0x71）','Stick Output (deg/s ×100 · fields 0x70-0x71)')} <span style="color:#ff4d6d">—</span> X <span style="color:#4dc3ff">—</span> Y</div>
     <canvas id="stickCurve" style="width:100%;height:120px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
   </div>
-  <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">waiting for sensor stream…</div>
+  <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">${t('等待传感器数据流…','waiting for sensor stream…')}</div>
   <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
     <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">${t('● 录制','● Record')}</button>
-    <span id="recStatus" style="font-size:12px;color:var(--sub)">Not recording</span>
+    <span id="recStatus" style="font-size:12px;color:var(--sub)">${t('未在录制','Not recording')}</span>
   </div>
-</div>`;
+</div>`; }
 
 const IMU_KEYS = [[0x77,'gx','i16'],[0x78,'gy','i16'],[0x79,'gz','i16'],
                   [0x7a,'ax','i16'],[0x7b,'ay','i16'],[0x7c,'az','i16'],
@@ -2635,7 +2647,7 @@ async function pollImu(){
               drawImuCurve('accelCurve', ['ax','ay','az'], ['#06d6a0','#b388ff','#ff8fab']);
               drawImuCurve('stickCurve', ['sx','sy'], ['#ff4d6d','#4dc3ff']);
               const el = document.getElementById('imuLive');
-              if (el) el.innerHTML = `GX=${got.gx} GY=${got.gy} GZ=${got.gz} · AX=${got.ax} AY=${got.ay} AZ=${got.az} · Stick X=${got.sx} Y=${got.sy}`;
+              if (el) el.innerHTML = `GX=${got.gx} GY=${got.gy} GZ=${got.gz} · AX=${got.ax} AY=${got.ay} AZ=${got.az} · ${t('摇杆','Stick')} X=${got.sx} Y=${got.sy}`;
               if (_recording) pushRecordFrame(got); }
   } catch(_){ /* transient HID contention: skip this tick */ }
   finally { _imuBusy = false; }
@@ -2660,16 +2672,16 @@ function toggleRecord(){
     _recordBuf = [];
     _recordStart = Date.now();
     const btn = document.getElementById('recBtn');
-    if (btn){ btn.textContent = '\u23f9 Stop & Download'; btn.style.background = '#555'; }
+    if (btn){ btn.textContent = t('⏹ 停止并下载','\u23f9 Stop & Download'); btn.style.background = '#555'; }
     const st = document.getElementById('recStatus');
-    if (st){ st.innerHTML = '<span style="color:#ff4d6d">● Recording…</span> move the controller, press Stop when done'; }
+    if (st){ st.innerHTML = `<span style="color:#ff4d6d">● ${t('录制中…','Recording…')}</span> ${t('挥动手柄，完成后按停止','move the controller, press Stop when done')}`; }
   } else {
     _recording = false;
     downloadCSV();
     const btn = document.getElementById('recBtn');
-    if (btn){ btn.textContent = '● Record'; btn.style.background = '#c41230'; }
+    if (btn){ btn.textContent = t('● 录制','● Record'); btn.style.background = '#c41230'; }
     const st = document.getElementById('recStatus');
-    if (st){ st.innerHTML = `Not recording (${_recordBuf.length} samples captured)`; }
+    if (st){ st.innerHTML = `${t('未在录制','Not recording')} (${_recordBuf.length} ${t('个样本','samples captured')})`; }
   }
 }
 
@@ -3579,7 +3591,9 @@ const SUB_DIVIDERS = {
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
   const _zh = FIELD_ZH[key];
-  const lbl = (_zh && _zh.label) ? _zh.label : label;
+  // FIELD_ZH carries the Chinese labels; only use them when the portal is in
+  // Chinese, otherwise fall back to the English label in the FIELDS tuple.
+  const lbl = (LANG === 'zh' && _zh && _zh.label) ? _zh.label : label;
   let html = '';
   const _d = SUB_DIVIDERS[key];
   if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${t(SUB_DIV_ZH[_d.label] || '', _d.label)}</div>`;
@@ -3603,7 +3617,7 @@ function fieldRowHTML(f){
     html += `<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end;align-items:center">`;
     (opts||[]).forEach((lbl,i) => {
       const mask = 1 << i;
-      const lbl2 = (_zh && _zh.opts && _zh.opts[i] != null) ? _zh.opts[i] : lbl;
+      const lbl2 = (LANG === 'zh' && _zh && _zh.opts && _zh.opts[i] != null) ? _zh.opts[i] : lbl;
       html += `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">`
             + `<input type="checkbox" ${(cur&mask)?'checked':''} onchange="config['${key}']=((+config['${key}']||0)&~${mask})|(this.checked?${mask}:0);(window._dirty=window._dirty||{})['${key}']=1" style="width:auto;margin:0"> ${lbl2}</label>`;
     });
@@ -3618,7 +3632,7 @@ function fieldRowHTML(f){
     // re-render here and emit only a bare call.
     const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
-    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl2] of pairs){ const l3 = (_zh && _zh.opts && _zh.opts[String(v)] != null) ? _zh.opts[String(v)] : lbl2; html += `<option value="${v}" ${config[key]==v?'selected':''}>${l3}</option>`; } }
+    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl2] of pairs){ const l3 = (LANG === 'zh' && _zh && _zh.opts && _zh.opts[String(v)] != null) ? _zh.opts[String(v)] : lbl2; html += `<option value="${v}" ${config[key]==v?'selected':''}>${l3}</option>`; } }
     html += `</select>`;
   } else {
     const [min,max]=opts;
@@ -3723,7 +3737,7 @@ function render(){
     if (section.title === 'Auto-Haptics & Speaker Effect Leak')
       html += `<div class="card"><div class="card-title">${t('自动触觉 — 实时','Auto-haptics — live')} <span style="font-size:11px;color:var(--sub)">${t('（连接时更新）','(updates while connected)')}</span></div><div id="ahbox" style="font-size:13px">${t('连接后可查看实时自动触觉活动。','Connect to see live auto-haptics activity.')}</div></div>`;
   }
-  if (tab === 'gyro') html += IMU_CARD_HTML;
+  if (tab === 'gyro') html += imuCardHTML();
   if (tab === 'lights') html += lightsHTML();
   html += `<div class="actions">
     <button class="btn btn-green" onclick="saveAll()">${t('保存到设备','Save to Device')}</button>
@@ -3797,12 +3811,12 @@ function render(){
     </div></div>` : '') + `
   ` + (tab==='device' ? `<div class="card"><div class="card-title">${t('设备状态','Device Status')}</div>
     <div id="statusbox" style="font-size:13px">${t('等待输入报告…','Waiting for input reports…')}</div></div>
-  <div class="card"><div class="card-title">Diagnostic</div>
-    <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div>
+  <div class="card"><div class="card-title">${t('诊断','Diagnostic')}</div>
+    <div id="diagbox" style="font-size:12px;color:var(--sub)">${t('正在读取实时流…','Reading live stream…')}</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
-      <span style="font-size:12px;color:var(--sub)">Wake troubleshooting — what the dongle observed across sleeps since it was powered up:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">Read wake diagnostics</button>
-      <div id="wakediag" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+      <span style="font-size:12px;color:var(--sub)">${t('唤醒排障 — 通电以来适配器在各次休眠中观察到的内容：','Wake troubleshooting — what the dongle observed across sleeps since it was powered up:')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">${t('读取唤醒诊断','Read wake diagnostics')}</button>
+      <div id="wakediag" style="font-size:12px;margin-top:6px">${t('尚未读取。','Nothing read yet.')}</div>
     </div></div>` : '') + `
   `;
   app.innerHTML=html;
