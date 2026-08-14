@@ -64,7 +64,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
-  - [Right Stick Inversion](#right-stick)
+  - [Right Stick Inversion](#right-stick-inversion)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
