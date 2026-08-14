@@ -126,6 +126,137 @@ const SLOT_REPORT = 0x84; // full 63-byte feature report (0x82 is only 9 bytes i
 // Fields grouped into sections. Each field: [id, key, type, label, kind, opts]
 // kind: 'number' | 'select' | 'bool' | 'bits' ; type: 'u8' | 'u16' | 'f32'
 // ('bits' = one checkbox per bit of a bitmask byte; opts is the array of bit labels)
+// ===== i18n: 中 / EN (auto-follows the browser/system language) =====
+// Defaults to Chinese when the browser language starts with "zh", English
+// otherwise. A manual toggle (top-right select) overrides it and is remembered
+// in localStorage. English is the source language; FIELD_ZH only carries the
+// Chinese overlay for labels and select/bits option text.
+const UI_LANG = (() => {
+  try { const s = localStorage.getItem('ds5portal_lang'); if (s === 'zh' || s === 'en') return s; } catch (_) {}
+  return (navigator.language || 'en').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+})();
+let LANG = UI_LANG;
+function t(zh, en){ return (LANG === 'zh' && zh) ? zh : en; }
+function langSet(l){
+  LANG = l;
+  try { localStorage.setItem('ds5portal_lang', l); } catch (_) {}
+  document.documentElement.lang = (l === 'zh') ? 'zh-CN' : 'en';
+  document.title = t('DS5 Bridge 配置', 'DS5 Bridge Config');
+  render();
+}
+const SECTION_ZH = {
+  'Auto-Haptics & Speaker Effect Leak': '自动触觉 & 扬声器效果泄漏',
+  'General Haptics & Audio': '常规触觉与音频',
+  'Native Haptics Filter': '原生触觉滤波',
+  'Rumble → Trigger': '震动 → 扳机',
+  'Adaptive Triggers — R2 (right trigger)': '自适应扳机 — R2（右扳机）',
+  'Adaptive Triggers — L2 (left trigger)': '自适应扳机 — L2（左扳机）',
+  'Gyro Aiming': '陀螺仪瞄准',
+  'Right Stick': '右摇杆',
+  'Device & Connection': '设备与连接',
+  'Advanced — BT Latency (experimental)': '高级 — 蓝牙延迟（实验性）',
+  'Macros': '宏',
+};
+const SUB_DIV_ZH = {
+  'Speaker Effect Leak': '扬声器效果泄漏',
+  'Custom captured effect': '自定义捕获效果',
+};
+const FIELD_ZH = {
+  auto_haptics_enable: { label:'模式', opts:{0:'关闭',1:'与原声混合',2:'替换（仅音频）'} },
+  auto_haptics_gain: { label:'强度（%）' },
+  auto_haptics_smooth: { label:'平滑度' },
+  auto_haptics_gate: { label:'噪声门' },
+  mix_native_level: { label:'混合中原生直通（%）— 0 用于非原生游戏' },
+  mix_native_filter: { label:'过滤混合中的原生直通', opts:{1:'过滤（默认）— 阻止 4 声道镜像泄漏',0:'原始 — 保留原生触觉'} },
+  ah_dsp_source: { label:'自动触觉 DSP 音源', opts:{0:'ch0/1（默认）— 与扬声器+泄漏同源',1:'ch2/3 — 仅脚本音源（运行 ds5audio --map rear）'} },
+  auto_haptics_lowpass_hz: { label:'低通截止（Hz）' },
+  ah_xover_hz: { label:'分频点（Hz，0=关闭；30-200，必须低于低通截止）' },
+  ah_low_gain: { label:'低频段增益（分频点以下 — 冲击）' },
+  ah_high_gain: { label:'高频段增益（分频点..截止 — 音乐/人声范围）' },
+  auto_haptics_slope: { label:'滤波斜率', opts:{6:'6 dB/oct（平缓）',12:'12 dB/oct（默认）',24:'24 dB/oct（陡峭）'} },
+  auto_mute_replace: { label:'自动静音扬声器（替换模式）' },
+  auto_mute_mix: { label:'自动静音扬声器（混合模式）' },
+  lightbar_off: { label:'替换模式下关闭灯条' },
+  rumble_haptic_strength: { label:'转换震动强度（混合）— 超过 100 会过载' },
+  effect_leak_volume: { label:'效果泄漏音量（0=关闭）' },
+  effect_leak_sensitivity: { label:'效果泄漏灵敏度' },
+  effect_leak_decay: { label:'效果泄漏衰减/淡出' },
+  effect_leak_attack: { label:'效果泄漏触发/响应' },
+  effect_leak_output_hp_hz: { label:'效果泄漏输出高通（Hz）' },
+  effect_leak_hp_hz: { label:'效果泄漏检测频段（Hz）' },
+  effect_leak_lp_hz: { label:'效果泄漏输出低通（Hz）— 泄漏窗口上限' },
+  effect_leak_max_burst: { label:'最大突发（x5 ms，0=不限）— 持续音只保留一个短促重音' },
+  effect_leak_hold: { label:'效果泄漏门保持（x5 ms）— 防止抖动/斩波' },
+  haptics_gain: { label:'原生触觉增益' },
+  speaker_volume: { label:'扬声器音量' },
+  headset_volume: { label:'耳机音量' },
+  speaker_gain: { label:'扬声器增益' },
+  sync_spk_headset_volume: { label:'同步扬声器与耳机音量' },
+  lock_volume: { label:'锁定音量' },
+  disable_mic: { label:'禁用麦克风' },
+  disable_speaker: { label:'禁用扬声器' },
+  macro_disable: { label:'宏' },
+  controller_mode: { label:'控制器类型', opts:{0:'DualSense（DS5）',1:'DualSense Edge（DSE）',2:'自动检测'} },
+  polling_rate_mode: { label:'轮询率', opts:{0:'250 Hz',1:'500 Hz',2:'实时'} },
+  audio_buffer_length: { label:'音频缓冲长度' },
+  inactive_time: { label:'空闲时间（分钟）' },
+  disable_inactive_disconnect: { label:'禁用空闲自动断开' },
+  disable_pico_led: { label:'禁用 Pico LED' },
+  enable_wake: { label:'按 PS 键唤醒电脑' },
+  haptics_aa: { label:'平滑（抗混叠滤波）', opts:{1:'关闭 — 原始质感（1.0.4 前）',2:'轻度 — 去毛刺保留干脆（推荐）',3:'强力 — 最大平滑（可能感觉沉闷）'} },
+  r2t_mode: { label:'模式', opts:{0:'关闭',1:'仅左扳机',2:'仅右扳机',3:'两个扳机'} },
+  r2t_on_press: { label:'仅在按下扳机时振动' },
+  r2t_strength: { label:'强度' },
+  r2t_frequency: { label:'振动频率' },
+  synth_force: { label:'强制覆盖（忽略游戏/应用的扳机效果 — 同时作用于 R2T 和自适应扳机）' },
+  at_mode: { label:'模式', opts:{0:'关闭',2:'始终开启',1:'由 L2 门控（瞄准扳机）',3:'由 L1 门控（肩键）'} },
+  at_strength: { label:'阻力强度' },
+  at_threshold: { label:'启动阈值（L2 按压深度）' },
+  at_start_pos: { label:'阻力起始位置' },
+  at_shape: { label:'阻力形状', opts:{0:'恒定',1:'斜坡（A → B）',2:'两段式卡点',3:'武器破坏（啪地穿过）'} },
+  at_strength_b: { label:'强度 B（斜坡末端 / 卡点墙）' },
+  at_detent_pos: { label:'卡点区域 / 断裂点' },
+  at_deadzone: { label:'激活死区（0=关闭；游戏从 N 区开始识别按压）' },
+  at_pushback: { label:'回推踢（后坐力）强度，0 = 无踢' },
+  at_kick_style: { label:'踢击样式', opts:{0:'振动闷响（嗡嗡）',1:'弓弦回弹（机械回推）'} },
+  at_pushback_freq: { label:'踢击闷响频率（越低越重）' },
+  at_pushback_src: { label:'踢击跟随（两个扳机共用）', opts:{0:'仅震动',1:'仅音频触觉',2:'震动 + 音频（最强）'} },
+  ce_r2_enable: { label:'自定义捕获效果 — 启用（在下方效果监视器中分配）', opts:{0:'关闭',1:'开启'} },
+  ce_r2_condition: { label:'自定义效果触发条件', opts:{0:'按住时',1:'按下时',2:'松开时'} },
+  ce_r2_thresh: { label:'自定义效果区域 — 按下/松开：触发点；按住型墙体：重新武装区（扳机回到该值以下时重置墙体；0 = 仅完全松开，无咔哒）' },
+  ce_r2_rate: { label:'自定义效果 A↔B 切换速率（仅两状态振动动作）' },
+  ce_r2_state_count: { label:'自定义效果状态数（由分配/文件加载自动设置）' },
+  ce_r2_yield: { label:'R2 自定义效果 vs 滑杆（门控 = L2 超过阈值，或肩键模式下由 L1 门控；滑杆侧需要在其覆盖的半程内启用阻力模式）', opts:{0:'自定义效果始终拥有 R2',1:'门控时用滑杆，否则用自定义效果',2:'门控时用自定义效果，否则用滑杆'} },
+  at_l2_mode: { label:'模式', opts:{0:'关闭',2:'始终开启',1:'由 R2 门控（开火扳机）',3:'由 R1 门控（肩键）'} },
+  at_l2_strength: { label:'阻力强度' },
+  at_l2_threshold: { label:'启动阈值（R2 按压深度）' },
+  at_l2_start_pos: { label:'阻力起始位置' },
+  at_l2_shape: { label:'阻力形状', opts:{0:'恒定',1:'斜坡（A → B）',2:'两段式卡点',3:'武器破坏（啪地穿过）'} },
+  at_l2_strength_b: { label:'强度 B（斜坡末端 / 卡点墙）' },
+  at_l2_detent_pos: { label:'卡点区域 / 断裂点' },
+  at_l2_deadzone: { label:'激活死区（0=关闭；游戏从 N 区开始识别按压）' },
+  at_l2_pushback: { label:'回推踢（后坐力）强度，0 = 无踢' },
+  at_l2_kick_style: { label:'踢击样式', opts:{0:'振动闷响（嗡嗡）',1:'弓弦回弹（机械回推）'} },
+  at_l2_pushback_freq: { label:'踢击闷响频率（越低越重）' },
+  ce_l2_enable: { label:'自定义捕获效果 — 启用（在下方效果监视器中分配）', opts:{0:'关闭',1:'开启'} },
+  ce_l2_condition: { label:'自定义效果触发条件', opts:{0:'按住时',1:'按下时',2:'松开时'} },
+  ce_l2_thresh: { label:'自定义效果区域 — 按下/松开：触发点；按住型墙体：重新武装区（扳机回到该值以下时重置墙体；0 = 仅完全松开，无咔哒）' },
+  ce_l2_rate: { label:'自定义效果 A↔B 切换速率（仅两状态振动动作）' },
+  ce_l2_state_count: { label:'自定义效果状态数（由分配/文件加载自动设置）' },
+  ce_l2_yield: { label:'L2 自定义效果 vs 滑杆（门控 = R2 超过阈值，或肩键模式下由 R1 门控；滑杆侧需要在其覆盖的半程内启用阻力模式）', opts:{0:'自定义效果始终拥有 L2',1:'门控时用滑杆，否则用自定义效果',2:'门控时用自定义效果，否则用滑杆'} },
+  gyro_mode: { label:'模式', opts:{0:'关闭',2:'始终开启',1:'仅按住 L2（瞄准）时',5:'仅按住 R2（开火）时',6:'仅按住 L1 时',7:'仅按住 R1 时',3:'仅触摸触摸板时',4:'始终开启 — 触摸触摸板暂停（鼠标抬起式）'} },
+  gyro_sens: { label:'灵敏度' },
+  gyro_axis: { label:'水平源（偏航空间）', opts:{0:'偏航（转动手柄）',1:'横滚（侧倾）'} },
+  gyro_space: { label:'空间（朝向映射）', opts:{0:'偏航 — 偏航（gyro_axis=0）或横滚（gyro_axis=1）到水平，俯仰到垂直（经典双轴）',1:'横滚 — 横滚到水平，俯仰到垂直（经典双轴）',2:'偏航 + 横滚 — 偏航与横滚（重力轴）到水平，俯仰到垂直（Steam 风格）',3:'本地空间 — 轴跟随手柄（默认，偏航→X 俯仰→Y）',4:'玩家空间 — 世界偏航 + 本地俯仰（Steam 风格）',5:'世界空间 — 重力对齐、与握姿无关（推荐）',6:'激光指针 — 前向向量的屏幕投影（相对激活时）'} },
+  gyro_fusion: { label:'融合增益（重力修正）' },
+  gyro_cal_x: { label:'陀螺仪校准偏移 X（原始）' },
+  gyro_cal_y: { label:'陀螺仪校准偏移 Y（原始）' },
+  gyro_cal_z: { label:'陀螺仪校准偏移 Z（原始）' },
+  gyro_invert: { label:'反转轴（0=无，1=X，2=Y，3=两者）' },
+  rstick_invert: { label:'反转右摇杆', opts:['X（水平）','Y（垂直）'] },
+  bt_flush_timeout: { label:'蓝牙刷新超时（0=关闭）', opts:{0:'关闭（可靠）',4:'约 2.5ms（低延迟）',6:'约 3.75ms',10:'约 6.25ms',16:'约 10ms'} },
+  bt_qos_latency_us: { label:'蓝牙 QoS 延迟（0=关闭）', opts:{0:'关闭',5000:'5ms（激进）',10000:'10ms',15000:'15ms',20000:'20ms（宽松）'} },
+};
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
     [0x12,'auto_haptics_enable','u8','Mode','select',{0:'Off',1:'Mix with native',2:'Replace (audio only)'}],
@@ -540,10 +671,10 @@ async function readLoadedProfile(){
 function profileBarInner(){
   const p = window._loadedProfile;
   if (!p || p.slot === 0xFF || p.slot == null)
-    return `<span style="color:var(--sub)">Loaded profile:</span> <span style="color:var(--sub)">—&nbsp; not from a saved slot</span>`;
+    return `<span style="color:var(--sub)">${t('已加载配置：','Loaded profile:')}</span> <span style="color:var(--sub)">${t('—&nbsp; 非来自已保存槽位','—&nbsp; not from a saved slot')}</span>`;
   const name = (p.name && p.name.length) ? escAttr(p.name) : `slot ${p.slot + 1}`;
-  return `<span style="color:var(--sub)">Loaded profile:</span> <b>${name}</b>`
-       + (p.edited ? ` <span style="color:#e0a030">(edited)</span>` : '');
+  return `<span style="color:var(--sub)">${t('已加载配置：','Loaded profile:')}</span> <b>${name}</b>`
+       + (p.edited ? ` <span style="color:#e0a030">${t('（已编辑）','(edited)')}</span>` : '');
 }
 function profileBarHTML(){
   // Rendered right under the connect status bar so it is visible on every tab,
@@ -577,7 +708,7 @@ async function _refreshSlotsOnce(){
   const box = document.getElementById('slotbox');
   if (!box) return;
   if (!device || !device.opened){
-    box.innerHTML = 'Connect to manage slots.';
+    box.innerHTML = t('????????','Connect to manage slots.');
     // Self-heal: after a save/activate reconnect cycle this runs before the
     // new handle exists; retry shortly instead of staying stuck until a
     // manual page refresh.
@@ -2318,7 +2449,7 @@ const IMU_CARD_HTML = `<div class="card"><div class="card-title">Gyro &amp; Acce
   </div>
   <div id="imuLive" style="font-size:12px;margin-top:6px;color:var(--sub)">waiting for sensor stream…</div>
   <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-    <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">● Record</button>
+    <button id="recBtn" class="btn" style="background:#c41230;color:#fff;padding:4px 14px;border:none;border-radius:4px;cursor:pointer" onclick="toggleRecord()">${t('● ??','● Record')}</button>
     <span id="recStatus" style="font-size:12px;color:var(--sub)">Not recording</span>
   </div>
 </div>`;
@@ -3103,12 +3234,12 @@ async function macroSaveTable(){
 }
 
 const TABS = [
-  {id:'device',   label:'Device'},
-  {id:'haptics',  label:'Haptics'},
-  {id:'triggers', label:'Triggers'},
-  {id:'gyro',     label:'Gyro / Stick'},
-  {id:'macros',   label:'Macros'},
-  {id:'slots',    label:'Slots'},
+  {id:'device',   label:'Device',  zh:'设备'},
+  {id:'haptics',  label:'Haptics', zh:'触觉'},
+  {id:'triggers', label:'Triggers',zh:'扳机'},
+  {id:'gyro',     label:'Gyro / Stick', zh:'陀螺仪 / 摇杆'},
+  {id:'macros',   label:'Macros',  zh:'宏'},
+  {id:'slots',    label:'Slots',   zh:'槽位'},
 ];
 window._tab = window._tab || 'triggers';
 function setTab(id){ window._tab = id; render(); }
@@ -3184,13 +3315,15 @@ const SUB_DIVIDERS = {
 // place identical markup into grid cells without duplicating any of it.
 function fieldRowHTML(f){
   const [fid,key,type,label,kind,opts] = f;
+  const _zh = FIELD_ZH[key];
+  const lbl = (_zh && _zh.label) ? _zh.label : label;
   let html = '';
   const _d = SUB_DIVIDERS[key];
-  if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${_d.label}</div>`;
-  html += `<div class="row"><div><div class="label">${label}${descMarker(key)}</div></div><div>`;
+  if (_d) html += `<div class="${_d.bold ? 'subdiv' : 'subdiv-light'}">${t(SUB_DIV_ZH[_d.label] || '', _d.label)}</div>`;
+  html += `<div class="row"><div><div class="label">${lbl}${descMarker(key)}</div></div><div>`;
   if(kind==='macros'){
-    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">edited below</div>`;
-    html += `</div></div><div id="macrobox">Connect a device to load macros.</div>`;
+    html += `<div style="text-align:right;font-size:12px;color:var(--sub)">${t('?????','edited below')}</div>`;
+    html += `</div></div><div id="macrobox">${t('?????????','Connect a device to load macros.')}</div>`;
     // Hidden mirror so saveAll()'s FIELDS walk writes the bitmap like any other
     // field; the checkboxes drive it via macroBit().
     // Bound the same way every other field is, so the render harness sees it and
@@ -3207,21 +3340,22 @@ function fieldRowHTML(f){
     html += `<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end;align-items:center">`;
     (opts||[]).forEach((lbl,i) => {
       const mask = 1 << i;
+      const lbl2 = (_zh && _zh.opts && _zh.opts[i] != null) ? _zh.opts[i] : lbl;
       html += `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">`
-            + `<input type="checkbox" ${(cur&mask)?'checked':''} onchange="config['${key}']=((+config['${key}']||0)&~${mask})|(this.checked?${mask}:0);(window._dirty=window._dirty||{})['${key}']=1" style="width:auto;margin:0"> ${lbl}</label>`;
+            + `<input type="checkbox" ${(cur&mask)?'checked':''} onchange="config['${key}']=((+config['${key}']||0)&~${mask})|(this.checked?${mask}:0);(window._dirty=window._dirty||{})['${key}']=1" style="width:auto;margin:0"> ${lbl2}</label>`;
     });
     html += `</div>`;
   } else if(kind==='bool'){
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
-      <option value="0" ${config[key]==0?'selected':''}>No</option>
-      <option value="1" ${config[key]==1?'selected':''}>Yes</option></select>`;
+      <option value="0" ${config[key]==0?'selected':''}>${t('否','No')}</option>
+      <option value="1" ${config[key]==1?'selected':''}>${t('是','Yes')}</option></select>`;
   } else if(kind==='select'){
     // NOTE: never embed a JSON array here - its double quotes close the onchange
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
     const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
-    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
+    { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl2] of pairs){ const l3 = (_zh && _zh.opts && _zh.opts[String(v)] != null) ? _zh.opts[String(v)] : lbl2; html += `<option value="${v}" ${config[key]==v?'selected':''}>${l3}</option>`; } }
     html += `</select>`;
   } else {
     const [min,max]=opts;
@@ -3281,84 +3415,88 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
+  let html = `<h1>${t('DS5 Bridge 配置','DS5 Studio Bridge')} <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
-      <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
-      <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
+      <span style="flex:1">${on?`${t('已连接','Connected')} — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:t('未连接','Not connected')}</span>
+      <select style="font-size:12px;padding:4px 6px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text)" onchange="langSet(this.value)" title="Language / 语言">
+        <option value="zh" ${LANG==='zh'?'selected':''}>中文</option>
+        <option value="en" ${LANG==='en'?'selected':''}>English</option>
+      </select>
+      <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?t('断开连接','Disconnect'):t('连接','Connect')}</button>
     </div>`;
   if(!on){
-    html += `<div class="card"><p class="info-text">Click Connect and pick your DS5 Bridge.<br>Chrome or Edge required (WebHID).</p></div>`;
+    html += `<div class="card"><p class="info-text">${t('点击“连接”并选择你的 DS5 Bridge。','Click Connect and pick your DS5 Bridge.')}<br>${t('需要 Chrome 或 Edge（WebHID）。','Chrome or Edge required (WebHID).')}</p></div>`;
     app.innerHTML=html; return;
   }
   html += profileBarHTML();   // loaded-profile line, under the connect box, every tab
   const tab = window._tab || 'triggers';
   html += `<div class="tabbar">` + TABS.map(t =>
-      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
+      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t(t.zh, t.label)}</button>`
     ).join('') + `</div>`;
 
   for(const section of SECTIONS){
     if ((SECTION_TAB[section.title] || 'device') !== tab) continue;
     if (section.title === L2_TITLE) continue;              // drawn beside R2
     if (section.title === R2_TITLE) { html += triggerPairHTML(); continue; }
-    html += `<div class="card"><div class="card-title">${section.title}</div>`;
+    html += `<div class="card"><div class="card-title">${t(SECTION_ZH[section.title] || '', section.title)}</div>`;
     for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
     if (section.title === 'Auto-Haptics & Speaker Effect Leak')
-      html += `<div class="card"><div class="card-title">Auto-haptics — live <span style="font-size:11px;color:var(--sub)">(updates while connected)</span></div><div id="ahbox" style="font-size:13px">Connect to see live auto-haptics activity.</div></div>`;
+      html += `<div class="card"><div class="card-title">${t('自动触觉 — 实时','Auto-haptics — live')} <span style="font-size:11px;color:var(--sub)">${t('（连接时更新）','(updates while connected)')}</span></div><div id="ahbox" style="font-size:13px">${t('连接后可查看实时自动触觉活动。','Connect to see live auto-haptics activity.')}</div></div>`;
   }
   if (tab === 'gyro') html += IMU_CARD_HTML;
   html += `<div class="actions">
-    <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
-    <button class="btn btn-outline" onclick="readAll().then(render)">Re-read</button>
-    <button class="btn btn-outline" onclick="exportProfile()">Export Profile</button>
-    <button class="btn btn-outline" onclick="exportHtml()">Export HTML</button>
-    <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">Import Profile</button>
+    <button class="btn btn-green" onclick="saveAll()">${t('?????','Save to Device')}</button>
+    <button class="btn btn-outline" onclick="readAll().then(render)">${t('????','Re-read')}</button>
+    <button class="btn btn-outline" onclick="exportProfile()">${t('????','Export Profile')}</button>
+    <button class="btn btn-outline" onclick="exportHtml()">${t('?? HTML','Export HTML')}</button>
+    <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">${t('????','Import Profile')}</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProfile(event)">
-    <button class="btn btn-outline" onclick="rebootBootloader()">Reboot to Bootloader</button>
+    <button class="btn btn-outline" onclick="rebootBootloader()">${t('???????','Reboot to Bootloader')}</button>
   </div>
-  ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
+  ` + (tab==='slots' ? `<div class="card"><div class="card-title">${t('????','Profile Slots')} <span style="font-size:11px;color:var(--sub)">(${t('??????? — ?? 1.1.2+','stored on the dongle — fw 1.1.2+')})</span></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('?????????????????????????????????????? slot-activate.html ????','Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).')}</div>
     <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
-    <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
-  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
+    <div id="slotbox" style="font-size:13px">${t('????????','Connect to manage slots.')}</div></div>` : '') + `
+  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">${t('??????? & ?????','Trigger Effect Monitor &amp; Custom Effects')} <span style="font-size:11px;color:var(--sub)">(${t('????????','capture real game effects')})</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
-    <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">Refresh captured effects</button>
-    <span style="font-size:12px;color:var(--sub)"> · Load custom effect file → </span>
+    <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">${t('???????','Refresh captured effects')}</button>
+    <span style="font-size:12px;color:var(--sub)"> · ${t('????????? →','Load custom effect file →')} </span>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileL2').click()">L2</button>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
     <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">browse shared effects ↗</a></span>
-    <div id="effmon" style="font-size:13px;margin-top:6px">Connect and press Refresh after triggering an effect in-game.</div>
+    <div id="effmon" style="font-size:13px;margin-top:6px">${t('???????????????????','Connect and press Refresh after triggering an effect in-game.')}</div>
     <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
-      <b style="font-size:13px">Timeline recording</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">● Record</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">Stop &amp; fetch</button>
-      <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">Not recording.</div>
+      <b style="font-size:13px">${t('?????','Timeline recording')}</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">${t('● ??','● Record')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">${t('?????','Stop &amp; fetch')}</button>
+      <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">${t('?????','Not recording.')}</div>
     </div></div>
-  <div class="card"><div class="card-title">Build a Custom Effect <span style="font-size:11px;color:var(--sub)">(author stages by hand — no game capture needed)</span></div>
+  <div class="card"><div class="card-title">${t('???????','Build a Custom Effect')} <span style="font-size:11px;color:var(--sub)">(${t('?????? — ??????','author stages by hand — no game capture needed')})</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Add up to 5 stages. Mechanical stages (weapon breaks, resistances) are played <b>in sequence as you pull</b>, ordered by their start zone — so two walls at different depths give a genuine two-stage pull, which the trigger sliders can't do. A vibration stage can be mixed in and takes over at its own depth (it replaces the wall there — the controller plays one trigger effect at a time). Each stage needs a <b>different start zone</b>, and stages want <b>room between them</b> — a stage squeezed into one or two zones can be skipped by a normal pull. Zones are 0–9 ≈ 0–100% of the pull. Weapon-break limits: wall start 2–7, break point 3–8. Bow limits: draw start 0–7, draw end 1–8. Values outside those are clamped, and the list shows what was actually encoded. A <b>bow</b> builds resistance through the draw and then <b>pushes the trigger back</b> at the end — the one thing resistance and weapon break can't do. Put any vibration on a <b>later</b> stage — a vibration on the first stage buzzes at rest.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px">
       <select id="ceb_type" onchange="cebTypeChanged()">
-        <option value="break">Weapon break (wall that gives way)</option>
-        <option value="bow">Bow / snap (draws, then pushes back)</option>
-        <option value="resistance">Resistance</option>
-        <option value="vibration">Vibration</option>
+        <option value="break">${t('???????????','Weapon break (wall that gives way)')}</option>
+        <option value="bow">${t('? / ?????????','Bow / snap (draws, then pushes back)')}</option>
+        <option value="resistance">${t('??','Resistance')}</option>
+        <option value="vibration">${t('??','Vibration')}</option>
       </select>
-      <label>Start zone <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
-      <label id="ceb_endlbl">Break zone <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
-      <label id="ceb_strlbl">Strength % <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
-      <label id="ceb_snaplbl" style="display:none">Snap force % <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
-      <label id="ceb_freqlbl" style="display:none">Frequency <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">Add stage</button>
+      <label>${t('???','Start zone')} <input type="number" id="ceb_start" min="0" max="9" value="2" style="width:52px"></label>
+      <label id="ceb_endlbl">${t('???','Break zone')} <input type="number" id="ceb_end" min="0" max="9" value="5" style="width:52px"></label>
+      <label id="ceb_strlbl">${t('?? %','Strength %')} <input type="number" id="ceb_str" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_strlvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_snaplbl" style="display:none">${t('???? %','Snap force %')} <input type="number" id="ceb_snap" min="0" max="100" value="100" style="width:60px" oninput="cebShowLevels()"></label><span id="ceb_snaplvl" style="font-size:11px;color:var(--sub)"></span>
+      <label id="ceb_freqlbl" style="display:none">${t('??','Frequency')} <input type="number" id="ceb_freq" min="1" max="255" value="40" style="width:60px"></label>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAddStage()">${t('????','Add stage')}</button>
     </div>
-    <div id="ceb_list" style="font-size:12px;margin-top:8px">No stages yet.</div>
+    <div id="ceb_list" style="font-size:12px;margin-top:8px">${t('?????','No stages yet.')}</div>
     <div id="ceb_viz" style="margin-top:8px"></div>
     <div style="margin-top:6px">
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">Assign → L2</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">Assign → R2</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">Save to file</button>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">Clear list</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(1)">${t('??? L2','Assign → L2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebAssign(0)">${t('??? R2','Assign → R2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebSaveFile()">${t('?????','Save to file')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">${t('????','Clear list')}</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
       <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
