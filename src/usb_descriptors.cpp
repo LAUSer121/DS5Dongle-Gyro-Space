@@ -489,8 +489,12 @@ uint8_t descriptor_configuration[] = {
     // built-in hidups.sys / HidBatt stack to this interface and shows a system
     // battery (tray icon + power settings) - the only native battery display
     // available for a USB-connected HID device.
-    // EP IN 0x88 avoids the CDC notification EP 0x85 / CDC data EP 0x86 (when
-    // ENABLE_SERIAL is on) and the keyboard EP 0x87.
+    // EP IN 0x83: EP3 IN is free (the gamepad owns EP3 OUT + EP4 IN) in every
+    // build, and it avoids the CDC notification EP 0x85 / CDC data EP 0x86
+    // (when ENABLE_SERIAL is on) and the keyboard EP 0x87. DO NOT use 0x88:
+    // the RP2350 USB controller only has EP0-EP7, so a descriptor referencing
+    // EP8 makes SET_CONFIGURATION fail and Windows reports the whole device as
+    // CM_PROB_FAILED_START with configuration 0 (no HID devices at all).
     0x09, // bLength
     0x04, // bDescriptorType (INTERFACE)
     ITF_NUM_UPS, // bInterfaceNumber
@@ -511,10 +515,10 @@ uint8_t descriptor_configuration[] = {
     (UPS_REPORT_DESC_LEN & 0xFF), // wDescriptorLength lo
     (UPS_REPORT_DESC_LEN >> 8),   // wDescriptorLength hi
 
-    // Endpoint Descriptor (HID IN: EP8)
+    // Endpoint Descriptor (HID IN: EP3)
     0x07, // bLength
     0x05, // bDescriptorType (ENDPOINT)
-    0x88, // bEndpointAddress: IN EP8
+    0x83, // bEndpointAddress: IN EP3
     0x03, // bmAttributes: Interrupt
     0x08, 0x00, // wMaxPacketSize: 8
     0x0A, // bInterval: 10ms
