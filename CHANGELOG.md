@@ -13,7 +13,7 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
 > after setting its macros.
 
 ### Added
-- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo —
+- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo — e.g.
   `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
   edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
   HID keyboard interface the wake feature already provides; nothing runs on the PC.
