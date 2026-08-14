@@ -3509,8 +3509,8 @@ function render(){
   }
   html += profileBarHTML();   // loaded-profile line, under the connect box, every tab
   const tab = window._tab || 'triggers';
-  html += `<div class="tabbar">` + TABS.map(t =>
-      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t(t.zh, t.label)}</button>`
+  html += `<div class="tabbar">` + TABS.map(tb =>
+      `<button class="tab ${tb.id===tab?'active':''}" onclick="setTab('${tb.id}')">${t(tb.zh, tb.label)}</button>`
     ).join('') + `</div>`;
 
   for(const section of SECTIONS){
