@@ -231,7 +231,13 @@ void config_valid() {
     }
     // Windows native battery (UPS) display: 0=off, 1=real, 2=simulated.
     // Fresh-flash 0xFF lands on off so existing dongles boot unchanged.
-    if (body->battery_mode > 2) body->battery_mode = 0;
+    // NOTE: the UPS HID interface is DISABLED (forced to 0) because it makes
+    // Windows mark the whole composite device CM_PROB_FAILED_START (no HID
+    // devices at all) on the RP2350, both with the old EP8 and with EP3.
+    // Re-enable only after the UPS descriptor/endpoint issue is fixed on
+    // hardware; until then battery display stays off to keep the gamepad
+    // enumerating reliably.
+    body->battery_mode = 0;
     if (body->battery_fake > 100) body->battery_fake = 80;
 }
 
