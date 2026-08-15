@@ -996,16 +996,23 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
 }
 
 void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
-    if (hid_control_cid != 0) {
-        uint8_t get_feature[len + 2];
-        get_feature[0] = 0x53;
-        get_feature[1] = reportId;
-        memcpy(get_feature + 2, data, len);
-        fill_feature_report_checksum(get_feature + 1, len + 1);
-        l2cap_send(hid_control_cid, get_feature, len + 2);
+    // fill_feature_report_checksum() needs a 4-byte CRC trailer, so a payload
+    // shorter than 5 bytes would underflow len-4 and corrupt memory. Pad short
+    // payloads to 5 bytes (data is caller-provided; pad with zeros).
+    if (hid_control_cid != 0 && len >= 1) {
+        uint8_t padded[64]{};
+        uint16_t send_len = (len < 5) ? 5 : len;
+        if (send_len > sizeof(padded)) send_len = sizeof(padded);
+        memcpy(padded, data, (len < sizeof(padded)) ? len : sizeof(padded));
+        uint8_t frame[64 + 2];
+        frame[0] = 0x53;
+        frame[1] = reportId;
+        memcpy(frame + 2, padded, send_len);
+        fill_feature_report_checksum(frame + 1, send_len + 1);
+        l2cap_send(hid_control_cid, frame, send_len + 2);
 #if ENABLE_VERBOSE
         printf("[L2CAP] Requesting Set Feature Report 0x%02X\n", reportId);
-        printf_hexdump(get_feature, len + 2);
+        printf_hexdump(frame, send_len + 2);
 #endif
         dse_on_profile_write(reportId);
     }

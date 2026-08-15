@@ -373,7 +373,13 @@ void ups_battery_tick() {
                 g_volt_next_poll_ms = now + interval_ms;
                 g_volt_pending = true;
                 g_volt_since_gen = bt_battery_volt_gen();
-                uint8_t cmd[2] = {0x04, 0x03}; // ANALOG_DATA / BATTERY
+                // Factory test command ANALOG_DATA(4)/BATTERY(3), mirroring
+                // dualsense-tester. set_feature_data() appends a CRC32 trailer
+                // and REQUIRES a >= 5-byte payload (len-4 must be >= 1), so pad
+                // to the same length DSE's unlock command uses (59 bytes).
+                uint8_t cmd[59]{};
+                cmd[0] = 0x04; // DualSenseTestDeviceId.ANALOG_DATA
+                cmd[1] = 0x03; // DualSenseTestActionId.BATTERY
                 set_feature_data(0x80, cmd, sizeof(cmd));
             }
             level = ups_blend_level(lvl10, g_volt_cache_mv);
