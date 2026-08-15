@@ -406,6 +406,8 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x6f: return write_config_value(buffer, bufsize, config.battery_volt_blend);
         case 0x90: return write_config_value(buffer, bufsize, config.battery_smooth);
         case 0x91: return write_config_value(buffer, bufsize, config.battery_volt_poll_s);
+        // Read-only: last factory-test battery voltage (mV), 0 = unknown.
+        case 0x92: return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv());
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
         // Live IMU telemetry for the portal curves (read-only, raw int16 LSB):

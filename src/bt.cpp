@@ -762,13 +762,16 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 uint8_t report_id = packet[1];
                 feature_data[report_id].assign(packet + 1, packet + size);
                 // Shadow the 0x81 test-command response for the battery-voltage
-                // feature. Format (mirrors dualsense-tester getTestResult):
-                //   [0]=0x81 [1]=deviceId [2]=actionId [3]=status [4..]=data
-                // ANALOG_DATA(4)/BATTERY(3) returns the voltage as uint16 LE.
-                // status 2 = TEST_STATUS_COMPLETE.
+                // feature. Bluetooth HID control frame layout:
+                //   packet[0]=0xA3 (HIDP DATA/feature) packet[1]=report_id(0x81)
+                //   packet[2]=deviceId packet[3]=actionId packet[4]=status
+                //   packet[5..]=data
+                // ANALOG_DATA(4)/BATTERY(3) -> voltage as uint16 LE at [5..6].
+                // Accept the response regardless of status (some controllers
+                // report RUNNING(1) then a later COMPLETE(2); take the first
+                // frame that carries a sane voltage).
                 if (report_id == 0x81 && size >= 7 &&
-                    packet[2] == 0x04 && packet[3] == 0x03 &&
-                    packet[4] == 0x02) {
+                    packet[2] == 0x04 && packet[3] == 0x03) {
                     s_test_report_81.assign(packet + 2, packet + size);
                     uint16_t mv = (uint16_t) (packet[5] | (packet[6] << 8));
                     if (mv >= 3000 && mv <= 4500) {
