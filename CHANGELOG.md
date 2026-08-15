@@ -22,10 +22,24 @@ to re-save.
   field — but the definitions live outside `Config_body`, so without this a
   restore produced enable masks pointing at whatever table the target dongle
   happened to hold. Backup format v2 → v3; v2 files restore exactly as before.
-- **After importing a profile, the portal lists the macros it just enabled, by
-  name.** A profile carries only the mask, so it switches on *your* row 3, which
-  may be something entirely different from what the profile's author had there —
-  a silent wrong action rather than a silent no-op.
+- **Importing a profile now asks before changing your macro selection**, and lists
+  what that selection would switch on, by name. A profile carries only the mask, so
+  it enables *your* row 3 — which may be something entirely different from what the
+  profile's author had there. Decline and your current macros are left alone while
+  every other setting still imports.
+- **The Playnite auto-apply page no longer carries macro information at all.** It
+  runs unattended on every game launch with nobody to answer that question, and
+  `macro_disable` is enumeration-critical at its all-disabled boundary — the same
+  mid-apply interruption hazard already documented for `enable_wake` on the
+  field-by-field `.html` path. Older exported pages that contain the field are
+  ignored rather than applied. Per-game macro sets work through slot activation,
+  which applies the whole configuration in one command.
+
+- **Yes/No dialogs** for the macro questions, replacing the browser's
+  OK/Cancel. Three of them ask about one *part* of an operation already under way
+  — whether to include definitions in a backup, whether to take a profile's macro
+  selection — where "Cancel" reads as "abort the whole thing". The buttons now say
+  what they do: *Include* / *Slots only*, *Apply selection* / *Keep mine*.
 
 ### Fixed
 - **"Enable state changed" stayed on screen after saving.** The save itself

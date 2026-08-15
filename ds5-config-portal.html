@@ -1781,9 +1781,11 @@ async function backupAllSlots(){
   // shared by every slot, so they are a separate question - without them this
   // file restores masks pointing at whatever table the target dongle happens to
   // hold.
-  const withMacros = confirm('Include macro definitions in this backup?\n\n' +
+  const withMacros = await askYesNo('Include macro definitions in this backup?',
     'Recommended. Which macros each slot enables is always saved; the definitions ' +
-    'themselves are shared by every profile and are only saved if you say yes.');
+    'themselves are shared by every profile and are only saved if you say yes.\n\n' +
+    'Either way the backup itself goes ahead.',
+    'Include', 'Slots only');
   const dump = { format: 'ds5dongle-slots', version: 3, savedAt: new Date().toISOString(), slots: [] };
   try {
     if (withMacros){
@@ -1848,10 +1850,12 @@ async function restoreAllSlots(file){
   // own confirmation, separate from the slot one.
   let restoreMacros = false;
   if (Array.isArray(dump.macros) && dump.macros.length){
-    restoreMacros = confirm('This backup contains ' + dump.macros.length + ' macro definition' +
-      (dump.macros.length===1?'':'s') + '.\n\n' +
-      'Restoring them REPLACES every macro on the dongle, for all profiles.\n\n' +
-      'Restore the definitions too?');
+    restoreMacros = await askYesNo('Restore the macro definitions too?',
+      'This backup contains ' + dump.macros.length + ' macro definition' +
+      (dump.macros.length===1?'':'s') + '. Restoring them REPLACES every macro on the ' +
+      'dongle, for all profiles.\n\nNo leaves your macros untouched. The slots are ' +
+      'restored either way.',
+      'Replace macros', 'Leave mine');
   }
   const valid = dump.slots.filter(s => s.valid && s.fields);
   if (!valid.length){ setS('Nothing to restore (backup has no saved slots)'); return; }
@@ -2032,7 +2036,19 @@ async function exportHtml(){
   const name = (prompt('Name this profile (used for the filename + banner):',
                        'DS5 Profile') || 'DS5 Profile').trim() || 'DS5 Profile';
   const settings = {};
-  for (const [fid,key] of FIELDS){ settings[key] = config[key] ?? 0; }
+  for (const [fid,key] of FIELDS){
+    // macro_disable is deliberately excluded from the auto-apply page. Two
+    // reasons, either sufficient. It is ENUMERATION-CRITICAL at its all-disabled
+    // boundary, and this page applies settings one field at a time over the live
+    // connection - the same hazard the README already documents for enable_wake,
+    // where a re-enumeration mid-apply can interrupt the rest. And this page runs
+    // UNATTENDED on every game launch, so a stale export would silently switch on
+    // whatever macros happened to be enabled when it was made. Per-game macro
+    // sets still work through slot activation, which applies the whole config
+    // body in one command.
+    if (key === 'macro_disable') continue;
+    settings[key] = config[key] ?? 0;
+  }
   let hEffects = null;
   try { hEffects = await hidLocked(() => readEffectsFromDevice()); } catch(e){ hEffects = null; }
   const embedded = { name, version: 2, settings,
@@ -2085,7 +2101,31 @@ function importProfile(event){
       const settings = (data && typeof data.settings === 'object') ? data.settings : data;
       let applied = 0, unknown = [];
       const known = new Set(FIELDS.map(f => f[1]));
+
+      // The macro mask is its own question. Unlike every other field it decides
+      // whether the dongle sends KEYSTROKES to the PC, and a profile carries only
+      // the mask - never the definitions - so it switches on whatever this dongle
+      // already holds in those rows, which may be nothing like what the profile
+      // was made with. Ask, and name what would fire, before changing it.
+      let takeMacros = false;
+      if (Object.prototype.hasOwnProperty.call(settings, 'macro_disable')){
+        const on = macroEnabledSummary(settings.macro_disable);
+        takeMacros = on.length
+          ? await askYesNo('Apply this profile\u2019s macro selection?',
+              'It enables ' + on.length + ' macro' + (on.length===1?'':'s') +
+              '. These are the definitions already on your dongle, possibly not the ' +
+              'ones the profile was made with:\n\n' + on.join('\n') +
+              '\n\nNo keeps your current macro selection. The rest of the profile ' +
+              'imports either way.',
+              'Apply selection', 'Keep mine')
+          : await askYesNo('Apply this profile\u2019s macro selection?',
+              'This profile turns all macros OFF.\n\nNo keeps your current selection. ' +
+              'The rest of the profile imports either way.',
+              'Turn all off', 'Keep mine');
+      }
+
       for (const k of Object.keys(settings)){
+        if (k === 'macro_disable' && !takeMacros) continue;   // keep the current set
         if (known.has(k)){ config[k] = settings[k]; applied++; }
         else unknown.push(k);
       }
@@ -2098,13 +2138,6 @@ function importProfile(event){
         } catch(e){ extra = ' (custom effects need a connected device — connect and re-import)'; }
       }
       toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + extra + ' — click Save to Device to apply');
-      // A profile carries the macro MASK but never the definitions, so the rows
-      // it switches on are whatever this dongle already holds - which may be the
-      // user's own macros doing something entirely different from what the
-      // profile's author intended. Say plainly what just got enabled.
-      if (Object.prototype.hasOwnProperty.call(settings, 'macro_disable')){
-        try { macroNoticeAfterMaskApplied(); } catch(e){}
-      }
     }catch(e){
       toast('Import failed: not a valid profile JSON', true);
     }
@@ -2349,6 +2382,61 @@ const SECTION_TAB = {
 // custom effect is a TRIGGER effect, and its settings cross-reference the
 // resistance mode on the same trigger (the gate hand-off warning names it), so
 // splitting them put a warning on one tab and its fix on another.
+// Promise-based Yes/No dialog.
+//
+// window.confirm() cannot relabel its buttons, and "Cancel" reads as "abort the
+// whole operation" - which is wrong whenever the question is about one PART of
+// something already in progress: "include macro definitions in this backup?" is
+// not an offer to cancel the backup. Yes/No removes that reading.
+//
+// Handlers are attached with addEventListener rather than inline attributes, so
+// no caller-supplied text ever reaches an on*="..." attribute. The body is set
+// via textContent for the same reason - macro names are user input.
+function askYesNo(title, body, yesLabel, noLabel){
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;' +
+      'display:flex;align-items:center;justify-content:center;padding:20px';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--card,#151b23);border:1px solid var(--border,#2a3441);' +
+      'border-radius:10px;padding:18px 20px;max-width:560px;width:100%;' +
+      'box-shadow:0 10px 40px rgba(0,0,0,.5);font:14px system-ui;color:var(--text,#e6edf3)';
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:600;font-size:15px;margin-bottom:8px';
+    h.textContent = title;
+    const p = document.createElement('div');
+    p.style.cssText = 'white-space:pre-wrap;font-size:13px;color:var(--sub,#9aa7b4);' +
+      'margin-bottom:16px;max-height:50vh;overflow:auto';
+    p.textContent = body || '';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+    const no = document.createElement('button');
+    no.className = 'btn btn-outline'; no.style.cssText = 'padding:4px 16px';
+    no.textContent = noLabel || 'No';
+    const yes = document.createElement('button');
+    yes.className = 'btn'; yes.style.cssText = 'padding:4px 16px';
+    yes.textContent = yesLabel || 'Yes';
+    row.appendChild(no); row.appendChild(yes);
+    card.appendChild(h); card.appendChild(p); card.appendChild(row);
+    ov.appendChild(card); document.body.appendChild(ov);
+
+    let done = false;
+    const finish = v => {
+      if (done) return; done = true;
+      document.removeEventListener('keydown', onKey, true);
+      ov.remove(); resolve(v);
+    };
+    const onKey = e => {
+      if (e.key === 'Escape'){ e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter'){ e.preventDefault(); finish(true); }
+    };
+    no.addEventListener('click', () => finish(false));
+    yes.addEventListener('click', () => finish(true));
+    document.addEventListener('keydown', onKey, true);
+    yes.focus();
+  });
+}
+
 // ===================== Macros =============================================
 // Rows are edited here and written to a DEVICE-GLOBAL table (fw cmds 0x17 read,
 // 0x18 write-to-RAM, 0x19 commit). Only the enable bitmap lives in Config_body,
@@ -3054,10 +3142,13 @@ async function macroImportFile(file){
   }
   // Destructive and GLOBAL: this replaces the definitions every profile refers
   // to, not just the current one. Always confirm, never silently.
-  if (!confirm('This file contains ' + dump.macros.length + ' macro definition' +
-               (dump.macros.length===1?'':'s') + '.\n\n' +
-               'Importing REPLACES every macro on the dongle, for all profiles. ' +
-               'Which macros each profile enables is not changed.\n\nImport them?')){
+  if (!await askYesNo('Import these macro definitions?',
+        'This file contains ' + dump.macros.length + ' macro definition' +
+        (dump.macros.length===1?'':'s') + '. Importing REPLACES every macro on the ' +
+        'dongle, for all profiles. Which macros each profile enables is not changed.\n\n' +
+        'They load into the editor first \u2014 nothing reaches the device until you ' +
+        'press Save macros to device.',
+        'Import', 'Cancel')){
     if (el) el.textContent = 'Import cancelled.'; return;
   }
   window._macroRows = macroTableFromJson(dump.macros);
@@ -3459,7 +3550,15 @@ async function autoApply(){
       const settings = (json && typeof json.settings==='object') ? json.settings : json;
       const known = new Set(FIELDS.map(f=>f[1]));
       let applied=0;
-      for (const k of Object.keys(settings)){ if(known.has(k)){ config[k]=settings[k]; applied++; } }
+      for (const k of Object.keys(settings)){
+        // Never apply the macro mask here, even if an older exported page carries
+        // it. This runs unattended on every game launch with nobody to confirm,
+        // and the field is enumeration-critical at its all-disabled boundary - a
+        // re-enumeration part-way through a field-by-field apply interrupts the
+        // rest. Per-game macro sets belong on the slot-activation path.
+        if (k === 'macro_disable') continue;
+        if(known.has(k)){ config[k]=settings[k]; applied++; }
+      }
       if (json && json.effects){
         try { await writeEffectsToDevice(json.effects); } catch(e){ /* settings still apply */ }
       }

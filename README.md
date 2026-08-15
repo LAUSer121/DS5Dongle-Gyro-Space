@@ -1109,25 +1109,29 @@ The panel warns you when the enable state has changed but not yet been saved.
 
 Definitions and enablement travel separately, because they are stored separately.
 
-| Action | Carries |
-|---|---|
-| **Export macros** / **Import macros** (Macros tab) | the definitions themselves |
-| **Export Profile** / **Import Profile** | only which macros are enabled |
-| **Export HTML** and the Playnite auto-apply page | only which macros are enabled |
-| **Back up all slots** / **Restore** | both — it asks whether to include definitions |
+| Action | Carries | Asks |
+|---|---|---|
+| **Export macros** / **Import macros** (Macros tab) | the definitions | import confirms — it replaces all of them |
+| **Export Profile** / **Import Profile** | which macros are enabled | import confirms, and names what would fire |
+| **Export HTML** and the Playnite auto-apply page | **nothing about macros** | n/a |
+| **Back up all slots** / **Restore** | both | asks about definitions, both ways |
 
-**Import macros** replaces every macro on the dongle, for all profiles, so it
-always asks first. It loads into the editor rather than writing straight to the
-device — nothing is committed until you press **Save macros to device**.
+**Import macros** replaces every macro on the dongle, for all profiles. It loads
+into the editor rather than writing straight to the device, so nothing is
+committed until you press **Save macros to device**.
 
-Note that the Playnite auto-apply page deliberately cannot carry definitions.
-It runs unattended on every game launch, so if it could, one stale export would
-silently overwrite macros you had made since.
+**Importing a profile asks before changing your macro selection**, and lists what
+that selection would switch on. It has to: a profile carries only the enable mask,
+so it turns on *your* macros in those rows — which may be nothing like what the
+profile's author had there. Decline and your current selection is left alone while
+every other setting still imports.
 
-Because a profile carries only the enable mask, importing one switches on
-*your* macros in those rows — which may not be what the profile's author had
-there. After an import the portal lists what it just enabled, by name, so you
-can see what will actually fire.
+**The auto-apply page carries no macro information at all.** Two reasons, either
+sufficient. It runs unattended on every game launch, so there is nobody to answer
+that question — and enabling the first macro re-enumerates the controller, which
+is the same mid-apply interruption hazard that makes wake unsuitable for a
+field-by-field `.html` profile. Per-game macro sets belong on the slot path, where
+the whole configuration is applied in one command.
 
 #### Two limits to be aware of
 
