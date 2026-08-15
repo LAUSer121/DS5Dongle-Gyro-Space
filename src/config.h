@@ -268,12 +268,12 @@ struct __attribute__((packed)) Config_body {
     // finer estimate. 0 = level-only (old behaviour).
     // battery_smooth: ease the reported percentage toward the target instead
     // of stepping instantly (e.g. 70 -> 80 ramps over ~2 s). 0 = instant.
-    // battery_volt_poll_s: factory-test voltage poll interval in seconds
-    // (10-300, default 30). Lower = fresher voltage but more frequent test
-    // commands on the BT link.
+    // battery_volt_poll_s: factory-test voltage poll interval. Stored in
+    // DECISECONDS (0.1 s units): 1 = 100 ms, 300 = 30 s (default), max 3000 =
+    // 300 s. Lower = fresher voltage but more frequent test commands on BT.
     uint8_t battery_volt_blend; // bool: 0 off, 1 on
     uint8_t battery_smooth;     // bool: 0 off, 1 on
-    uint8_t battery_volt_poll_s; // [10,300] seconds between voltage polls
+    uint16_t battery_volt_poll_s; // [1,3000] deciseconds (0.1 s) between polls
 };
 
 struct __attribute__((packed)) Config {

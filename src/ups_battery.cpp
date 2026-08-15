@@ -366,10 +366,12 @@ void ups_battery_tick() {
                 }
             }
             if (!g_volt_pending && now >= g_volt_next_poll_ms) {
-                // Interval from config (10-300 s, default 30). A fresh-flash
-                // value already lands on the default via config_valid().
-                uint32_t interval_ms = (uint32_t) cfg.battery_volt_poll_s * 1000u;
-                if (interval_ms < 10000) interval_ms = 10000; // safety floor
+                // Interval from config, stored in deciseconds (0.1 s):
+                // 1 = 100 ms .. 3000 = 300 s, default 300 (30 s). Fresh-flash
+                // value lands on the default via config_valid().
+                uint32_t ds = cfg.battery_volt_poll_s;
+                if (ds < 1) ds = 1;
+                uint32_t interval_ms = ds * 100u;
                 g_volt_next_poll_ms = now + interval_ms;
                 g_volt_pending = true;
                 g_volt_since_gen = bt_battery_volt_gen();

@@ -257,7 +257,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // Battery display refinements (v1.20.x).
         case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
         case 0x90: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_smooth=v; break; }
-        case 0x91: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_poll_s=v; break; }
+        case 0x91: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_poll_s=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -430,8 +430,6 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         // charging, 2 full). A live value, not cleared on read; stale while the
         // controller is disconnected, so the portal only shows it when connected.
         case 0x68: { extern uint8_t interrupt_in_data[63]; return write_config_value(buffer, bufsize, (uint8_t)interrupt_in_data[52]); }
-        // Last factory-test battery voltage (mV), read-only; 0 = unknown.
-        case 0x92: { return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv()); }
         // Auto-haptics activity + level meters (peak-hold, cleared on read):
         //   0x69 frames delivered on the audio-out endpoint (bridge active?)
         //   0x6a derived-haptic OUTPUT peak the DSP is generating (0-255)
