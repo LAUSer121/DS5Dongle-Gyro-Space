@@ -238,6 +238,11 @@ void config_valid() {
     // Battery display refinements: bools, clamp 0xFF -> off.
     if (body->battery_volt_blend > 1) body->battery_volt_blend = 0;
     if (body->battery_smooth > 1) body->battery_smooth = 0;
+    // Voltage poll interval: clamp 0xFF (fresh flash) to the 30 s default;
+    // keep within [10, 300] s.
+    if (body->battery_volt_poll_s < 10 || body->battery_volt_poll_s > 300) {
+        body->battery_volt_poll_s = 30;
+    }
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

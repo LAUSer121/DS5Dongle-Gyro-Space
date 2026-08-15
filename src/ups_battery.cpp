@@ -366,7 +366,11 @@ void ups_battery_tick() {
                 }
             }
             if (!g_volt_pending && now >= g_volt_next_poll_ms) {
-                g_volt_next_poll_ms = now + 30000;
+                // Interval from config (10-300 s, default 30). A fresh-flash
+                // value already lands on the default via config_valid().
+                uint32_t interval_ms = (uint32_t) cfg.battery_volt_poll_s * 1000u;
+                if (interval_ms < 10000) interval_ms = 10000; // safety floor
+                g_volt_next_poll_ms = now + interval_ms;
                 g_volt_pending = true;
                 g_volt_since_gen = bt_battery_volt_gen();
                 uint8_t cmd[2] = {0x04, 0x03}; // ANALOG_DATA / BATTERY
