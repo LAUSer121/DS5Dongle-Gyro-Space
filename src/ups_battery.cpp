@@ -9,7 +9,6 @@
 #include "tusb.h"
 #include "config.h"
 #include "macro.h"
-#include "bt.h"
 #include "pico/time.h"
 
 extern uint8_t interrupt_in_data[63]; // DualSense payload: [52] battery, [53] headset/mic
@@ -206,8 +205,6 @@ bool     g_real_seen   = false;
 // the target rather than stepping, when battery_smooth is enabled.
 uint8_t  g_smooth_current = UPS_FULL_CAPACITY;
 bool     g_smooth_seeded  = false;   // first real report seeds the smooth value
-uint16_t g_volt_cache_mv  = 0;      // last factory-test voltage (0 = unknown)
-uint32_t g_volt_next_poll_ms = 0;   // throttle voltage polls to ~5 s
 
 uint16_t ups_copy8(uint8_t *buffer, uint16_t reqlen, uint8_t value) {
     if (reqlen < 1) return 0;
@@ -220,33 +217,6 @@ uint16_t ups_copy16(uint8_t *buffer, uint16_t reqlen, uint16_t value) {
     buffer[0] = (uint8_t) (value & 0xFF);
     buffer[1] = (uint8_t) (value >> 8);
     return 2;
-}
-
-// Blend the coarse Bluetooth level (0-10) with the factory-test voltage (mV).
-// Voltage alone is a poor percentage (Li-ion has a flat discharge plateau), so
-// we use it only to interpolate WITHIN the current 10% bucket: the bucket
-// boundaries are assumed to map to typical DualSense voltages (3.6 V at the
-// bucket bottom, 4.2 V at the top). Falls back to level*10 when no voltage is
-// available. Result is clamped to [5, 100].
-uint8_t ups_blend_level(uint8_t level10, uint16_t volt_mv) {
-    if (volt_mv == 0) {
-        return (uint8_t) (level10 * 10u);
-    }
-    // Bucket [lo, hi) in mV for the reported level. Clamp the measured voltage
-    // into the bucket so interpolation stays within it.
-    const int lo = 3600 + level10 * 60;   // 3.60 V .. 4.20 V over 10 buckets
-    const int hi = lo + 60;
-    int v = (int) volt_mv;
-    if (v < lo) v = lo;
-    if (v > hi) v = hi;
-    // Percentage = bucket base + fraction of the bucket.
-    uint32_t pct = (uint32_t) (level10 * 10u);
-    if (hi > lo) {
-        pct += (uint32_t) (((uint64_t) (v - lo) * 10u) / (uint32_t) (hi - lo));
-    }
-    if (pct < 5) pct = 5;
-    if (pct > 100) pct = 100;
-    return (uint8_t) pct;
 }
 
 } // namespace
@@ -344,31 +314,14 @@ void ups_battery_tick() {
         uint8_t lvl10 = b & 0x0F;
         if (lvl10 > 10) lvl10 = 10;
 
-        // Optional refinement 1: blend the factory-test battery voltage (mV)
-        // into the coarse 10% level. Poll at most every ~5 s; retail
-        // controllers may reject the factory test command, in which case the
-        // cached voltage stays 0 and we fall back to level*10.
-        if (cfg.battery_volt_blend) {
-            const uint32_t now = to_ms_since_boot(get_absolute_time());
-            if (now >= g_volt_next_poll_ms) {
-                g_volt_next_poll_ms = now + 5000;
-                uint16_t mv = bt_get_battery_voltage_mv();
-                if (mv >= 3000 && mv <= 4500) g_volt_cache_mv = mv;
-                // A rejected/failed command returns 0: keep the previous value.
-            }
-            level = ups_blend_level(lvl10, g_volt_cache_mv);
-        } else {
-            g_volt_cache_mv = 0; // blend disabled: drop any cached voltage
-            level = (uint8_t) (lvl10 * 10u);
-        }
-        if (level > 100) level = 100;
-        if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
-
-        // Optional refinement 2: smooth the reported percentage toward the
-        // target (ease over ~2 s at 1 Hz ticks) so the tray number glides
-        // instead of snapping between 10% buckets. On the FIRST real report
+        // Smoothing refinement: ease the reported percentage toward the
+        // target (glide over ~2 s at 1 Hz ticks) so the tray number does not
+        // snap between the BT level's 10% buckets. On the FIRST real report
         // the current value is seeded to the target so we don't animate a
         // fake discharge from the power-on default (100%).
+        level = (uint8_t) (lvl10 * 10u);
+        if (level > 100) level = 100;
+        if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
         if (cfg.battery_smooth) {
             const uint8_t target = level;
             if (g_smooth_seeded == false) {
@@ -421,8 +374,4 @@ void ups_battery_tick() {
     payload[0] = 0;               // cycle count
     payload[1] = 0;
     tud_hid_n_report(inst, UPS_RID_CYCLECOUNT, payload, 2);
-}
-
-uint16_t ups_read_battery_voltage_mv() {
-    return bt_get_battery_voltage_mv();
 }

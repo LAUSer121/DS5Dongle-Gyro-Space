@@ -253,8 +253,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // Windows native battery (UPS) display (v1.20.0).
         case 0x6d: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_mode=v; break; }
         case 0x6e: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_fake=v; break; }
-        // Battery display refinements (v1.20.x).
-        case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
+        // Battery display refinement (v1.20.x).
         case 0x90: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_smooth=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
@@ -401,7 +400,6 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x76: return write_config_value(buffer, bufsize, config.gyro_cal_z);
         case 0x6d: return write_config_value(buffer, bufsize, config.battery_mode);
         case 0x6e: return write_config_value(buffer, bufsize, config.battery_fake);
-        case 0x6f: return write_config_value(buffer, bufsize, config.battery_volt_blend);
         case 0x90: return write_config_value(buffer, bufsize, config.battery_smooth);
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
