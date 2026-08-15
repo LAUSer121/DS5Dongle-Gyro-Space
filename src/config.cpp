@@ -17,7 +17,7 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 20;
+constexpr uint16_t CONFIG_VERSION = 21;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -231,8 +231,18 @@ void config_valid() {
     }
     // Windows native battery (UPS) display: 0=off, 1=real, 2=simulated.
     // Fresh-flash 0xFF lands on off so existing dongles boot unchanged.
+    // (Re-enabled after the bNumInterfaces fix; the descriptor now counts
+    // interfaces correctly so the UPS block no longer breaks enumeration.)
     if (body->battery_mode > 2) body->battery_mode = 0;
     if (body->battery_fake > 100) body->battery_fake = 80;
+    // Battery display refinements: bools, clamp 0xFF -> off.
+    if (body->battery_volt_blend > 1) body->battery_volt_blend = 0;
+    if (body->battery_smooth > 1) body->battery_smooth = 0;
+    // Voltage poll interval: clamp 0xFF (fresh flash) to the 30 s default;
+    // keep within [10, 300] s.
+    if (body->battery_volt_poll_s < 10 || body->battery_volt_poll_s > 300) {
+        body->battery_volt_poll_s = 30;
+    }
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

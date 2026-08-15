@@ -349,6 +349,9 @@ const FIELD_ZH = {
   bt_qos_latency_us: { label:'蓝牙 QoS 延迟（0=关闭）', opts:{0:'关闭',5000:'5ms（激进）',10000:'10ms',15000:'15ms',20000:'20ms（宽松）'} },
   battery_mode: { label:'Windows 原生电池（UPS）', opts:{0:'关闭（默认）',1:'真实电量（蓝牙手柄）',2:'模拟电量（固定值）'} },
   battery_fake: { label:'模拟电量（%，最低 5%）' },
+  battery_volt_blend: { label:'电压混合更精细电量' },
+  battery_smooth: { label:'电量平滑过渡' },
+  battery_volt_poll_s: { label:'电压轮询间隔（秒）' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -408,6 +411,11 @@ const SECTIONS = [
     // firmware so Windows never treats the emulated battery as critical.
     [0x6d,'battery_mode','u8','Windows Native Battery (UPS)','select',{0:'Off (default)',1:'Real (Bluetooth controller)',2:'Simulated (fixed level)'}],
     [0x6e,'battery_fake','u8','Simulated battery level (%) — min 5 shown','number',[0,100]],
+    // Battery display refinements (v1.20.x). Blend + poll interval are
+    // Real-mode only; smooth applies to Real mode.
+    [0x6f,'battery_volt_blend','u8','Blend battery voltage for finer %','bool'],
+    [0x90,'battery_smooth','u8','Smooth percentage transitions','bool'],
+    [0x91,'battery_volt_poll_s','u8','Voltage poll interval (s) — 10-300','number',[10,300]],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -586,6 +594,9 @@ const DESCRIPTIONS = {
   // Windows native battery (UPS)
   battery_mode: "Adds an extra USB HID UPS Battery interface so Windows shows a system battery for the dongle in the tray / power settings (the only native battery display possible over USB). Off by default. Real mirrors the controller's actual Bluetooth battery; Simulated reports a fixed level while the charging state still follows the real controller. Changing this re-enumerates the device, so the portal reconnects on save.",
   battery_fake: "Level reported to Windows in Simulated mode. The firmware clamps reports to 5% minimum so the emulated battery never trips Windows' critical action (hibernate/shutdown).",
+  battery_volt_blend: "Real mode only. The Bluetooth battery level is coarse (0-10). When enabled, the firmware also reads the controller's factory-test battery voltage (mV) and interpolates within the current 10% bucket for a finer percentage. Falls back to level*10 if the controller rejects the factory test command.",
+  battery_smooth: "Real mode only. Eases the reported percentage toward the target over ~2 s instead of stepping instantly between 10% buckets, so the tray battery number glides.",
+  battery_volt_poll_s: "Real mode only (used when voltage blend is on). How often the firmware asks the controller for its factory-test battery voltage (10-300 s, default 30). Lower values update the blended percentage faster but send the test command to the controller more frequently.",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
@@ -2480,8 +2491,11 @@ async function readDiag(){
     // meters 0x69-0x6b now live on the Haptics tab, read by readAhMeter().)
     let bat = null;
     try { bat = await readField(0x68, 'u8'); } catch(e) {}
-    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat};
-  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null}; }
+    // Factory-test battery voltage (0x92, mV; 0 = unknown).
+    let volt = null;
+    try { volt = await readField(0x92, 'u16'); } catch(e) {}
+    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat, volt};
+  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null, volt:null}; }
 }
 function rssiLabel(r){
   if (r === null || r === undefined) return t('无','n/a');
@@ -2560,7 +2574,14 @@ async function refreshDiag(){
       const pct = Math.min(lvl * 10, 100);
       const status = st === 1 ? t('充电中','charging') : st === 2 ? t('已充满','full') : st >= 0x0F ? t('电量异常','charge error') : t('未充电','on battery');
       const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
-      batLine = `${t('电池：','Battery: ')}<b style="color:${col}">${pct}%</b> · ${status}<br>`;
+      // Factory-test battery voltage (mV) from field 0x92, when available.
+      let voltTxt = '';
+      if (d.volt) {
+        const v = d.volt;
+        if (v >= 1000) voltTxt = ` · <span style="opacity:.75">${(v/1000).toFixed(2)} V</span>`;
+        else if (v > 0) voltTxt = ` · <span style="opacity:.75">${v} mV</span>`;
+      }
+      batLine = `${t('电池：','Battery: ')}<b style="color:${col}">${pct}%</b> · ${status}${voltTxt}<br>`;
     }
     el.innerHTML = batLine + `${t('实时音频流：','Live audio stream: ')}bytes_read=${d.br}, detected channels=${d.ch}  (${t('4=原生，2=Windows/DS4Windows 立体声','4=native, 2=Windows/DS4Windows stereo')})<br>${t('蓝牙信号：','Bluetooth signal: ')}${rssiLabel(d.rssi)}${extra}`;
   }
@@ -3624,6 +3645,9 @@ function fieldRowHTML(f){
   // select re-renders on change (reRender list below), so the row appears and
   // disappears with it. The value itself is always saved.
   if (key === 'battery_fake' && +config['battery_mode'] !== 2) return '';
+  // Voltage blend + poll interval only apply to Real battery mode (mode == 1).
+  if ((key === 'battery_volt_blend' || key === 'battery_volt_poll_s') &&
+      +config['battery_mode'] !== 1) return '';
   const _zh = FIELD_ZH[key];
   // FIELD_ZH carries the Chinese labels; only use them when the portal is in
   // Chinese, otherwise fall back to the English label in the FIELDS tuple.

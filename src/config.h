@@ -261,6 +261,19 @@ struct __attribute__((packed)) Config_body {
     uint8_t battery_fake; // [0-100] level reported in Simulated mode; firmware
                           // clamps reports to >= 5% so Windows never triggers
                           // hibernate/shutdown on the emulated battery
+    // Battery display refinements (v1.20.x, portal-selectable).
+    // battery_volt_blend: in Real mode, blend the controller's Bluetooth
+    // battery level (0-10, coarse) with the factory-test battery voltage (mV)
+    // when it is available, interpolating within the current 10% bucket for a
+    // finer estimate. 0 = level-only (old behaviour).
+    // battery_smooth: ease the reported percentage toward the target instead
+    // of stepping instantly (e.g. 70 -> 80 ramps over ~2 s). 0 = instant.
+    // battery_volt_poll_s: factory-test voltage poll interval in seconds
+    // (10-300, default 30). Lower = fresher voltage but more frequent test
+    // commands on the BT link.
+    uint8_t battery_volt_blend; // bool: 0 off, 1 on
+    uint8_t battery_smooth;     // bool: 0 off, 1 on
+    uint8_t battery_volt_poll_s; // [10,300] seconds between voltage polls
 };
 
 struct __attribute__((packed)) Config {

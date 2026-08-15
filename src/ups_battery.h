@@ -18,6 +18,7 @@
 // Configuration (config.h / portal):
 //   battery_mode 0 = off (no UPS interface), 1 = real controller battery,
 //                2 = simulated fixed level (battery_fake).
+//   battery_smooth: ease the reported percentage toward the target.
 // Toggling 0 <-> non-zero changes the USB configuration descriptor, so the
 // host must re-enumerate (portal ENUM_FIELDS / slot_activate needs_reenum).
 
@@ -45,3 +46,7 @@ uint16_t ups_get_report(uint8_t report_id, uint8_t report_type, uint8_t *buffer,
 // Called from the main loop; rate-limits itself to 1 Hz and pushes the UPS
 // input reports while battery_mode != 0. No-op when the feature is off.
 void ups_battery_tick();
+
+// Last factory-test battery voltage (mV) seen while voltage blend is active.
+// 0 = unknown (blend off, controller rejected the command, or not connected).
+uint16_t ups_last_battery_voltage_mv();

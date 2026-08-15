@@ -9,6 +9,7 @@
 #include "tusb.h"
 #include "config.h"
 #include "macro.h"
+#include "bt.h"
 #include "pico/time.h"
 
 extern uint8_t interrupt_in_data[63]; // DualSense payload: [52] battery, [53] headset/mic
@@ -201,6 +202,19 @@ uint16_t g_runtime   = 0;
 uint32_t g_last_tick_ms = 0;
 bool     g_real_seen   = false;
 
+// Smoothing state: the percentage actually reported to Windows eases toward
+// the target rather than stepping, when battery_smooth is enabled.
+uint8_t  g_smooth_current = UPS_FULL_CAPACITY;
+bool     g_smooth_seeded  = false;   // first real report seeds the smooth value
+
+// Voltage-blend state. Polling is rate-limited and cooperative: we record the
+// response generation, issue a factory-test voltage read, and consume the
+// shadowed result (never the shared feature_data map) once it advances.
+uint16_t g_volt_cache_mv  = 0;
+uint32_t g_volt_next_poll_ms = 0;   // throttle to ~30 s
+bool     g_volt_pending   = false;  // a request is in flight
+uint32_t g_volt_since_gen = 0;      // generation before the request was issued
+
 uint16_t ups_copy8(uint8_t *buffer, uint16_t reqlen, uint8_t value) {
     if (reqlen < 1) return 0;
     buffer[0] = value;
@@ -212,6 +226,30 @@ uint16_t ups_copy16(uint8_t *buffer, uint16_t reqlen, uint16_t value) {
     buffer[0] = (uint8_t) (value & 0xFF);
     buffer[1] = (uint8_t) (value >> 8);
     return 2;
+}
+
+// Blend the coarse Bluetooth level (0-10) with the factory-test voltage (mV).
+// Voltage alone is a poor percentage (Li-ion has a flat discharge plateau), so
+// we use it only to interpolate WITHIN the current 10% bucket: the bucket
+// boundaries are assumed to map to typical DualSense voltages (3.6 V at the
+// bucket bottom, 4.2 V at the top). Falls back to level*10 when no voltage is
+// available. Result is clamped to [5, 100].
+uint8_t ups_blend_level(uint8_t level10, uint16_t volt_mv) {
+    if (volt_mv == 0) {
+        return (uint8_t) (level10 * 10u);
+    }
+    const int lo = 3600 + level10 * 60;   // 3.60 V .. 4.20 V over 10 buckets
+    const int hi = lo + 60;
+    int v = (int) volt_mv;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    uint32_t pct = (uint32_t) (level10 * 10u);
+    if (hi > lo) {
+        pct += (uint32_t) (((uint64_t) (v - lo) * 10u) / (uint32_t) (hi - lo));
+    }
+    if (pct < 5) pct = 5;
+    if (pct > 100) pct = 100;
+    return (uint8_t) pct;
 }
 
 } // namespace
@@ -274,9 +312,27 @@ void ups_battery_tick() {
         // Simulated: fixed level from the portal. Clamped to the safety floor
         // so Windows never sees a critical system battery and starts
         // hibernate/shutdown actions on the emulated UPS.
+        //
+        // DEMO DISCHARGE: when battery_fake is exactly 100 the firmware ramps
+        // the reported level down from 100% at 30% per minute (reaching 70%
+        // after exactly one minute) and holds there. This lets a user verify
+        // that Windows' HID UPS battery display tracks live input reports
+        // (tray percentage + power settings) without touching the portal.
+        // Any other battery_fake value behaves as a fixed level.
         level = cfg.battery_fake;
         if (level > 100) level = 100;
         if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
+        if (cfg.battery_fake == 100) {
+            // 30% per minute = 0.5% per 1 Hz tick. Track in tenths to avoid
+            // float: start 1000, step -5, floor 700 (70.0%).
+            static uint16_t demo_tenths = 1000;
+            if (demo_tenths > 700) {
+                if (demo_tenths >= 5) demo_tenths -= 5;
+                level = (uint8_t) (demo_tenths / 10);
+            } else {
+                level = 70;
+            }
+        }
         // Charging state SYNCs with the real controller: if the DualSense is
         // charging or full, Windows shows the simulated battery as charging on
         // AC; otherwise it shows a battery running on battery power.
@@ -290,9 +346,74 @@ void ups_battery_tick() {
         g_real_seen = true;
         uint8_t lvl10 = b & 0x0F;
         if (lvl10 > 10) lvl10 = 10;
-        level = (uint8_t) (lvl10 * 10u);
+
+        // Optional refinement 1: blend the factory-test battery voltage (mV)
+        // into the coarse 10% level. Cooperative polling: record the response
+        // generation, issue the factory test command, and on later ticks accept
+        // the shadowed cache only once the generation advanced. Retail
+        // controllers may reject the command; the cache then stays stale/0 and
+        // we keep the last good value (or fall back to level*10). Polling is
+        // throttled to 30 s so the test command cannot disturb the link.
+        if (cfg.battery_volt_blend) {
+            const uint32_t now = to_ms_since_boot(get_absolute_time());
+            if (g_volt_pending) {
+                uint16_t mv = 0;
+                if (bt_battery_volt_take(g_volt_since_gen, &mv)) {
+                    g_volt_cache_mv = mv;
+                    g_volt_pending  = false;
+                } else if (now - g_volt_next_poll_ms > 3000) {
+                    g_volt_pending = false; // timeout: command unanswered
+                }
+            }
+            if (!g_volt_pending && now >= g_volt_next_poll_ms) {
+                // Interval from config (10-300 s, default 30). A fresh-flash
+                // value already lands on the default via config_valid().
+                uint32_t interval_ms = (uint32_t) cfg.battery_volt_poll_s * 1000u;
+                if (interval_ms < 10000) interval_ms = 10000; // safety floor
+                g_volt_next_poll_ms = now + interval_ms;
+                g_volt_pending = true;
+                g_volt_since_gen = bt_battery_volt_gen();
+                // Factory test command ANALOG_DATA(4)/BATTERY(3), mirroring
+                // dualsense-tester. set_feature_data() appends a CRC32 trailer
+                // and REQUIRES a >= 5-byte payload (len-4 must be >= 1), so pad
+                // to the same length DSE's unlock command uses (59 bytes).
+                uint8_t cmd[59]{};
+                cmd[0] = 0x04; // DualSenseTestDeviceId.ANALOG_DATA
+                cmd[1] = 0x03; // DualSenseTestActionId.BATTERY
+                set_feature_data(0x80, cmd, sizeof(cmd));
+            }
+            level = ups_blend_level(lvl10, g_volt_cache_mv);
+        } else {
+            g_volt_cache_mv = 0;
+            g_volt_pending  = false;
+            level = (uint8_t) (lvl10 * 10u);
+        }
         if (level > 100) level = 100;
         if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
+
+        // Optional refinement 2: smooth the reported percentage toward the
+        // target (glide over ~2 s at 1 Hz ticks) so the tray number does not
+        // snap between the BT level's 10% buckets. On the FIRST real report
+        // the current value is seeded to the target so we don't animate a
+        // fake discharge from the power-on default (100%).
+        if (cfg.battery_smooth) {
+            const uint8_t target = level;
+            if (g_smooth_seeded == false) {
+                g_smooth_seeded = true;
+                g_smooth_current = target;
+            } else if (g_smooth_current < target) {
+                g_smooth_current = (uint8_t) ((uint16_t) g_smooth_current + 5u);
+                if (g_smooth_current > target) g_smooth_current = target;
+            } else if (g_smooth_current > target) {
+                g_smooth_current = (uint8_t) ((int) g_smooth_current - 5);
+                if (g_smooth_current < target) g_smooth_current = target;
+            }
+            level = g_smooth_current;
+        } else {
+            g_smooth_current = level;
+            g_smooth_seeded  = false;
+        }
+
         if (realChg) {
             status = UPS_ST_CHARGING | UPS_ST_AC_PRESENT;
         } else {
@@ -327,4 +448,11 @@ void ups_battery_tick() {
     payload[0] = 0;               // cycle count
     payload[1] = 0;
     tud_hid_n_report(inst, UPS_RID_CYCLECOUNT, payload, 2);
+}
+
+// Exposed for the portal (read-only diagnostic 0x92): last factory-test
+// battery voltage in mV. Defined outside the anonymous namespace but the
+// variable is file-static; read it through this accessor.
+uint16_t ups_last_battery_voltage_mv() {
+    return g_volt_cache_mv;
 }

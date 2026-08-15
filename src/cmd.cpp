@@ -17,6 +17,7 @@
 #include "pico/time.h"
 #include "pico/bootrom.h"
 #include "audio.h"
+#include "ups_battery.h"
 
 // spk_active (main.cpp) + audio_mic_active() (audio.cpp) are surfaced in the
 // 0xf9 command response so the config UI can display the real gated mic/speaker
@@ -37,7 +38,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
 constexpr uint8_t FW_VER_MINOR = 20;
-constexpr uint8_t FW_VER_PATCH = 0;
+constexpr uint8_t FW_VER_PATCH = 1;
 
 // Width of the value the LAST successful write_config_value() emitted. The bulk
 // reader (0x0c) needs a length per field and used to carry its own hand-written
@@ -253,6 +254,10 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // Windows native battery (UPS) display (v1.20.0).
         case 0x6d: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_mode=v; break; }
         case 0x6e: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_fake=v; break; }
+        // Battery display refinements (v1.20.x).
+        case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
+        case 0x90: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_smooth=v; break; }
+        case 0x91: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_poll_s=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -398,6 +403,11 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x76: return write_config_value(buffer, bufsize, config.gyro_cal_z);
         case 0x6d: return write_config_value(buffer, bufsize, config.battery_mode);
         case 0x6e: return write_config_value(buffer, bufsize, config.battery_fake);
+        case 0x6f: return write_config_value(buffer, bufsize, config.battery_volt_blend);
+        case 0x90: return write_config_value(buffer, bufsize, config.battery_smooth);
+        case 0x91: return write_config_value(buffer, bufsize, config.battery_volt_poll_s);
+        // Read-only: last factory-test battery voltage (mV), 0 = unknown.
+        case 0x92: return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv());
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
         case 0x35: { extern volatile uint16_t g_diag_gyro; return write_config_value(buffer, bufsize, (uint16_t)g_diag_gyro); }
         // Live IMU telemetry for the portal curves (read-only, raw int16 LSB):
@@ -420,6 +430,8 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         // charging, 2 full). A live value, not cleared on read; stale while the
         // controller is disconnected, so the portal only shows it when connected.
         case 0x68: { extern uint8_t interrupt_in_data[63]; return write_config_value(buffer, bufsize, (uint8_t)interrupt_in_data[52]); }
+        // Last factory-test battery voltage (mV), read-only; 0 = unknown.
+        case 0x92: { return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv()); }
         // Auto-haptics activity + level meters (peak-hold, cleared on read):
         //   0x69 frames delivered on the audio-out endpoint (bridge active?)
         //   0x6a derived-haptic OUTPUT peak the DSP is generating (0-255)

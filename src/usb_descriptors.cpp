@@ -557,7 +557,10 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     const bool wake = get_config().enable_wake;
     const bool kbd = usb_kbd_iface_needed(get_config());
     // Windows native battery (UPS) interface: present only when battery_mode is
-    // non-zero. Both tail blocks (keyboard, UPS) are 25 bytes each.
+    // non-zero. Re-enabled: the bNumInterfaces calculation below now counts the
+    // always-present 4 interfaces plus optional blocks, so including the UPS
+    // block no longer makes the descriptor lie (it previously claimed 6
+    // interfaces with only 4 present -> CM_PROB_FAILED_START, no HID at all).
     const bool ups = get_config().battery_mode != 0;
 
     // Build the descriptor in RAM instead of mutating the static array: the
@@ -599,7 +602,16 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     config_desc[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
     config_desc[2] = (uint8_t) (off & 0xFF);       // wTotalLength lo
     config_desc[3] = (uint8_t) (off >> 8);         // wTotalLength hi
-    config_desc[4] = (uint8_t) (ITF_NUM_TOTAL - (kbd ? 1 : 0) - (ups ? 1 : 0)); // bNumInterfaces
+    // bNumInterfaces: audio control + streaming OUT + streaming IN + gamepad
+    // HID are ALWAYS present (4 interfaces), plus optional keyboard and UPS.
+    // ITF_NUM_TOTAL (== 6) is a compile-time ceiling and CANNOT be used
+    // directly: subtracting the absent blocks from it is only correct when
+    // exactly one optional block is present (e.g. c244011, where ITF_NUM_TOTAL
+    // was 5 and the formula was kbd ? 5 : 4). With UPS added, ITF_NUM_TOTAL
+    // became 6, so "6 - kbd - ups" yields 6 when both are absent (actual: 4)
+    // and 4 when both are present (actual: 6) - either way the descriptor lies
+    // and Windows marks the whole device CM_PROB_FAILED_START (no HID at all).
+    config_desc[4] = (uint8_t) (4u + (kbd ? 1u : 0u) + (ups ? 1u : 0u));
     return config_desc;
 }
 
