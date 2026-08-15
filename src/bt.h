@@ -31,6 +31,11 @@ void bt_get_signal_strength(int8_t *rssi);
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t* data,uint16_t len);
+// Battery-voltage polling (factory test command). The L2CAP callback shadows
+// the 0x81 response into a private cache; the main loop records the generation
+// before issuing the command and accepts the cache only after it advances.
+uint32_t bt_battery_volt_gen();
+bool bt_battery_volt_take(uint32_t since_gen, uint16_t *mv_out);
 void bt_inquiring_led();
 // BOOTSEL button actions, dispatched from button_functions.cpp.
 void bt_bootsel_click_action();

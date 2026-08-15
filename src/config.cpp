@@ -235,7 +235,8 @@ void config_valid() {
     // interfaces correctly so the UPS block no longer breaks enumeration.)
     if (body->battery_mode > 2) body->battery_mode = 0;
     if (body->battery_fake > 100) body->battery_fake = 80;
-    // Battery display refinement: bool, clamp 0xFF -> off.
+    // Battery display refinements: bools, clamp 0xFF -> off.
+    if (body->battery_volt_blend > 1) body->battery_volt_blend = 0;
     if (body->battery_smooth > 1) body->battery_smooth = 0;
 }
 

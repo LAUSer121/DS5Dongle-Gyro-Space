@@ -77,6 +77,28 @@ static int8_t bt_rssi = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
 queue_t send_fifo;
 
+// Battery-voltage polling: the factory-test response lands in feature_data[0x81]
+// (shared with the pico command channel), so instead of touching the map from
+// the main loop we shadow the LAST 0x81 payload here in the L2CAP callback
+// (which is single-threaded on core0), and the battery code only reads this
+// copy. A generation counter distinguishes a FRESH response from a stale one:
+// the main loop takes note of the generation before issuing the command and
+// only accepts the cache once the generation has advanced. The factory test
+// command can upset retail controllers, so polling is rate-limited (30 s).
+static vector<uint8_t> s_test_report_81;   // shadow of the last 0x81 response
+static volatile uint32_t s_test_gen = 0;   // bumped on every shadowed 0x81
+static uint16_t        s_battery_volt_cache_mv = 0;
+
+uint32_t bt_battery_volt_gen() { return s_test_gen; }
+
+bool bt_battery_volt_take(uint32_t since_gen, uint16_t *mv_out) {
+    // Only accept a response that arrived AFTER the command was issued.
+    if (s_test_gen == since_gen) return false;
+    if (s_battery_volt_cache_mv == 0) return false;
+    *mv_out = s_battery_volt_cache_mv;
+    return true;
+}
+
 struct send_element {
     uint8_t data[512];
     size_t len;
@@ -739,6 +761,21 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
                 feature_data[report_id].assign(packet + 1, packet + size);
+                // Shadow the 0x81 test-command response for the battery-voltage
+                // feature. Format (mirrors dualsense-tester getTestResult):
+                //   [0]=0x81 [1]=deviceId [2]=actionId [3]=status [4..]=data
+                // ANALOG_DATA(4)/BATTERY(3) returns the voltage as uint16 LE.
+                // status 2 = TEST_STATUS_COMPLETE.
+                if (report_id == 0x81 && size >= 7 &&
+                    packet[2] == 0x04 && packet[3] == 0x03 &&
+                    packet[4] == 0x02) {
+                    s_test_report_81.assign(packet + 2, packet + size);
+                    uint16_t mv = (uint16_t) (packet[5] | (packet[6] << 8));
+                    if (mv >= 3000 && mv <= 4500) {
+                        s_battery_volt_cache_mv = mv;
+                        s_test_gen++;
+                    }
+                }
 #if ENABLE_VERBOSE
                 printf("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
 #endif
