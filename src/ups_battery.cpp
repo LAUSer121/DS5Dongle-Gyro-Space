@@ -274,9 +274,27 @@ void ups_battery_tick() {
         // Simulated: fixed level from the portal. Clamped to the safety floor
         // so Windows never sees a critical system battery and starts
         // hibernate/shutdown actions on the emulated UPS.
+        //
+        // DEMO DISCHARGE: when battery_fake is exactly 100 the firmware ramps
+        // the reported level down from 100% at 30% per minute (reaching 70%
+        // after exactly one minute) and holds there. This lets a user verify
+        // that Windows' HID UPS battery display tracks live input reports
+        // (tray percentage + power settings) without touching the portal.
+        // Any other battery_fake value behaves as a fixed level.
         level = cfg.battery_fake;
         if (level > 100) level = 100;
         if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
+        if (cfg.battery_fake == 100) {
+            // 30% per minute = 0.5% per 1 Hz tick. Track in tenths to avoid
+            // float: start 1000, step -5, floor 700 (70.0%).
+            static uint16_t demo_tenths = 1000;
+            if (demo_tenths > 700) {
+                if (demo_tenths >= 5) demo_tenths -= 5;
+                level = (uint8_t) (demo_tenths / 10);
+            } else {
+                level = 70;
+            }
+        }
         // Charging state SYNCs with the real controller: if the DualSense is
         // charging or full, Windows shows the simulated battery as charging on
         // AC; otherwise it shows a battery running on battery power.

@@ -556,13 +556,12 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
 
     const bool wake = get_config().enable_wake;
     const bool kbd = usb_kbd_iface_needed(get_config());
-    // Windows native battery (UPS) interface: DISABLED (see config.cpp note).
-    // Presenting the HID UPS Battery interface on the RP2350 makes Windows
-    // mark the whole composite device CM_PROB_FAILED_START (configuration 0,
-    // no HID devices at all), so the gamepad never enumerates. Keep it out of
-    // the descriptor entirely until the UPS endpoint/descriptor issue is fixed
-    // on hardware; battery display stays off so the controller is reliable.
-    const bool ups = false; // UPS battery interface disabled (was: battery_mode != 0)
+    // Windows native battery (UPS) interface: present only when battery_mode is
+    // non-zero. Re-enabled: the bNumInterfaces calculation below now counts the
+    // always-present 4 interfaces plus optional blocks, so including the UPS
+    // block no longer makes the descriptor lie (it previously claimed 6
+    // interfaces with only 4 present -> CM_PROB_FAILED_START, no HID at all).
+    const bool ups = get_config().battery_mode != 0;
 
     // Build the descriptor in RAM instead of mutating the static array: the
     // keyboard and UPS blocks are independently present/absent at runtime, so
