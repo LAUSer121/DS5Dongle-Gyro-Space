@@ -2491,8 +2491,11 @@ async function readDiag(){
     // meters 0x69-0x6b now live on the Haptics tab, read by readAhMeter().)
     let bat = null;
     try { bat = await readField(0x68, 'u8'); } catch(e) {}
-    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat};
-  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null}; }
+    // Factory-test battery voltage (0x92, mV; 0 = unknown).
+    let volt = null;
+    try { volt = await readField(0x92, 'u16'); } catch(e) {}
+    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat, volt};
+  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null, volt:null}; }
 }
 function rssiLabel(r){
   if (r === null || r === undefined) return t('无','n/a');
@@ -2571,7 +2574,14 @@ async function refreshDiag(){
       const pct = Math.min(lvl * 10, 100);
       const status = st === 1 ? t('充电中','charging') : st === 2 ? t('已充满','full') : st >= 0x0F ? t('电量异常','charge error') : t('未充电','on battery');
       const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
-      batLine = `${t('电池：','Battery: ')}<b style="color:${col}">${pct}%</b> · ${status}<br>`;
+      // Factory-test battery voltage (mV) from field 0x92, when available.
+      let voltTxt = '';
+      if (d.volt) {
+        const v = d.volt;
+        if (v >= 1000) voltTxt = ` · <span style="opacity:.75">${(v/1000).toFixed(2)} V</span>`;
+        else if (v > 0) voltTxt = ` · <span style="opacity:.75">${v} mV</span>`;
+      }
+      batLine = `${t('电池：','Battery: ')}<b style="color:${col}">${pct}%</b> · ${status}${voltTxt}<br>`;
     }
     el.innerHTML = batLine + `${t('实时音频流：','Live audio stream: ')}bytes_read=${d.br}, detected channels=${d.ch}  (${t('4=原生，2=Windows/DS4Windows 立体声','4=native, 2=Windows/DS4Windows stereo')})<br>${t('蓝牙信号：','Bluetooth signal: ')}${rssiLabel(d.rssi)}${extra}`;
   }

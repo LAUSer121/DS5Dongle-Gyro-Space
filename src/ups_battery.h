@@ -46,3 +46,7 @@ uint16_t ups_get_report(uint8_t report_id, uint8_t report_type, uint8_t *buffer,
 // Called from the main loop; rate-limits itself to 1 Hz and pushes the UPS
 // input reports while battery_mode != 0. No-op when the feature is off.
 void ups_battery_tick();
+
+// Last factory-test battery voltage (mV) seen while voltage blend is active.
+// 0 = unknown (blend off, controller rejected the command, or not connected).
+uint16_t ups_last_battery_voltage_mv();

@@ -449,3 +449,10 @@ void ups_battery_tick() {
     payload[1] = 0;
     tud_hid_n_report(inst, UPS_RID_CYCLECOUNT, payload, 2);
 }
+
+// Exposed for the portal (read-only diagnostic 0x92): last factory-test
+// battery voltage in mV. Defined outside the anonymous namespace but the
+// variable is file-static; read it through this accessor.
+uint16_t ups_last_battery_voltage_mv() {
+    return g_volt_cache_mv;
+}

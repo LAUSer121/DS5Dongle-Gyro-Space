@@ -17,6 +17,7 @@
 #include "pico/time.h"
 #include "pico/bootrom.h"
 #include "audio.h"
+#include "ups_battery.h"
 
 // spk_active (main.cpp) + audio_mic_active() (audio.cpp) are surfaced in the
 // 0xf9 command response so the config UI can display the real gated mic/speaker
@@ -427,6 +428,8 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         // charging, 2 full). A live value, not cleared on read; stale while the
         // controller is disconnected, so the portal only shows it when connected.
         case 0x68: { extern uint8_t interrupt_in_data[63]; return write_config_value(buffer, bufsize, (uint8_t)interrupt_in_data[52]); }
+        // Last factory-test battery voltage (mV), read-only; 0 = unknown.
+        case 0x92: { return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv()); }
         // Auto-haptics activity + level meters (peak-hold, cleared on read):
         //   0x69 frames delivered on the audio-out endpoint (bridge active?)
         //   0x6a derived-haptic OUTPUT peak the DSP is generating (0-255)
