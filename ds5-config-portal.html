@@ -1776,8 +1776,22 @@ async function slotReadEffect(slot, trig, idx){
 async function backupAllSlots(){
   const status = document.getElementById('backupStatus');
   const setS = t => { if (status) status.textContent = t; };
-  const dump = { format: 'ds5dongle-slots', version: 2, savedAt: new Date().toISOString(), slots: [] };
+  // Slots carry macro_disable as an ordinary field, so WHICH macros each slot
+  // enables is already covered. The definitions live outside Config_body and are
+  // shared by every slot, so they are a separate question - without them this
+  // file restores masks pointing at whatever table the target dongle happens to
+  // hold.
+  const withMacros = confirm('Include macro definitions in this backup?\n\n' +
+    'Recommended. Which macros each slot enables is always saved; the definitions ' +
+    'themselves are shared by every profile and are only saved if you say yes.');
+  const dump = { format: 'ds5dongle-slots', version: 3, savedAt: new Date().toISOString(), slots: [] };
   try {
+    if (withMacros){
+      setS('Reading macros\u2026');
+      if (!window._macroRows) window._macroRows = await hidLocked(() => macroReadAll());
+      const list = macroTableToJson(window._macroRows);
+      if (list.length) dump.macros = list;
+    }
     await hidLocked(async () => {
       for (let i = 0; i < UI_SLOT_COUNT; i++){
         setS(`Reading slot ${i+1}/${UI_SLOT_COUNT}…`);
@@ -1809,7 +1823,9 @@ async function backupAllSlots(){
     a.href = URL.createObjectURL(blob); a.download = `ds5dongle-slots-${stamp}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    setS(`Backed up ${validN} slot${validN===1?'':'s'} \u2713`);
+    const mN = (dump.macros || []).length;
+    setS(`Backed up ${validN} slot${validN===1?'':'s'}` +
+         (mN ? ` + ${mN} macro${mN===1?'':'s'}` : '') + ` \u2713`);
   } catch(e){ setS('Backup failed: ' + (e && e.message ? e.message : e)); }
 }
 
@@ -1826,6 +1842,16 @@ async function restoreAllSlots(file){
   catch { setS('Restore failed: not a valid JSON file'); return; }
   if (!dump || dump.format !== 'ds5dongle-slots' || !Array.isArray(dump.slots)){
     setS('Restore failed: not a DS5Dongle slot backup'); return;
+  }
+  // v2 files predate macros and simply have no `macros` key - they restore as
+  // before. Restoring definitions is destructive and GLOBAL, so it is always its
+  // own confirmation, separate from the slot one.
+  let restoreMacros = false;
+  if (Array.isArray(dump.macros) && dump.macros.length){
+    restoreMacros = confirm('This backup contains ' + dump.macros.length + ' macro definition' +
+      (dump.macros.length===1?'':'s') + '.\n\n' +
+      'Restoring them REPLACES every macro on the dongle, for all profiles.\n\n' +
+      'Restore the definitions too?');
   }
   const valid = dump.slots.filter(s => s.valid && s.fields);
   if (!valid.length){ setS('Nothing to restore (backup has no saved slots)'); return; }
@@ -1859,8 +1885,17 @@ async function restoreAllSlots(file){
         if (saved) done++; else failed++;
       }
     });
+    // Definitions last: the slot writes above disturb the live config, and
+    // macro_commit() is a single sector erase we only want to do once.
+    if (restoreMacros){
+      setS('Restoring macro definitions\u2026');
+      window._macroRows = macroTableFromJson(dump.macros);
+      await hidLocked(() => macroWriteAll());
+    }
     await readAll(); render(); await refreshSlots();
-    setS(`Restored ${done} slot${done===1?'':'s'}${failed?`, ${failed} failed`:''} \u2713`);
+    const mN = restoreMacros ? dump.macros.length : 0;
+    setS(`Restored ${done} slot${done===1?'':'s'}` + (mN ? ` + ${mN} macro${mN===1?'':'s'}` : '') +
+         `${failed?`, ${failed} failed`:''} \u2713`);
   } catch(e){ setS('Restore failed: ' + (e && e.message ? e.message : e)); }
 }
 
@@ -2063,6 +2098,13 @@ function importProfile(event){
         } catch(e){ extra = ' (custom effects need a connected device — connect and re-import)'; }
       }
       toast(`Imported ${applied} setting(s)` + (unknown.length?` (ignored ${unknown.length} unknown)`:'') + extra + ' — click Save to Device to apply');
+      // A profile carries the macro MASK but never the definitions, so the rows
+      // it switches on are whatever this dongle already holds - which may be the
+      // user's own macros doing something entirely different from what the
+      // profile's author intended. Say plainly what just got enabled.
+      if (Object.prototype.hasOwnProperty.call(settings, 'macro_disable')){
+        try { macroNoticeAfterMaskApplied(); } catch(e){}
+      }
     }catch(e){
       toast('Import failed: not a valid profile JSON', true);
     }
@@ -2577,6 +2619,56 @@ async function macroWriteAll(){
   await sendCmd(0x19, []);   // one erase for the whole table
   await new Promise(r => setTimeout(r, 60));
 }
+// Serialise the macro table for a file. Definitions are DEVICE-GLOBAL, so they
+// only ever travel through paths a human initiated - never through ?autoapply,
+// which Playnite fires unattended on every game launch and which would otherwise
+// silently replace the whole table with whatever was captured at export time.
+function macroTableToJson(rows){
+  const out = [];
+  (rows || []).forEach((m, i) => {
+    if (!m || macroRowEmpty(m)) return;
+    out.push({ index: i, label: m.label || '', chord: m.chord >>> 0, gesture: m.gesture|0,
+               flags: m.flags|0, hold_cs: m.hold_cs|0, keys: (m.keys||[0,0,0,0]).slice(0,4),
+               rel_order: m.rel_order|0 });
+  });
+  return out;
+}
+function macroTableFromJson(list){
+  const rows = [];
+  for (let i=0;i<MACRO_COUNT;i++) rows.push(macroBlankRow());
+  for (const e of (list || [])){
+    const i = e.index|0; if (i < 0 || i >= MACRO_COUNT) continue;
+    rows[i] = { chord: (e.chord|0)>>>0, gesture: e.gesture|0, flags: e.flags|0,
+                hold_cs: e.hold_cs|0, keys: (e.keys||[0,0,0,0]).slice(0,4).map(k=>k|0),
+                rel_order: e.rel_order|0, label: String(e.label||'').slice(0,15), present: true };
+  }
+  return rows;
+}
+
+// Which macros a just-applied mask switches on, described with the definitions
+// THIS dongle holds. The mask and the definitions travel separately, so an
+// imported profile enables the local row N, not the row N its author had - which
+// is a silent wrong action rather than a silent no-op if the two disagree.
+function macroEnabledSummary(mask){
+  const rows = window._macroRows || [];
+  const on = [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    if (((mask>>>0) & (1<<i)) !== 0) continue;   // stored inverted: clear bit = enabled
+    const m = rows[i];
+    const what = (!m || macroRowEmpty(m)) ? '(empty)'
+               : ((m.label ? m.label + ' — ' : '') + (macroComboName(m.keys, m.rel_order) || '?'));
+    on.push('  ' + (i+1) + '. ' + what);
+  }
+  return on;
+}
+function macroNoticeAfterMaskApplied(){
+  const on = macroEnabledSummary(config['macro_disable']);
+  if (!on.length) return;
+  alert('Profile applied. It enables ' + on.length + ' macro' + (on.length===1?'':'s') +
+        ' — using the definitions already on this dongle, possibly not the ones the profile was made with:\n\n' +
+        on.join('\n'));
+}
+
 async function macroSuspendFiring(on){
   try { await sendCmd(0x1a, [on ? 1 : 0]); } catch(e){}
 }
@@ -2907,6 +2999,8 @@ function macroRender(){
   h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">';
   h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroAddRow()"' + (rec ? ' disabled' : '') + '>+</button>';
   h += '<button class="btn" style="padding:2px 10px" onclick="macroSaveTable()"' + (rec ? ' disabled' : '') + '>Save macros to device</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroExportFile()"' + (rec ? ' disabled' : '') + '>Export macros</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroImportPick()"' + (rec ? ' disabled' : '') + '>Import macros</button>';
   h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
   h += '</div>';
   box.innerHTML = h;
@@ -2927,6 +3021,51 @@ function macroRender(){
 // keyboard interface to the USB descriptor and needs a reconnect to take effect.
 // Hand-rolling the enumeration check in a second save path is how the two get
 // out of step.
+async function macroExportFile(){
+  const el = document.getElementById('macrosave');
+  if (!window._macroRows){ if (el) el.textContent = 'Load macros first.'; return; }
+  const list = macroTableToJson(window._macroRows);
+  if (!list.length){ if (el) el.textContent = 'No macros to export.'; return; }
+  const dump = { format: 'ds5dongle-macros', version: 1,
+                 savedAt: new Date().toISOString(), macros: list };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href = URL.createObjectURL(blob); a.download = 'ds5dongle-macros-' + stamp + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  if (el) el.textContent = 'Exported ' + list.length + ' macro' + (list.length===1?'':'s') + ' \u2713';
+}
+
+function macroImportPick(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => { if (inp.files && inp.files[0]) macroImportFile(inp.files[0]); };
+  inp.click();
+}
+
+async function macroImportFile(file){
+  const el = document.getElementById('macrosave');
+  let dump;
+  try { dump = JSON.parse(await file.text()); }
+  catch { if (el) el.textContent = 'Not a valid JSON file.'; return; }
+  if (!dump || dump.format !== 'ds5dongle-macros' || !Array.isArray(dump.macros)){
+    if (el) el.textContent = 'Not a DS5Dongle macro file.'; return;
+  }
+  // Destructive and GLOBAL: this replaces the definitions every profile refers
+  // to, not just the current one. Always confirm, never silently.
+  if (!confirm('This file contains ' + dump.macros.length + ' macro definition' +
+               (dump.macros.length===1?'':'s') + '.\n\n' +
+               'Importing REPLACES every macro on the dongle, for all profiles. ' +
+               'Which macros each profile enables is not changed.\n\nImport them?')){
+    if (el) el.textContent = 'Import cancelled.'; return;
+  }
+  window._macroRows = macroTableFromJson(dump.macros);
+  macroRender();
+  if (el) el.textContent = 'Imported ' + dump.macros.length +
+    ' \u2014 press "Save macros to device" to write them.';
+}
+
 async function macroSaveTable(){
   const el = document.getElementById('macrosave');
   if (!device){ if (el) el.textContent = 'No device.'; return; }
@@ -2940,7 +3079,16 @@ async function macroSaveTable(){
   if (el) el.textContent = 'Saving enable state…';
   await saveAll();   // writes macro_disable, persists to flash, reconnects if the
                      // keyboard interface has to appear or disappear
-  if (el) el.textContent = 'Saved. Save a slot to capture this enable state for a game.';
+
+  // saveAll()'s common path refreshes savedSnapshot and returns WITHOUT calling
+  // render(), deliberately - it avoids handle churn when nothing about the USB
+  // descriptor changed. The dirty banner is drawn from that snapshot, so without
+  // an explicit repaint it kept claiming there were unsaved changes after a
+  // successful save. Repaint first, then write the status line, because
+  // macroRender() rebuilds the box and would otherwise discard it.
+  macroRender();
+  const el2 = document.getElementById('macrosave');
+  if (el2) el2.textContent = 'Saved. Save a slot to capture this enable state for a game.';
 }
 
 const TABS = [
@@ -3122,7 +3270,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.0</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.1</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>

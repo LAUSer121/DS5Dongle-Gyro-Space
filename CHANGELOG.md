@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here.
 
+## [1.19.1] — 2026-08-14
+
+**Portal only.** The firmware is unchanged from 1.19.0 — same `.uf2` files, same
+config version 19. Replace `ds5-config-portal.html`; no reflashing, and nothing
+to re-save.
+
+### Added
+- **Export macros / Import macros**, on the Macros tab. Macro *definitions* are
+  device-global and shared by every profile, so they get their own file rather
+  than riding along inside a profile.
+  - Importing replaces every macro on the dongle, for all profiles, so it always
+    confirms first. It loads into the editor and waits — nothing reaches the
+    device until you press **Save macros to device**.
+  - Row numbers are preserved through a round trip. The enable mask addresses
+    rows by index, so compacting an export would silently rebind every profile.
+- **Back up all slots / Restore** now ask whether to include macro definitions.
+  Which macros each slot enables was already covered — that is an ordinary config
+  field — but the definitions live outside `Config_body`, so without this a
+  restore produced enable masks pointing at whatever table the target dongle
+  happened to hold. Backup format v2 → v3; v2 files restore exactly as before.
+- **After importing a profile, the portal lists the macros it just enabled, by
+  name.** A profile carries only the mask, so it switches on *your* row 3, which
+  may be something entirely different from what the profile's author had there —
+  a silent wrong action rather than a silent no-op.
+
+### Fixed
+- **"Enable state changed" stayed on screen after saving.** The save itself
+  worked; the panel was drawn from a stale snapshot. `saveAll()` refreshes the
+  snapshot and deliberately returns without re-rendering when nothing about the
+  USB descriptor changed, so the macro panel now repaints itself after a save.
+  Covered by a regression test in `tools/portal-macro-test.js`.
+
+### Notes
+- The Playnite auto-apply page still carries only the enable mask, never
+  definitions, and this is deliberate: it runs unattended on every game launch,
+  so one stale export could otherwise overwrite macros made since.
+
 ## [1.19.0] — 2026-08-14
 
 Config version 19. **No `flash_nuke` needed.** One new config field is appended at
@@ -13,7 +50,7 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
 > after setting its macros.
 
 ### Added
-- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo — e.g.
+- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo —
   `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
   edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
   HID keyboard interface the wake feature already provides; nothing runs on the PC.

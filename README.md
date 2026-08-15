@@ -1,6 +1,8 @@
 # DS5Dongle — Studio
 
-**Version 1.19.0**
+**Version 1.19.1** — portal-only update. The firmware is unchanged from 1.19.0
+and the `.uf2` files in this release are the 1.19.0 build, so **no reflashing is
+needed**; replace `ds5-config-portal.html` and you're done.
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -1102,6 +1104,30 @@ The panel warns you when the enable state has changed but not yet been saved.
 > is already on the interface is present anyway, so there is no reconnect at all.
 > This is the same constraint as wake: a game with native DualSense support may
 > stop recognising the controller while the keyboard interface is present.
+
+#### Backing up and sharing macros *(new in 1.19.1)*
+
+Definitions and enablement travel separately, because they are stored separately.
+
+| Action | Carries |
+|---|---|
+| **Export macros** / **Import macros** (Macros tab) | the definitions themselves |
+| **Export Profile** / **Import Profile** | only which macros are enabled |
+| **Export HTML** and the Playnite auto-apply page | only which macros are enabled |
+| **Back up all slots** / **Restore** | both — it asks whether to include definitions |
+
+**Import macros** replaces every macro on the dongle, for all profiles, so it
+always asks first. It loads into the editor rather than writing straight to the
+device — nothing is committed until you press **Save macros to device**.
+
+Note that the Playnite auto-apply page deliberately cannot carry definitions.
+It runs unattended on every game launch, so if it could, one stale export would
+silently overwrite macros you had made since.
+
+Because a profile carries only the enable mask, importing one switches on
+*your* macros in those rows — which may not be what the profile's author had
+there. After an import the portal lists what it just enabled, by name, so you
+can see what will actually fire.
 
 #### Two limits to be aware of
 
