@@ -992,3 +992,32 @@ void init_feature() {
     check_dse = true;
     get_feature_data(0x70, 64);
 }
+
+// Read the controller's battery voltage (mV) via the factory test command,
+// mirroring dualsense-tester's getBatteryVoltage():
+//   1. SET_FEATURE 0x80 with device=ANALOG_DATA(4), action=BATTERY(3)
+//   2. GET_FEATURE 0x81 -> result report, first uint16 LE = millivolts
+// Retail controllers may reject the factory test command; return 0 then.
+uint16_t bt_get_battery_voltage_mv() {
+    if (hid_control_cid == 0) return 0;
+    // Clear any stale 0x81 response so a late answer is not mistaken for ours.
+    feature_data.erase(0x81);
+
+    uint8_t cmd[2] = {0x04, 0x03}; // ANALOG_DATA / BATTERY
+    set_feature_data(0x80, cmd, sizeof(cmd));
+
+    // Poll for the response over a short window (HID control round-trip).
+    for (int i = 0; i < 8; i++) {
+        sleep_ms(25);
+        auto it = feature_data.find(0x81);
+        if (it != feature_data.end() && it->second.size() >= 4) {
+            const auto &r = it->second;
+            // r[0] == 0x66 is the pico command framing; the test result report
+            // starts at byte 2 (0x66 funcid). Voltage is the first uint16 LE.
+            const uint8_t *p = (r.size() >= 4 && r[0] == 0x66) ? &r[2] : &r[0];
+            uint16_t mv = (uint16_t) (p[0] | (p[1] << 8));
+            return mv;
+        }
+    }
+    return 0;
+}

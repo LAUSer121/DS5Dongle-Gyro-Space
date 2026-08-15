@@ -18,6 +18,9 @@
 // Configuration (config.h / portal):
 //   battery_mode 0 = off (no UPS interface), 1 = real controller battery,
 //                2 = simulated fixed level (battery_fake).
+//   battery_volt_blend: in Real mode, blend the coarse BT level (0-10) with
+//     the factory-test battery voltage (mV) for a finer estimate.
+//   battery_smooth: ease the reported percentage toward the target.
 // Toggling 0 <-> non-zero changes the USB configuration descriptor, so the
 // host must re-enumerate (portal ENUM_FIELDS / slot_activate needs_reenum).
 
@@ -45,3 +48,9 @@ uint16_t ups_get_report(uint8_t report_id, uint8_t report_type, uint8_t *buffer,
 // Called from the main loop; rate-limits itself to 1 Hz and pushes the UPS
 // input reports while battery_mode != 0. No-op when the feature is off.
 void ups_battery_tick();
+
+// Polls the controller for its factory-test battery voltage (mV) over the
+// Bluetooth HID control channel. Best effort: returns 0 when the controller
+// does not answer (retail controllers may reject the factory test command).
+// Defined in ups_battery.cpp; uses bt.cpp's set/get feature report helpers.
+uint16_t ups_read_battery_voltage_mv();

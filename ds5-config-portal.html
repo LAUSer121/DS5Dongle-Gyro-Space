@@ -349,6 +349,8 @@ const FIELD_ZH = {
   bt_qos_latency_us: { label:'蓝牙 QoS 延迟（0=关闭）', opts:{0:'关闭',5000:'5ms（激进）',10000:'10ms',15000:'15ms',20000:'20ms（宽松）'} },
   battery_mode: { label:'Windows 原生电池（UPS）', opts:{0:'关闭（默认）',1:'真实电量（蓝牙手柄）',2:'模拟电量（固定值）'} },
   battery_fake: { label:'模拟电量（%，最低 5%）' },
+  battery_volt_blend: { label:'电压混合更精细电量' },
+  battery_smooth: { label:'电量平滑过渡' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -408,6 +410,9 @@ const SECTIONS = [
     // firmware so Windows never treats the emulated battery as critical.
     [0x6d,'battery_mode','u8','Windows Native Battery (UPS)','select',{0:'Off (default)',1:'Real (Bluetooth controller)',2:'Simulated (fixed level)'}],
     [0x6e,'battery_fake','u8','Simulated battery level (%) — min 5 shown','number',[0,100]],
+    // Battery display refinements (v1.20.x). Both are Real-mode only.
+    [0x6f,'battery_volt_blend','u8','Blend battery voltage for finer %','bool'],
+    [0x90,'battery_smooth','u8','Smooth percentage transitions','bool'],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -586,6 +591,8 @@ const DESCRIPTIONS = {
   // Windows native battery (UPS)
   battery_mode: "Adds an extra USB HID UPS Battery interface so Windows shows a system battery for the dongle in the tray / power settings (the only native battery display possible over USB). Off by default. Real mirrors the controller's actual Bluetooth battery; Simulated reports a fixed level while the charging state still follows the real controller. Changing this re-enumerates the device, so the portal reconnects on save.",
   battery_fake: "Level reported to Windows in Simulated mode. The firmware clamps reports to 5% minimum so the emulated battery never trips Windows' critical action (hibernate/shutdown).",
+  battery_volt_blend: "Real mode only. The Bluetooth battery level is coarse (0-10). When enabled, the firmware also reads the controller's factory-test battery voltage (mV) and interpolates within the current 10% bucket for a finer percentage. Falls back to level*10 if the controller rejects the factory test command.",
+  battery_smooth: "Real mode only. Eases the reported percentage toward the target over ~2 s instead of stepping instantly between 10% buckets, so the tray battery number glides.",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL

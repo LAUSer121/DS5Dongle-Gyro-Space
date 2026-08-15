@@ -17,7 +17,7 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 20;
+constexpr uint16_t CONFIG_VERSION = 21;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -235,6 +235,9 @@ void config_valid() {
     // interfaces correctly so the UPS block no longer breaks enumeration.)
     if (body->battery_mode > 2) body->battery_mode = 0;
     if (body->battery_fake > 100) body->battery_fake = 80;
+    // Battery display refinements: bools, clamp 0xFF -> off.
+    if (body->battery_volt_blend > 1) body->battery_volt_blend = 0;
+    if (body->battery_smooth > 1) body->battery_smooth = 0;
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below
