@@ -250,8 +250,9 @@ void config_valid() {
     // Auto-calibration: DEFAULT ON (1). Fresh-flash 0xFF -> 1.
     if (body->battery_calib_enable > 1) body->battery_calib_enable = 1;
     // Calibration anchors: fresh-flash 0xFFFF -> 0 (not yet sampled).
-    for (auto &v : body->battery_calib_volt) {
-        if (v > 4500) v = 0;   // > max plausible Li-ion voltage -> untouched slot
+    for (size_t i = 0; i < 11; i++) {
+        uint16_t v = body->battery_calib_volt[i];
+        if (v > 4500) { v = 0; body->battery_calib_volt[i] = v; }  // > max plausible Li-ion voltage -> untouched slot
     }
 }
 

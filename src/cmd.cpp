@@ -270,7 +270,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // calibration: clear every anchor IN the staged body so the subsequent
         // set_config() lands an empty table (and the caller's save persists it).
         case 0xa2: { ups_calib_save_now(); break; }
-        case 0xa3: { for (auto &v : new_config.battery_calib_volt) v = 0; break; }
+        case 0xa3: { for (size_t i = 0; i < 11; i++) new_config.battery_calib_volt[i] = 0; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;

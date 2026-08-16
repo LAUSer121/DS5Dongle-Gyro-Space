@@ -438,7 +438,7 @@ void ups_battery_tick() {
                     // so anchors survive reboot without wearing flash.
                     if (cfg.battery_calib_enable && mv >= 3000 && mv <= 4500) {
                         auto &body = get_config();
-                        uint16_t &anchor = body.battery_calib_volt[lvl10];
+                        uint16_t anchor = body.battery_calib_volt[lvl10];
                         if (anchor == 0) {
                             anchor = mv;                       // first sample: seed
                         } else {
@@ -447,6 +447,7 @@ void ups_battery_tick() {
                             const int32_t diff = (int32_t) mv - (int32_t) anchor;
                             anchor = (uint16_t) ((int32_t) anchor + ((diff >= 0) ? (diff + 4) / 8 : (diff - 4) / 8));
                         }
+                        body.battery_calib_volt[lvl10] = anchor;
                         g_calib_dirty = true;
                     }
                 } else if (now - g_volt_next_poll_ms > 3000) {
