@@ -653,13 +653,20 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             // from; with wake off we hide as before so the host and DS4Windows see
             // a clean removal. Upstream OmniSense reached the same conclusion.
             if (!tud_suspended()) {
-                if (get_config().enable_wake) {
-                    // Wake on: we must stay on the bus (or a later host sleep is
-                    // invisible to us), but under our normal product ID that
-                    // leaves DS4Windows showing a controller that is switched
-                    // off. Re-enumerate under our IDLE product ID: same
-                    // interfaces, different identity, so nothing recognises it
-                    // as a controller while none is attached.
+                // Stay on the bus (idle identity) when wake is on, OR when the
+                // battery keep-online option is on: leaving the bus entirely
+                // makes Windows drop the UPS battery icon, and rediscovering it
+                // later can require an Explorer restart. Keeping the idle
+                // identity means DS4Windows/etc. see no controller, but the
+                // HID UPS battery stays enumerable.
+                if (get_config().enable_wake || get_config().battery_keep_online) {
+                    // Wake on (or keep-online): we must stay on the bus (or a
+                    // later host sleep is invisible to us / the battery icon
+                    // disappears), but under our normal product ID that leaves
+                    // DS4Windows showing a controller that is switched off.
+                    // Re-enumerate under our IDLE product ID: same interfaces,
+                    // different identity, so nothing recognises it as a
+                    // controller while none is attached.
                     // Tell the wake module the link is gone FIRST. Without this
                     // its bt_link_up flag stays set (wake_on_bt_disconnect was
                     // declared but never called from anywhere, here or in the
@@ -674,7 +681,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                     sleep_ms(250);   // > the USB 100 ms port debounce, or the host may not see the disconnect at all
                     tud_connect();
                 } else {
-                    tud_disconnect();     // wake off: leave the bus entirely
+                    tud_disconnect();     // old behaviour: leave the bus entirely
                 }
             }
 #endif

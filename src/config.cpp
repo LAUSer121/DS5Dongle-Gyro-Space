@@ -245,6 +245,8 @@ void config_valid() {
     }
     // Voltage blend weight: 0-100, fresh-flash 0xFF -> 70.
     if (body->battery_volt_weight > 100) body->battery_volt_weight = 70;
+    // Keep-online: DEFAULT ON (1). Fresh-flash 0xFF -> 1 (kept on the bus).
+    if (body->battery_keep_online > 1) body->battery_keep_online = 1;
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

@@ -278,6 +278,12 @@ struct __attribute__((packed)) Config_body {
     uint8_t battery_smooth;     // bool: 0 off, 1 on
     uint16_t battery_volt_poll_s; // [1,3000] deciseconds (0.1 s) between polls
     uint8_t battery_volt_weight;  // [0,100] voltage weight in blend, default 70
+    // battery_keep_online: keep the dongle on the USB bus (under the idle
+    // Raspberry Pi identity) when the controller disconnects, even with wake
+    // disabled, so Windows keeps the UPS battery icon/tray battery alive and
+    // doesn't need an Explorer restart to rediscover it. 0 = old behaviour
+    // (device leaves the bus entirely when wake is off). Default ON.
+    uint8_t battery_keep_online; // bool: 0 off (old), 1 on (default, battery persists)
 };
 
 struct __attribute__((packed)) Config {
