@@ -354,6 +354,7 @@ const FIELD_ZH = {
   battery_volt_poll_s: { label:'电压轮询间隔（0.1秒）' },
   battery_volt_weight: { label:'电压混合权重（%）' },
   battery_keep_online: { label:'断连后保持在线（修后）' },
+  battery_calib_enable: { label:'自动校准电量映射' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -424,6 +425,10 @@ const SECTIONS = [
     // Explorer restart. Old behaviour left the bus entirely. Applies whenever
     // the UPS battery interface is enabled (battery_mode != 0).
     [0x94,'battery_keep_online','u8','Stay on USB after disconnect (new behaviour)','bool'],
+    // Auto-calibration: samples (voltage, level) pairs while the controller is
+    // in use and fits the voltage->% curve to THIS battery. Toggle + read-only
+    // anchors + persist/reset live in the calibration card below the section.
+    [0x95,'battery_calib_enable','u8','Auto-calibrate voltage → % mapping','bool'],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -607,6 +612,7 @@ const DESCRIPTIONS = {
   battery_volt_poll_s: "Real mode only (used when voltage blend is on). How often the firmware asks the controller for its factory-test battery voltage, in DECISECONDS (0.1 s): 1 = 100 ms (nearly live, but sends the test command 10x/s), 300 = 30 s (default), 3000 = 300 s. Lower updates the blended percentage faster at the cost of more BT test traffic.",
   battery_volt_weight: "Real mode only (used when voltage blend is on). How much the measured voltage drives the displayed percentage: 100 = voltage only (mapped through a Li-ion discharge curve), 0 = controller level only. Default 70. If your battery's voltage reads low (aged cell) and you want the display to follow the voltage, raise it toward 100; if you trust the controller's own estimate, lower it.",
   battery_keep_online: "Behaviour when the controller disconnects while wake is off. NEW (default, ON): the dongle re-enumerates under its idle identity and stays on the USB bus, so Windows keeps the UPS battery icon in the tray without you having to restart Explorer to rediscover it. OLD (OFF): the device leaves the bus entirely — the battery icon disappears and Explorer usually needs a restart (or replug) before it comes back.",
+  battery_calib_enable: "Auto-calibrates the voltage → percentage mapping while the controller is in use. Every factory-test voltage sample paired with the controller's reported level (0-10) nudges that level's anchor toward the observed voltage (exponential smoothing), so the curve gradually matches THIS battery — age, chemistry, charging habits — instead of a generic Li-ion curve. Off uses the fixed built-in curve. The card below plots the fitted curve vs the default and the live (voltage, level) observation. Anchors persist across reboots.",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
@@ -2637,6 +2643,124 @@ function imuCardHTML(){ return `<div class="card"><div class="card-title">${t('�
   </div>
 </div>`; }
 
+// ===== Battery voltage -> % calibration card (v1.20.x) =====
+// Plots the voltage->percentage mapping: the fitted (auto-calibrated) curve in
+// green through the sampled anchors, the fixed Li-ion default in grey, and the
+// latest (voltage, level) observation as a white dot. Live while the device tab
+// is open. Fields: 0x96 = sample count, 0x97-0xA1 = anchors lvl 0..10 (u16 mV),
+// plus 0x92 = last voltage. Reset (0xA3) and persist-now (0xA2) are writes.
+const CALIB_KEYS = [[0x96,'cCount','u8'],
+  [0x97,'cv0','u16'],[0x98,'cv1','u16'],[0x99,'cv2','u16'],[0x9a,'cv3','u16'],
+  [0x9b,'cv4','u16'],[0x9c,'cv5','u16'],[0x9d,'cv6','u16'],[0x9e,'cv7','u16'],
+  [0x9f,'cv8','u16'],[0xa0,'cv9','u16'],[0xa1,'cv10','u16']];
+// The built-in Li-ion default curve, mirroring ups_battery.cpp.
+const DEFAULT_VOLT_CURVE = [[3000,0],[3300,3],[3400,6],[3500,10],[3600,18],
+  [3700,32],[3800,48],[3900,65],[4000,82],[4100,93],[4200,100]];
+let _calibBusy = false;
+let _calibCache = null; // {count, anchors:[11], volt}
+
+function calibCardHTML(){
+  if (+config['battery_mode'] === 0) return '';
+  return `<div class="card"><div class="card-title">${t('电压 → 电量映射（自动校准）','Voltage → % Mapping (auto-calibrated)')} <span style="font-size:11px;color:var(--sub)">(${t('fields 0x96-0xA1','fields 0x96-0xA1')})</span></div>
+  <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('绿线 = 按本电池观测拟合的映射（自动校准），灰线 = 内置默认 Li-ion 曲线。白点 = 最近一次（电压, 电量）观测。使用过程中每个电量档位被采样后，绿线会逐渐贴合这块电池的真实放电曲线。','Green = the mapping fitted to THIS battery\u0027s observations (auto-calibration); grey = built-in default Li-ion curve. White dot = latest (voltage, level) observation. As each level gets sampled during use, the green line progressively matches this battery\u0027s real discharge curve.')}</div>
+  <canvas id="calibCurve" style="width:100%;height:170px;background:#0c0c0e;border:1px solid var(--line,#333);border-radius:6px;display:block"></canvas>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px">
+    <span style="color:#4dc3ff">— ${t('已采样档位','sampled levels')}: <b id="calibCount">–</b>/11</span>
+    <span style="color:var(--sub)" id="calibLive">${t('等待数据…','waiting…')}</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-outline" style="padding:2px 10px" onclick="calibPersistNow()">${t('立即保存锚点','Save anchors now')}</button>
+    <button class="btn btn-outline" style="padding:2px 10px" onclick="calibReset()">${t('重置校准','Reset calibration')}</button>
+  </div></div>`; }
+
+function drawCalibCurve(){
+  const cv = document.getElementById('calibCurve');
+  if (!cv || !cv.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.max(1, Math.round(w*dpr));
+  cv.height = Math.max(1, Math.round(h*dpr));
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#0c0c0e'; ctx.fillRect(0,0,w,h);
+  const V0 = 3000, V1 = 4200;                 // voltage axis (mV)
+  const X = v => (v - V0) / (V1 - V0) * w;    // map mV -> x
+  const Y = p => h - (p / 100) * h;           // map % -> y
+  // grid at 10% and 100 mV
+  ctx.strokeStyle = '#1a1a1e'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let p = 0; p <= 100; p += 10){ ctx.moveTo(0, Y(p)); ctx.lineTo(w, Y(p)); }
+  for (let v = V0; v <= V1; v += 100){ ctx.moveTo(X(v), 0); ctx.lineTo(X(v), h); }
+  ctx.stroke();
+  // default curve (grey dashed)
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]); ctx.beginPath();
+  DEFAULT_VOLT_CURVE.forEach(([v,p], i) => i ? ctx.lineTo(X(v), Y(p)) : ctx.moveTo(X(v), Y(p)));
+  ctx.stroke(); ctx.setLineDash([]);
+  const c = _calibCache;
+  if (!c) { ctx.fillStyle = '#666'; ctx.font = '11px monospace'; ctx.fillText('…', 8, 14); return; }
+  // fitted curve through sampled anchors (green)
+  const pts = [];
+  for (let lvl = 0; lvl < 11; lvl++){ const v = c.anchors[lvl]; if (v >= 2500 && v <= 4500) pts.push([v, lvl*10]); }
+  pts.sort((a,b) => a[0] - b[0]);
+  if (pts.length >= 2){
+    ctx.strokeStyle = '#06d6a0'; ctx.lineWidth = 2; ctx.beginPath();
+    pts.forEach(([v,p], i) => i ? ctx.lineTo(X(v), Y(p)) : ctx.moveTo(X(v), Y(p)));
+    ctx.stroke();
+    // anchor dots
+    ctx.fillStyle = '#06d6a0';
+    for (const [v,p] of pts){ ctx.beginPath(); ctx.arc(X(v), Y(p), 2.5, 0, 6.2832); ctx.fill(); }
+  } else if (pts.length === 1){
+    ctx.fillStyle = '#06d6a0'; ctx.beginPath(); ctx.arc(X(pts[0][0]), Y(pts[0][1]), 3, 0, 6.2832); ctx.fill();
+  }
+  // live observation dot (white)
+  if (c.volt >= 3000 && c.volt <= 4200 && c.level !== undefined && c.level !== null){
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(X(c.volt), Y(Math.min(c.level*10, 100)), 3.5, 0, 6.2832); ctx.fill();
+  }
+  // axis labels
+  ctx.fillStyle = '#666'; ctx.font = '10px monospace';
+  ctx.fillText('3.0V', 4, h - 3); ctx.fillText('4.2V', w - 30, h - 3);
+  ctx.fillText('100%', 4, 10); ctx.fillText('0%', 4, h - 3);
+  const cnt = document.getElementById('calibCount');
+  if (cnt) cnt.textContent = c.count;
+  const live = document.getElementById('calibLive');
+  if (live) live.innerHTML = c.volt ? `${t('电压','voltage')} ${(c.volt/1000).toFixed(2)}V · ${t('档位','level')} ${c.level ?? '–'} (${(c.level ?? 0)*10}%)` : t('尚无电压读数','no voltage yet');
+}
+
+async function pollCalib(){
+  if (_calibBusy || saving || slotsBusy || !device || !device.opened) return;
+  if (!document.getElementById('calibCurve')) return;
+  _calibBusy = true;
+  try {
+    const got = await bulkReadFields(CALIB_KEYS);
+    if (!got) return;
+    let volt = 0;
+    try { volt = await readField(0x92, 'u16'); } catch(_){}
+    const bat = (lastInput && lastInput[52]) || 0;
+    const lvl = (bat & 0x0F) <= 10 ? (bat & 0x0F) : null;
+    _calibCache = { count: got.cCount, anchors: [got.cv0,got.cv1,got.cv2,got.cv3,got.cv4,got.cv5,got.cv6,got.cv7,got.cv8,got.cv9,got.cv10], volt, level: lvl };
+    drawCalibCurve();
+  } catch(_){ /* HID contention: skip this tick */ }
+  finally { _calibBusy = false; }
+}
+setInterval(()=>{ if(!_calibBusy && !saving && !slotsBusy && device && device.opened && window._tab === 'device' && document.getElementById('calibCurve')) hidLocked(pollCalib); }, 1000);
+
+async function calibPersistNow(){
+  try {
+    await writeFieldSafe(0xa2, 'u8', 1);
+    toast(t('校准锚点已保存','Calibration anchors saved'));
+  } catch(e){ toast('Save failed: ' + e.message, true); }
+}
+async function calibReset(){
+  if (!confirm(t('确定要重置电量校准吗？所有已采样的电压锚点将被清除。','Reset battery calibration? All sampled voltage anchors will be cleared.'))) return;
+  try {
+    await writeFieldSafe(0xa3, 'u8', 1);
+    try { await sendCmd(0x02); } catch(e){ /* flash write may stall the USB briefly */ }
+    _calibCache = null;
+    toast(t('校准已重置','Calibration reset'));
+    render();
+  } catch(e){ toast('Reset failed: ' + e.message, true); }
+}
+
 const IMU_KEYS = [[0x77,'gx','i16'],[0x78,'gy','i16'],[0x79,'gz','i16'],
                   [0x7a,'ax','i16'],[0x7b,'ay','i16'],[0x7c,'az','i16'],
                   [0x70,'sx','i16'],[0x71,'sy','i16']];
@@ -3657,6 +3781,8 @@ function fieldRowHTML(f){
   if (key === 'battery_fake' && +config['battery_mode'] !== 2) return '';
   // Keep-online only matters while the UPS battery interface exists (mode != 0).
   if (key === 'battery_keep_online' && +config['battery_mode'] === 0) return '';
+  // Calibration toggle likewise only makes sense with the battery interface on.
+  if (key === 'battery_calib_enable' && +config['battery_mode'] === 0) return '';
   // Voltage blend + poll interval + weight only apply to Real mode (mode == 1).
   if ((key === 'battery_volt_blend' || key === 'battery_volt_poll_s' || key === 'battery_volt_weight') &&
       +config['battery_mode'] !== 1) return '';
@@ -3807,6 +3933,7 @@ function render(){
     if (section.title === 'Auto-Haptics & Speaker Effect Leak')
       html += `<div class="card"><div class="card-title">${t('自动触觉 — 实时','Auto-haptics — live')} <span style="font-size:11px;color:var(--sub)">${t('（连接时更新）','(updates while connected)')}</span></div><div id="ahbox" style="font-size:13px">${t('连接后可查看实时自动触觉活动。','Connect to see live auto-haptics activity.')}</div></div>`;
   }
+  if (tab === 'device') html += calibCardHTML();
   if (tab === 'gyro') html += imuCardHTML();
   if (tab === 'lights') html += lightsHTML();
   html += `<div class="actions">

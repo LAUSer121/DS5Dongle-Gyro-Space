@@ -263,6 +263,14 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // after BT disconnect (battery icon persists), 0 = old behaviour (leave
         // the bus entirely).
         case 0x94: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_keep_online=v; break; }
+        // Auto-calibration (v1.20.x): 0x95 toggle, 0xA2 persist anchors now,
+        // 0xA3 reset anchors (both take a dummy byte).
+        case 0x95: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_calib_enable=v; break; }
+        // 0xA2 = persist calibration anchors now (dummy payload). 0xA3 = reset
+        // calibration: clear every anchor IN the staged body so the subsequent
+        // set_config() lands an empty table (and the caller's save persists it).
+        case 0xa2: { ups_calib_save_now(); break; }
+        case 0xa3: { for (auto &v : new_config.battery_calib_volt) v = 0; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -413,6 +421,20 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x91: return write_config_value(buffer, bufsize, config.battery_volt_poll_s);
         case 0x93: return write_config_value(buffer, bufsize, config.battery_volt_weight);
         case 0x94: return write_config_value(buffer, bufsize, config.battery_keep_online);
+        case 0x95: return write_config_value(buffer, bufsize, config.battery_calib_enable);
+        // Read-only: sampled calibration anchor for BT level 0..10 (0 = none yet).
+        case 0x96: return write_config_value(buffer, bufsize, ups_calib_sample_count());
+        case 0x97: return write_config_value(buffer, bufsize, config.battery_calib_volt[0]);
+        case 0x98: return write_config_value(buffer, bufsize, config.battery_calib_volt[1]);
+        case 0x99: return write_config_value(buffer, bufsize, config.battery_calib_volt[2]);
+        case 0x9a: return write_config_value(buffer, bufsize, config.battery_calib_volt[3]);
+        case 0x9b: return write_config_value(buffer, bufsize, config.battery_calib_volt[4]);
+        case 0x9c: return write_config_value(buffer, bufsize, config.battery_calib_volt[5]);
+        case 0x9d: return write_config_value(buffer, bufsize, config.battery_calib_volt[6]);
+        case 0x9e: return write_config_value(buffer, bufsize, config.battery_calib_volt[7]);
+        case 0x9f: return write_config_value(buffer, bufsize, config.battery_calib_volt[8]);
+        case 0xa0: return write_config_value(buffer, bufsize, config.battery_calib_volt[9]);
+        case 0xa1: return write_config_value(buffer, bufsize, config.battery_calib_volt[10]);
         // Read-only: last factory-test battery voltage (mV), 0 = unknown.
         case 0x92: return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv());
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }

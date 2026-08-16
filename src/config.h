@@ -284,6 +284,19 @@ struct __attribute__((packed)) Config_body {
     // doesn't need an Explorer restart to rediscover it. 0 = old behaviour
     // (device leaves the bus entirely when wake is off). Default ON.
     uint8_t battery_keep_online; // bool: 0 off (old), 1 on (default, battery persists)
+    // battery_calib_enable: auto-calibrate the voltage -> percentage mapping.
+    // While on (default), every factory-test voltage sample paired with the
+    // controller's BT level (0-10) nudges the anchor for that level toward the
+    // observed voltage (EMA), so the Li-ion curve gradually matches THIS
+    // battery (age, chemistry, temperature habits) instead of a generic one.
+    // 0 = fixed default curve.
+    uint8_t battery_calib_enable; // bool: 0 off, 1 on (default)
+    // Per-level calibration anchors: battery_calib_volt[lvl] = last EMA voltage
+    // (mV) observed while the controller reported that BT level (0..10), 0 =
+    // not yet sampled. ups_volt_to_pct() prefers a segment-wise fit through the
+    // sampled anchors and falls back to the built-in Li-ion table when fewer
+    // than two anchors exist. Persisted with config_save() (throttled).
+    uint16_t battery_calib_volt[11];
 };
 
 struct __attribute__((packed)) Config {

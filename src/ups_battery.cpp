@@ -215,6 +215,12 @@ uint32_t g_volt_next_poll_ms = 0;   // throttle to ~30 s
 bool     g_volt_pending   = false;  // a request is in flight
 uint32_t g_volt_since_gen = 0;      // generation before the request was issued
 
+// Auto-calibration persistence throttle (RAM anchors -> flash). config_save()
+// erases+programs the config sector, which must not happen on every voltage
+// poll (up to 10/s at a 100 ms interval).
+bool     g_calib_dirty        = false;
+uint32_t g_calib_last_save_ms = 0;
+
 uint16_t ups_copy8(uint8_t *buffer, uint16_t reqlen, uint8_t value) {
     if (reqlen < 1) return 0;
     buffer[0] = value;
@@ -228,17 +234,55 @@ uint16_t ups_copy16(uint8_t *buffer, uint16_t reqlen, uint16_t value) {
     return 2;
 }
 
-// Voltage -> percentage via a standard Li-ion discharge curve (piecewise
-// linear, 10-point table). This is independent of the controller's coarse
-// 0-10 level, so it works even when the battery's voltage is lower than the
-// nominal curve (aged cells): the blended result tracks the VOLTAGE, not the
-// level bucket. Values outside the table clamp to 0/100.
+// Voltage -> percentage. When auto-calibration (battery_calib_enable) has
+// sampled at least two BT levels, the mapping is a piecewise-linear fit through
+// the observed (voltage, level*10) anchors, sorted by voltage - so it tracks
+// THIS battery's real discharge curve (age, chemistry, habits) instead of the
+// generic one. Otherwise (or when calibration is off) it falls back to the
+// built-in Li-ion table below. Values outside the used table clamp to 0/100.
 static uint8_t ups_volt_to_pct(uint16_t volt_mv) {
     // {voltage_mV, percent} anchor points on a typical Li-ion curve.
     static const struct { uint16_t mv; uint8_t pct; } table[] = {
         {3000, 0}, {3300, 3}, {3400, 6}, {3500, 10}, {3600, 18},
         {3700, 32}, {3800, 48}, {3900, 65}, {4000, 82}, {4100, 93}, {4200, 100},
     };
+
+    const auto &cfg = get_config();
+    if (cfg.battery_calib_enable) {
+        // Collect the sampled anchors: {observed mV, level*10 %}. n <= 11.
+        struct Pt { uint16_t mv; uint8_t pct; } pts[11];
+        uint8_t n = 0;
+        for (uint8_t lvl = 0; lvl < 11; lvl++) {
+            const uint16_t mv = cfg.battery_calib_volt[lvl];
+            if (mv >= 2500 && mv <= 4500) { pts[n].mv = mv; pts[n].pct = (uint8_t)(lvl * 10u); n++; }
+        }
+        if (n >= 2) {
+            // Sort by voltage (insertion sort; n <= 11, and noisy observations
+            // can make levels non-monotonic).
+            for (uint8_t i = 1; i < n; i++) {
+                const Pt key = pts[i];
+                int8_t j = (int8_t) i - 1;
+                while (j >= 0 && pts[j].mv > key.mv) { pts[j + 1] = pts[j]; j--; }
+                pts[j + 1] = key;
+            }
+            if (volt_mv <= pts[0].mv) return pts[0].pct;
+            if (volt_mv >= pts[n - 1].mv) return pts[n - 1].pct;
+            for (uint8_t i = 1; i < n; i++) {
+                if (volt_mv <= pts[i].mv) {
+                    const int32_t span = (int32_t) pts[i].mv - (int32_t) pts[i - 1].mv;
+                    int32_t pct = pts[i - 1].pct;
+                    if (span > 0) {
+                        const int32_t frac = ((int32_t) volt_mv - (int32_t) pts[i - 1].mv) *
+                                             ((int32_t) pts[i].pct - (int32_t) pts[i - 1].pct);
+                        pct += frac / span;
+                    }
+                    return (uint8_t) pct;
+                }
+            }
+            return pts[n - 1].pct;
+        }
+    }
+
     if (volt_mv <= table[0].mv) return table[0].pct;
     if (volt_mv >= table[10].mv) return table[10].pct;
     for (int i = 1; i < 11; i++) {
@@ -382,9 +426,41 @@ void ups_battery_tick() {
                 if (bt_battery_volt_take(g_volt_since_gen, &mv)) {
                     g_volt_cache_mv = mv;
                     g_volt_pending  = false;
+                    // Auto-calibration: pair the fresh factory-test voltage
+                    // with the BT level reported right now. The level the
+                    // controller reports at that voltage is ground truth for
+                    // THAT battery; the EMA anchor for that level creeps
+                    // toward the observed voltage, so the mapping learns the
+                    // real discharge curve instead of a generic Li-ion one.
+                    // Only sample plausible voltages (3000-4500 mV) - a bogus
+                    // 0xFFFF from a rejected command must never corrupt an
+                    // anchor. Config is saved to flash throttled (see below),
+                    // so anchors survive reboot without wearing flash.
+                    if (cfg.battery_calib_enable && mv >= 3000 && mv <= 4500) {
+                        auto &body = get_config();
+                        uint16_t &anchor = body.battery_calib_volt[lvl10];
+                        if (anchor == 0) {
+                            anchor = mv;                       // first sample: seed
+                        } else {
+                            // EMA with alpha 1/8, integer-rounded, no drift:
+                            // anchor += (mv - anchor + 4) / 8 for both signs.
+                            const int32_t diff = (int32_t) mv - (int32_t) anchor;
+                            anchor = (uint16_t) ((int32_t) anchor + ((diff >= 0) ? (diff + 4) / 8 : (diff - 4) / 8));
+                        }
+                        g_calib_dirty = true;
+                    }
                 } else if (now - g_volt_next_poll_ms > 3000) {
                     g_volt_pending = false; // timeout: command unanswered
                 }
+            }
+            // Throttled persistence: anchor changes are RAM-only while they
+            // accumulate; write to flash at most every 10 s while dirty, so a
+            // single session of use doesn't wear the flash sector with a write
+            // per voltage poll (which can be 100 ms apart).
+            if (g_calib_dirty && now - g_calib_last_save_ms >= 10000) {
+                g_calib_dirty = false;
+                g_calib_last_save_ms = now;
+                config_save();
             }
             if (!g_volt_pending && now >= g_volt_next_poll_ms) {
                 // Interval from config, stored in deciseconds (0.1 s):
@@ -480,4 +556,19 @@ void ups_battery_tick() {
 // variable is file-static; read it through this accessor.
 uint16_t ups_last_battery_voltage_mv() {
     return g_volt_cache_mv;
+}
+
+uint8_t ups_calib_sample_count() {
+    const auto &body = get_config();
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < 11; i++) {
+        const uint16_t mv = body.battery_calib_volt[i];
+        if (mv >= 2500 && mv <= 4500) n++;
+    }
+    return n;
+}
+
+void ups_calib_save_now() {
+    g_calib_dirty = false;
+    config_save();
 }

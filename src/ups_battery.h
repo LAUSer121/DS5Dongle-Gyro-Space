@@ -50,3 +50,10 @@ void ups_battery_tick();
 // Last factory-test battery voltage (mV) seen while voltage blend is active.
 // 0 = unknown (blend off, controller rejected the command, or not connected).
 uint16_t ups_last_battery_voltage_mv();
+
+// Auto-calibration support (portal-facing).
+// Count of BT levels (0-10) that have at least one voltage anchor sampled.
+uint8_t ups_calib_sample_count();
+
+// Write pending calibration anchors to flash immediately (portal "Save now").
+void ups_calib_save_now();
