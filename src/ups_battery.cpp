@@ -426,6 +426,21 @@ void ups_battery_tick() {
         // throttled to 30 s so the test command cannot disturb the link.
         if (cfg.battery_volt_blend) {
             const uint32_t now = to_ms_since_boot(get_absolute_time());
+            // Level-change sampling: when the BT level steps (e.g. 30% -> 20%),
+            // poll the factory-test voltage IMMEDIATELY instead of waiting for
+            // the poll interval, so every discharge step is captured for the
+            // calibration anchors. Throttled to once per 5 s so a level
+            // bouncing on a boundary can't hammer the BT link with commands.
+            static uint8_t  g_last_calib_lvl = 0xFF;
+            static uint32_t g_lvl_poll_min_ms = 0;
+            if (lvl10 != g_last_calib_lvl) {
+                const bool seen_before = (g_last_calib_lvl != 0xFF);
+                g_last_calib_lvl = lvl10;
+                if (seen_before && !g_volt_pending && now >= g_lvl_poll_min_ms) {
+                    g_lvl_poll_min_ms = now + 5000;
+                    g_volt_next_poll_ms = now; // force poll on the next check below
+                }
+            }
             if (g_volt_pending) {
                 uint16_t mv = 0;
                 if (bt_battery_volt_take(g_volt_since_gen, &mv)) {
