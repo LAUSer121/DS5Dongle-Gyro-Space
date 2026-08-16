@@ -273,11 +273,16 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // sampled levels and what minimum level gap before the estimate runs.
         case 0xa8: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_cap_min_levels=v; break; }
         case 0xa9: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_cap_min_span=v; break; }
+        // Average-mode toggle (v1.20.x): 1 = running average (default),
+        // 0 = EMA. Only the mode flag is user-writable; the sample counts are
+        // maintained by the firmware and cleared with calibration reset.
+        case 0xaa: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_calib_avg=v; break; }
         // 0xA2 = persist calibration anchors now (dummy payload). 0xA3 = reset
-        // calibration: clear every anchor IN the staged body so the subsequent
-        // set_config() lands an empty table (and the caller's save persists it).
+        // calibration: clear every anchor AND its sample count IN the staged
+        // body so the subsequent set_config() lands an empty table (and the
+        // caller's save persists it).
         case 0xa2: { ups_calib_save_now(); break; }
-        case 0xa3: { for (size_t i = 0; i < 11; i++) new_config.battery_calib_volt[i] = 0; break; }
+        case 0xa3: { for (size_t i = 0; i < 11; i++) { new_config.battery_calib_volt[i] = 0; new_config.battery_calib_volt_n[i] = 0; } break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -449,6 +454,19 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x9f: return write_config_value(buffer, bufsize, config.battery_calib_volt[8]);
         case 0xa0: return write_config_value(buffer, bufsize, config.battery_calib_volt[9]);
         case 0xa1: return write_config_value(buffer, bufsize, config.battery_calib_volt[10]);
+        // Average mode toggle (0xAA) + per-level sample counts (0xAB-0xB5).
+        case 0xaa: return write_config_value(buffer, bufsize, config.battery_calib_avg);
+        case 0xab: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[0]);
+        case 0xac: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[1]);
+        case 0xad: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[2]);
+        case 0xae: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[3]);
+        case 0xaf: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[4]);
+        case 0xb0: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[5]);
+        case 0xb1: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[6]);
+        case 0xb2: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[7]);
+        case 0xb3: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[8]);
+        case 0xb4: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[9]);
+        case 0xb5: return write_config_value(buffer, bufsize, config.battery_calib_volt_n[10]);
         // Read-only: last factory-test battery voltage (mV), 0 = unknown.
         case 0x92: return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv());
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }

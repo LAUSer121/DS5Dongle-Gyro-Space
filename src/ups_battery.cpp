@@ -447,6 +447,7 @@ void ups_battery_tick() {
                     auto &body = get_config();
                     if (body.battery_calib_volt[lvl10] == 0) {
                         body.battery_calib_volt[lvl10] = g_volt_cache_mv;
+                        body.battery_calib_volt_n[lvl10] = 1; // seed counts as one sample
                         g_calib_dirty = true;
                     }
                 }
@@ -473,15 +474,42 @@ void ups_battery_tick() {
                     if (cfg.battery_calib_enable && mv >= 3000 && mv <= 4500) {
                         auto &body = get_config();
                         uint16_t anchor = body.battery_calib_volt[lvl10];
-                        if (anchor == 0) {
-                            anchor = mv;                       // first sample: seed
+                        uint16_t count = body.battery_calib_volt_n[lvl10];
+                        if (cfg.battery_calib_avg) {
+                            // Running average: new = old + (mv - old)/(n+1).
+                            // Every sample nudges the anchor toward the true
+                            // mean of that level's voltage, and the step
+                            // shrinks as n grows - the longer the dongle is
+                            // used, the more stable and accurate each anchor
+                            // becomes. count is clamped so it can't overflow.
+                            if (count == 0) {
+                                anchor = mv;                 // first sample: seed
+                                count = 1;
+                            } else {
+                                const int32_t diff = (int32_t) mv - (int32_t) anchor;
+                                const int32_t denom = (int32_t) count + 1;
+                                int32_t step = diff / denom;
+                                if (diff > 0 && diff % denom != 0) step += 1; // round up for +diff
+                                else if (diff < 0 && (-diff) % denom != 0) step -= 1; // round down for -diff
+                                anchor = (uint16_t) ((int32_t) anchor + step);
+                                if (count < 0x7FFF) count++;
+                            }
                         } else {
                             // EMA with alpha 1/8, integer-rounded, no drift:
                             // anchor += (mv - anchor + 4) / 8 for both signs.
-                            const int32_t diff = (int32_t) mv - (int32_t) anchor;
-                            anchor = (uint16_t) ((int32_t) anchor + ((diff >= 0) ? (diff + 4) / 8 : (diff - 4) / 8));
+                            // Tracks recent changes faster but never fully
+                            // settles; use for quick adaptation.
+                            if (anchor == 0) {
+                                anchor = mv;                 // first sample: seed
+                                count = 1;
+                            } else {
+                                const int32_t diff = (int32_t) mv - (int32_t) anchor;
+                                anchor = (uint16_t) ((int32_t) anchor + ((diff >= 0) ? (diff + 4) / 8 : (diff - 4) / 8));
+                                if (count < 0x7FFF) count++;
+                            }
                         }
                         body.battery_calib_volt[lvl10] = anchor;
+                        body.battery_calib_volt_n[lvl10] = count;
                         g_calib_dirty = true;
                     }
                 } else if (now - g_volt_next_poll_ms > 3000) {

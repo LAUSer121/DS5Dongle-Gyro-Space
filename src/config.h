@@ -291,12 +291,21 @@ struct __attribute__((packed)) Config_body {
     // battery (age, chemistry, temperature habits) instead of a generic one.
     // 0 = fixed default curve.
     uint8_t battery_calib_enable; // bool: 0 off, 1 on (default)
-    // Per-level calibration anchors: battery_calib_volt[lvl] = last EMA voltage
-    // (mV) observed while the controller reported that BT level (0..10), 0 =
-    // not yet sampled. ups_volt_to_pct() prefers a segment-wise fit through the
-    // sampled anchors and falls back to the built-in Li-ion table when fewer
-    // than two anchors exist. Persisted with config_save() (throttled).
+    // Per-level calibration anchors: battery_calib_volt[lvl] = the running
+    // estimate (mV) of the voltage observed while the controller reported that
+    // BT level (0..10); 0 = not yet sampled. With battery_calib_avg ON (default)
+    // it is an incremental AVERAGE (new_avg = old + (v - old)/(n+1), n = sample
+    // count) - the longer the dongle is used, the more samples feed each anchor
+    // and the closer it converges to that level's true typical voltage. With
+    // battery_calib_avg OFF it is the previous EMA (alpha 1/8), which tracks
+    // recent changes faster but never fully settles. battery_calib_volt_n[lvl]
+    // is the sample count behind each anchor (0 = unsampled; counts reset with
+    // the anchors on calibration reset). ups_volt_to_pct() prefers a
+    // segment-wise fit through the sampled anchors and falls back to the
+    // built-in Li-ion table when fewer than two anchors exist.
     uint16_t battery_calib_volt[11];
+    uint16_t battery_calib_volt_n[11]; // per-level sample counts (average mode)
+    uint8_t  battery_calib_avg;        // bool: 1 = running average (default), 0 = EMA
     // battery_capacity_mah: nominal full-charge capacity reported by the HID
     // UPS battery (FullChargeCapacity / DesignCapacity / RemainingCapacity).
     // Default 1560 mAh (DualSense). battery_capacity_auto: when on (default),

@@ -17,7 +17,7 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 22;
+constexpr uint16_t CONFIG_VERSION = 23;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -253,7 +253,14 @@ void config_valid() {
     for (size_t i = 0; i < 11; i++) {
         uint16_t v = body->battery_calib_volt[i];
         if (v > 4500) { v = 0; body->battery_calib_volt[i] = v; }  // > max plausible Li-ion voltage -> untouched slot
+        // Sample counts: fresh-flash 0xFFFF -> 0 (counts track their anchor).
+        uint16_t n = body->battery_calib_volt_n[i];
+        if (n > 0x7FFF) n = 0;            // fresh flash / nonsense count
+        if (v == 0 && n != 0) n = 0;      // no anchor, no count
+        body->battery_calib_volt_n[i] = n;
     }
+    // Average mode: DEFAULT ON (1). Fresh-flash 0xFF -> 1.
+    if (body->battery_calib_avg > 1) body->battery_calib_avg = 1;
     // Capacity: fresh-flash 0xFFFF -> 1560 mAh (DualSense nominal).
     if (body->battery_capacity_mah < 100 || body->battery_capacity_mah > 10000) body->battery_capacity_mah = 1560;
     if (body->battery_capacity_auto > 1) body->battery_capacity_auto = 1; // default ON

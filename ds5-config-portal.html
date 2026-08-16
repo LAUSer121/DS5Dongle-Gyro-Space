@@ -359,6 +359,7 @@ const FIELD_ZH = {
   battery_capacity_auto: { label:'自动估算电池容量' },
   battery_cap_min_levels: { label:'容量估算最少档位数' },
   battery_cap_min_span: { label:'容量估算最少档位跨度' },
+  battery_calib_avg: { label:'平均值模式（越久越准）' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -442,6 +443,9 @@ const SECTIONS = [
     // minimum level gap before the capacity estimate is trusted.
     [0xa8,'battery_cap_min_levels','u8','Capacity estimate min levels','number',[2,11]],
     [0xa9,'battery_cap_min_span','u8','Capacity estimate min level span','number',[1,10]],
+    // Average mode: running average per level (more accurate the longer it
+    // runs) vs the old EMA (faster to adapt, never fully settles).
+    [0xaa,'battery_calib_avg','u8','Running average mode (more accurate over time)','bool'],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -630,6 +634,7 @@ const DESCRIPTIONS = {
   battery_capacity_auto: "When on (default), the firmware estimates the battery's ACTUAL capacity from the calibrated voltage span — a cell that can no longer reach 4.2 V or sags below 3.0 V holds proportionally less charge — and reports that as FullChargeCapacity (clamped to 40-100% of nominal). Off reports the fixed nominal capacity. The estimate updates as calibration grows.",
   battery_cap_min_levels: "Auto-capacity gate: the capacity estimate only runs once the calibration has sampled at least this many BT levels. Two adjacent levels (e.g. 50%+60%) have a tiny voltage window that says nothing about total capacity — waiting for wide coverage avoids nonsense results. Default 3.",
   battery_cap_min_span: "Auto-capacity gate: the capacity estimate only runs once the sampled levels span at least this big a level gap (highest minus lowest). E.g. 5 means levels 3..8 or wider. Default 5.",
+  battery_calib_avg: "How each level's voltage anchor is computed. ON (default) = running AVERAGE: every sample nudges the anchor toward the true mean of that level's voltage, and the step shrinks as the sample count grows — the longer you use the dongle, the more accurate the curve gets. OFF = EMA (alpha 1/8), which adapts to recent changes faster but never fully settles. The calibration card shows each level's sample count.",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
@@ -2669,7 +2674,10 @@ function imuCardHTML(){ return `<div class="card"><div class="card-title">${t('�
 const CALIB_KEYS = [[0x96,'cCount','u8'],
   [0x97,'cv0','u16'],[0x98,'cv1','u16'],[0x99,'cv2','u16'],[0x9a,'cv3','u16'],
   [0x9b,'cv4','u16'],[0x9c,'cv5','u16'],[0x9d,'cv6','u16'],[0x9e,'cv7','u16'],
-  [0x9f,'cv8','u16'],[0xa0,'cv9','u16'],[0xa1,'cv10','u16']];
+  [0x9f,'cv8','u16'],[0xa0,'cv9','u16'],[0xa1,'cv10','u16'],
+  [0xab,'cn0','u16'],[0xac,'cn1','u16'],[0xad,'cn2','u16'],[0xae,'cn3','u16'],
+  [0xaf,'cn4','u16'],[0xb0,'cn5','u16'],[0xb1,'cn6','u16'],[0xb2,'cn7','u16'],
+  [0xb3,'cn8','u16'],[0xb4,'cn9','u16'],[0xb5,'cn10','u16']];
 // The built-in Li-ion default curve, mirroring ups_battery.cpp.
 const DEFAULT_VOLT_CURVE = [[3000,0],[3300,3],[3400,6],[3500,10],[3600,18],
   [3700,32],[3800,48],[3900,65],[4000,82],[4100,93],[4200,100]];
@@ -2687,6 +2695,9 @@ function calibCardHTML(){
     <span style="color:#4dc3ff">— ${t('已采样档位','sampled levels')}: <b id="calibCount">–</b>/11</span>
     <span style="color:#06d6a0" id="calibCap">${t('容量','capacity')}: –</span>
     <span style="color:var(--sub)" id="calibLive">${t('等待数据…','waiting…')}</span>
+  </div>
+  <div style="font-size:11px;color:var(--sub);margin-top:2px">${t('各档位采样次数','samples per level')}: <span id="calibCounts">–</span></div>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px">
     <span style="flex:1"></span>
     <button class="btn btn-outline" style="padding:2px 10px" onclick="calibExportCsv()">${t('导出样本 CSV','Export samples CSV')}</button>
     <button class="btn btn-outline" style="padding:2px 10px" onclick="calibPersistNow()">${t('立即保存','Save now')}</button>
@@ -2761,6 +2772,16 @@ function drawCalibCurve(){
   if (cap) cap.innerHTML = t('容量','capacity') + `: ${c.fullCap || '–'} mAh${c.autoCap ? ` (${t('估','est')} ${c.autoCap})` : ''}`;
   const live = document.getElementById('calibLive');
   if (live) live.innerHTML = c.volt ? `${t('电压','voltage')} ${(c.volt/1000).toFixed(2)}V · ${t('档位','level')} ${c.level ?? '–'} (${(c.level ?? 0)*10}%)` : t('尚无电压读数','no voltage yet');
+  // Sample counts per level (average mode): show e.g. "50%×3, 60%×1".
+  const countsEl = document.getElementById('calibCounts');
+  if (countsEl){
+    const parts = [];
+    for (let i = 0; i < 11; i++){
+      const n = (c.counts && c.counts[i]) || 0;
+      if (n) parts.push(`${i*10}%×${n}`);
+    }
+    countsEl.textContent = parts.length ? parts.join('  ') : '–';
+  }
   calibRateSync();
 }
 
@@ -2777,7 +2798,7 @@ async function pollCalib(){
     try { autoCap = await readField(0xa7, 'u16'); } catch(_){}
     const bat = (lastInput && lastInput[52]) || 0;
     const lvl = (bat & 0x0F) <= 10 ? (bat & 0x0F) : null;
-    _calibCache = { count: got.cCount, anchors: [got.cv0,got.cv1,got.cv2,got.cv3,got.cv4,got.cv5,got.cv6,got.cv7,got.cv8,got.cv9,got.cv10], volt, level: lvl, fullCap, autoCap };
+    _calibCache = { count: got.cCount, anchors: [got.cv0,got.cv1,got.cv2,got.cv3,got.cv4,got.cv5,got.cv6,got.cv7,got.cv8,got.cv9,got.cv10], counts: [got.cn0,got.cn1,got.cn2,got.cn3,got.cn4,got.cn5,got.cn6,got.cn7,got.cn8,got.cn9,got.cn10], volt, level: lvl, fullCap, autoCap };
     calibRateSync();
     // Accumulate a sample for CSV export (dedupe identical (volt,level) rows).
     if (volt >= 3000 && volt <= 4500 && lvl !== null){
@@ -2837,8 +2858,8 @@ function calibExportCsv(){
   const rows = [['timestamp_iso','voltage_mv','level','percent','full_capacity_mah']];
   for (const s of _calibSamples) rows.push([s.t, s.volt, s.level, s.pct, s.fullCap]);
   rows.push([]);
-  rows.push(['# fitted anchors (voltage_mv, level, percent)']);
-  if (_calibCache) _calibCache.anchors.forEach((v, lvl) => { if (v) rows.push([v, lvl, lvl*10]); });
+  rows.push(['# fitted anchors (voltage_mv, level, percent, sample_count)']);
+  if (_calibCache) _calibCache.anchors.forEach((v, lvl) => { if (v) rows.push([v, lvl, lvl*10, (_calibCache.counts && _calibCache.counts[lvl]) || 0]); });
   else rows.push(['# no anchors yet']);
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -3874,7 +3895,8 @@ function fieldRowHTML(f){
   if (key === 'battery_calib_enable' && +config['battery_mode'] === 0) return '';
   // Capacity fields likewise only matter with the battery interface on.
   if ((key === 'battery_capacity_mah' || key === 'battery_capacity_auto' ||
-       key === 'battery_cap_min_levels' || key === 'battery_cap_min_span') && +config['battery_mode'] === 0) return '';
+       key === 'battery_cap_min_levels' || key === 'battery_cap_min_span' ||
+       key === 'battery_calib_avg') && +config['battery_mode'] === 0) return '';
   // Voltage blend + poll interval + weight only apply to Real mode (mode == 1).
   if ((key === 'battery_volt_blend' || key === 'battery_volt_poll_s' || key === 'battery_volt_weight') &&
       +config['battery_mode'] !== 1) return '';
