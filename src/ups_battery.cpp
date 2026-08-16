@@ -436,6 +436,20 @@ void ups_battery_tick() {
             if (lvl10 != g_last_calib_lvl) {
                 const bool seen_before = (g_last_calib_lvl != 0xFF);
                 g_last_calib_lvl = lvl10;
+                // Seed the NEW level's anchor IMMEDIATELY from the cached
+                // voltage, so a level change always records an anchor even if
+                // the fresh factory-test command fails (retail controllers
+                // often reject it, and heavy portal polling can starve the
+                // control channel). The next successful command read refines
+                // it via EMA below, so the curve still converges.
+                if (seen_before && cfg.battery_calib_enable &&
+                    g_volt_cache_mv >= 3000 && g_volt_cache_mv <= 4500) {
+                    auto &body = get_config();
+                    if (body.battery_calib_volt[lvl10] == 0) {
+                        body.battery_calib_volt[lvl10] = g_volt_cache_mv;
+                        g_calib_dirty = true;
+                    }
+                }
                 if (seen_before && !g_volt_pending && now >= g_lvl_poll_min_ms) {
                     g_lvl_poll_min_ms = now + 5000;
                     g_volt_next_poll_ms = now; // force poll on the next check below
