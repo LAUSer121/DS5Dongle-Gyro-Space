@@ -428,7 +428,7 @@ void ups_battery_tick() {
                 g_smooth_current = target;
             } else if (g_smooth_current != target) {
                 const int diff = (int) target - (int) g_smooth_current;
-                const int step = (diff >= 0) ? ((diff + 3) / 4) : ((diff - 3) / 4);
+                int step = (diff >= 0) ? ((diff + 3) / 4) : ((diff - 3) / 4);
                 if (step == 0) step = (diff >= 0) ? 1 : -1;
                 const int next = (int) g_smooth_current + step;
                 g_smooth_current = (uint8_t) ((next < target) == (diff >= 0) ? next : target);
