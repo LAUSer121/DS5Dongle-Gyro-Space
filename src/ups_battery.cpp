@@ -628,21 +628,31 @@ void ups_calib_save_now() {
 // the nominal one scaled by (max_seen - min_seen) / 1200. Only anchors with
 // plausible voltages count, and the result is clamped so a half-sampled curve
 // can't produce nonsense. Returns the estimate, or 0 when auto is off / no
-// data.
+// data. Deliberately returns 0 (use nominal) until the calibration spans a
+// WIDE level range: with only two adjacent levels the voltage window is
+// meaningless (they are ~10% apart in charge, so their voltage gap is tiny),
+// and scaling the nominal capacity down by that gap would report a nonsense
+// capacity like 624 mAh for a healthy cell.
 static uint16_t ups_calc_auto_capacity_mah() {
     const auto &body = get_config();
     if (!body.battery_capacity_auto) return 0;
     uint16_t v_min = 0xFFFF, v_max = 0;
+    uint8_t  lvl_min = 0xFF, lvl_max = 0;
     uint8_t  n = 0;
     for (uint8_t i = 0; i < 11; i++) {
         const uint16_t mv = body.battery_calib_volt[i];
         if (mv >= 3000 && mv <= 4500) {
-            if (mv < v_min) v_min = mv;
-            if (mv > v_max) v_max = mv;
+            if (mv < v_min) { v_min = mv; lvl_min = i; }
+            if (mv > v_max) { v_max = mv; lvl_max = i; }
             n++;
         }
     }
-    if (n < 2 || v_max <= v_min) return 0;
+    // Need a genuinely wide window before trusting the span: at least 3
+    // sampled levels AND a level gap of 5+ (e.g. 3..8). Two adjacent levels
+    // (e.g. 50%+60%) tell us nothing about total capacity.
+    if (n < 3) return 0;
+    if (lvl_max < lvl_min + 5) return 0;
+    if (v_max <= v_min) return 0;
     // Span of the sampled window vs the full 1200 mV Li-ion window.
     uint32_t span = (uint32_t) v_max - v_min;
     if (span < 300) span = 300;          // don't collapse on a tiny window
