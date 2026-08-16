@@ -2684,6 +2684,19 @@ function calibCardHTML(){
     <button class="btn btn-outline" style="padding:2px 10px" onclick="calibPersistNow()">${t('立即保存','Save now')}</button>
     <button class="btn btn-outline" style="padding:2px 10px" onclick="calibReset()">${t('重置校准','Reset calibration')}</button>
   </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px">
+    <span style="color:var(--sub)">${t('采样速度','Sample rate')}:</span>
+    <select id="calibRate" onchange="calibRateSet(this.value)" style="background:#141416;color:var(--text,#eee);border:1px solid var(--line,#333);border-radius:4px;padding:2px 6px;font-size:12px">
+      <option value="1">100 ms</option>
+      <option value="10">1 s</option>
+      <option value="25">2.5 s</option>
+      <option value="50">5 s</option>
+      <option value="100">10 s</option>
+      <option value="300">30 s (${t('默认','default')})</option>
+      <option value="600">60 s</option>
+    </select>
+    <span style="color:var(--sub);font-size:11px">${t('电压采样间隔（0.1 秒单位）— 越快锚点采样越密，但蓝牙测试命令更频繁。','Voltage sample interval (in 0.1 s units) — faster = denser anchor sampling but more frequent BT test traffic.')}</span>
+  </div>
   <div style="font-size:11px;color:var(--sub);margin-top:4px">${t('锚点与容量在变化时自动保存到设备（节流，无需手动保存）。','Anchors and capacity auto-save to the device when they change (throttled — no manual save needed).')}</div></div>`; }
 
 function drawCalibCurve(){
@@ -2740,6 +2753,7 @@ function drawCalibCurve(){
   if (cap) cap.innerHTML = t('容量','capacity') + `: ${c.fullCap || '–'} mAh${c.autoCap ? ` (${t('估','est')} ${c.autoCap})` : ''}`;
   const live = document.getElementById('calibLive');
   if (live) live.innerHTML = c.volt ? `${t('电压','voltage')} ${(c.volt/1000).toFixed(2)}V · ${t('档位','level')} ${c.level ?? '–'} (${(c.level ?? 0)*10}%)` : t('尚无电压读数','no voltage yet');
+  calibRateSync();
 }
 
 async function pollCalib(){
@@ -2756,6 +2770,7 @@ async function pollCalib(){
     const bat = (lastInput && lastInput[52]) || 0;
     const lvl = (bat & 0x0F) <= 10 ? (bat & 0x0F) : null;
     _calibCache = { count: got.cCount, anchors: [got.cv0,got.cv1,got.cv2,got.cv3,got.cv4,got.cv5,got.cv6,got.cv7,got.cv8,got.cv9,got.cv10], volt, level: lvl, fullCap, autoCap };
+    calibRateSync();
     // Accumulate a sample for CSV export (dedupe identical (volt,level) rows).
     if (volt >= 3000 && volt <= 4500 && lvl !== null){
       const last = _calibSamples[_calibSamples.length - 1];
@@ -2785,6 +2800,27 @@ async function calibReset(){
     toast(t('校准已重置','Calibration reset'));
     render();
   } catch(e){ toast('Reset failed: ' + e.message, true); }
+}
+
+// Set the voltage sample rate (field 0x91, deciseconds) and persist it.
+async function calibRateSet(ds){
+  const v = Math.max(1, Math.min(3000, parseInt(ds, 10) || 300));
+  try {
+    await writeFieldSafe(0x91, 'u16', v);
+    try { await sendCmd(0x02); } catch(e){ /* flash write may stall USB briefly */ }
+    config['battery_volt_poll_s'] = v;
+    savedSnapshot = {...config};
+    toast(t('采样速度已保存','Sample rate saved'));
+  } catch(e){ toast('Save failed: ' + e.message, true); }
+}
+// Keep the rate dropdown in sync with the device value.
+function calibRateSync(){
+  const sel = document.getElementById('calibRate');
+  if (!sel) return;
+  const cur = +config['battery_volt_poll_s'] || 300;
+  const opts = [...sel.options].map(o => +o.value);
+  if (opts.includes(cur)) sel.value = String(cur);
+  else sel.value = String(opts.reduce((a,b) => Math.abs(b-cur) < Math.abs(a-cur) ? b : a));
 }
 
 // Export the accumulated (time, voltage, level, pct, capacity) samples plus the
