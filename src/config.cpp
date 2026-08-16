@@ -243,6 +243,8 @@ void config_valid() {
     if (body->battery_volt_poll_s < 1 || body->battery_volt_poll_s > 3000) {
         body->battery_volt_poll_s = 300;
     }
+    // Voltage blend weight: 0-100, fresh-flash 0xFF -> 70.
+    if (body->battery_volt_weight > 100) body->battery_volt_weight = 70;
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

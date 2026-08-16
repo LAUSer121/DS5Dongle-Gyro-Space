@@ -228,25 +228,46 @@ uint16_t ups_copy16(uint8_t *buffer, uint16_t reqlen, uint16_t value) {
     return 2;
 }
 
-// Blend the coarse Bluetooth level (0-10) with the factory-test voltage (mV).
-// Voltage alone is a poor percentage (Li-ion has a flat discharge plateau), so
-// we use it only to interpolate WITHIN the current 10% bucket: the bucket
-// boundaries are assumed to map to typical DualSense voltages (3.6 V at the
-// bucket bottom, 4.2 V at the top). Falls back to level*10 when no voltage is
-// available. Result is clamped to [5, 100].
-uint8_t ups_blend_level(uint8_t level10, uint16_t volt_mv) {
+// Voltage -> percentage via a standard Li-ion discharge curve (piecewise
+// linear, 10-point table). This is independent of the controller's coarse
+// 0-10 level, so it works even when the battery's voltage is lower than the
+// nominal curve (aged cells): the blended result tracks the VOLTAGE, not the
+// level bucket. Values outside the table clamp to 0/100.
+static uint8_t ups_volt_to_pct(uint16_t volt_mv) {
+    // {voltage_mV, percent} anchor points on a typical Li-ion curve.
+    static const struct { uint16_t mv; uint8_t pct; } table[] = {
+        {3000, 0}, {3300, 3}, {3400, 6}, {3500, 10}, {3600, 18},
+        {3700, 32}, {3800, 48}, {3900, 65}, {4000, 82}, {4100, 93}, {4200, 100},
+    };
+    if (volt_mv <= table[0].mv) return table[0].pct;
+    if (volt_mv >= table[10].mv) return table[10].pct;
+    for (int i = 1; i < 11; i++) {
+        if (volt_mv <= table[i].mv) {
+            const uint32_t span = table[i].mv - table[i-1].mv;
+            const int32_t frac = ((int32_t)(volt_mv - table[i-1].mv) * (table[i].pct - table[i-1].pct));
+            uint8_t pct = table[i-1].pct;
+            if (span > 0) pct += (uint8_t) (frac / (int32_t) span);
+            return pct;
+        }
+    }
+    return 100;
+}
+
+// Blend the controller's coarse BT level (0-10) with the factory-test voltage.
+// weight (0-100) selects how much the VOLTAGE drives the result: 100 = voltage
+// only, 0 = level only. The voltage mapping is a real discharge curve, so an
+// aged battery whose voltage reads low is reflected in a lower blended %.
+// Falls back to level*10 when no voltage is available.
+uint8_t ups_blend_level(uint8_t level10, uint16_t volt_mv, uint8_t weight) {
+    const uint8_t lvl_pct = (uint8_t) (level10 * 10u);
     if (volt_mv == 0) {
-        return (uint8_t) (level10 * 10u);
+        return lvl_pct;
     }
-    const int lo = 3600 + level10 * 60;   // 3.60 V .. 4.20 V over 10 buckets
-    const int hi = lo + 60;
-    int v = (int) volt_mv;
-    if (v < lo) v = lo;
-    if (v > hi) v = hi;
-    uint32_t pct = (uint32_t) (level10 * 10u);
-    if (hi > lo) {
-        pct += (uint32_t) (((uint64_t) (v - lo) * 10u) / (uint32_t) (hi - lo));
-    }
+    const uint8_t volt_pct = ups_volt_to_pct(volt_mv);
+    if (weight >= 100) return volt_pct;
+    if (weight == 0) return lvl_pct;
+    // weight% voltage + (100-weight)% level, rounded.
+    uint32_t pct = ((uint32_t) volt_pct * weight + (uint32_t) lvl_pct * (100u - weight) + 50u) / 100u;
     if (pct < 5) pct = 5;
     if (pct > 100) pct = 100;
     return (uint8_t) pct;
@@ -384,7 +405,7 @@ void ups_battery_tick() {
                 cmd[1] = 0x03; // DualSenseTestActionId.BATTERY
                 set_feature_data(0x80, cmd, sizeof(cmd));
             }
-            level = ups_blend_level(lvl10, g_volt_cache_mv);
+            level = ups_blend_level(lvl10, g_volt_cache_mv, cfg.battery_volt_weight);
         } else {
             g_volt_cache_mv = 0;
             g_volt_pending  = false;
@@ -394,21 +415,23 @@ void ups_battery_tick() {
         if (level < UPS_SAFETY_FLOOR) level = UPS_SAFETY_FLOOR;
 
         // Optional refinement 2: smooth the reported percentage toward the
-        // target (glide over ~2 s at 1 Hz ticks) so the tray number does not
-        // snap between the BT level's 10% buckets. On the FIRST real report
-        // the current value is seeded to the target so we don't animate a
-        // fake discharge from the power-on default (100%).
+        // target so the tray number glides instead of snapping. Step is a
+        // fraction of the REMAINING gap (ease-out), so a big jump (e.g. a
+        // battery level change) moves quickly at first and settles gently,
+        // and a small drift (voltage blend) crawls without visible jumps.
+        // At 1 Hz ticks, 25% of the gap per tick reaches the target in ~4-5
+        // ticks while staying smooth. First real report seeds to the target.
         if (cfg.battery_smooth) {
             const uint8_t target = level;
             if (g_smooth_seeded == false) {
                 g_smooth_seeded = true;
                 g_smooth_current = target;
-            } else if (g_smooth_current < target) {
-                g_smooth_current = (uint8_t) ((uint16_t) g_smooth_current + 5u);
-                if (g_smooth_current > target) g_smooth_current = target;
-            } else if (g_smooth_current > target) {
-                g_smooth_current = (uint8_t) ((int) g_smooth_current - 5);
-                if (g_smooth_current < target) g_smooth_current = target;
+            } else if (g_smooth_current != target) {
+                const int diff = (int) target - (int) g_smooth_current;
+                const int step = (diff >= 0) ? ((diff + 3) / 4) : ((diff - 3) / 4);
+                if (step == 0) step = (diff >= 0) ? 1 : -1;
+                const int next = (int) g_smooth_current + step;
+                g_smooth_current = (uint8_t) ((next < target) == (diff >= 0) ? next : target);
             }
             level = g_smooth_current;
         } else {

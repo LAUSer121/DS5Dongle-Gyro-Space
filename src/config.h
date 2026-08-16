@@ -264,16 +264,20 @@ struct __attribute__((packed)) Config_body {
     // Battery display refinements (v1.20.x, portal-selectable).
     // battery_volt_blend: in Real mode, blend the controller's Bluetooth
     // battery level (0-10, coarse) with the factory-test battery voltage (mV)
-    // when it is available, interpolating within the current 10% bucket for a
-    // finer estimate. 0 = level-only (old behaviour).
+    // via a real Li-ion discharge curve for a finer estimate. 0 = level-only.
     // battery_smooth: ease the reported percentage toward the target instead
     // of stepping instantly (e.g. 70 -> 80 ramps over ~2 s). 0 = instant.
     // battery_volt_poll_s: factory-test voltage poll interval. Stored in
     // DECISECONDS (0.1 s units): 1 = 100 ms, 300 = 30 s (default), max 3000 =
     // 300 s. Lower = fresher voltage but more frequent test commands on BT.
+    // battery_volt_weight: how much the voltage drives the blended percentage
+    // (0-100, default 70). 100 = voltage only, 0 = BT level only. An aged
+    // battery with low voltage then shows a lower % instead of snapping
+    // between 10% levels.
     uint8_t battery_volt_blend; // bool: 0 off, 1 on
     uint8_t battery_smooth;     // bool: 0 off, 1 on
     uint16_t battery_volt_poll_s; // [1,3000] deciseconds (0.1 s) between polls
+    uint8_t battery_volt_weight;  // [0,100] voltage weight in blend, default 70
 };
 
 struct __attribute__((packed)) Config {

@@ -258,6 +258,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
         case 0x90: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_smooth=v; break; }
         case 0x91: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_poll_s=v; break; }
+        case 0x93: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_weight=v; break; }
         default:
             printf("[CMD] Unknown config field id: 0x%02X\n", field_id);
             return false;
@@ -406,6 +407,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x6f: return write_config_value(buffer, bufsize, config.battery_volt_blend);
         case 0x90: return write_config_value(buffer, bufsize, config.battery_smooth);
         case 0x91: return write_config_value(buffer, bufsize, config.battery_volt_poll_s);
+        case 0x93: return write_config_value(buffer, bufsize, config.battery_volt_weight);
         // Read-only: last factory-test battery voltage (mV), 0 = unknown.
         case 0x92: return write_config_value(buffer, bufsize, ups_last_battery_voltage_mv());
         case 0x3c: { extern volatile uint8_t g_diag_at_env; return write_config_value(buffer, bufsize, (uint8_t)g_diag_at_env); }
