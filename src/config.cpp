@@ -254,6 +254,9 @@ void config_valid() {
         uint16_t v = body->battery_calib_volt[i];
         if (v > 4500) { v = 0; body->battery_calib_volt[i] = v; }  // > max plausible Li-ion voltage -> untouched slot
     }
+    // Capacity: fresh-flash 0xFFFF -> 1560 mAh (DualSense nominal).
+    if (body->battery_capacity_mah < 100 || body->battery_capacity_mah > 10000) body->battery_capacity_mah = 1560;
+    if (body->battery_capacity_auto > 1) body->battery_capacity_auto = 1; // default ON
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

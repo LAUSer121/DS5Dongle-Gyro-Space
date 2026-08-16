@@ -297,6 +297,15 @@ struct __attribute__((packed)) Config_body {
     // sampled anchors and falls back to the built-in Li-ion table when fewer
     // than two anchors exist. Persisted with config_save() (throttled).
     uint16_t battery_calib_volt[11];
+    // battery_capacity_mah: nominal full-charge capacity reported by the HID
+    // UPS battery (FullChargeCapacity / DesignCapacity / RemainingCapacity).
+    // Default 1560 mAh (DualSense). battery_capacity_auto: when on (default),
+    // the firmware estimates the ACTUAL (aged) capacity from the calibration
+    // anchors' voltage span - a battery that can no longer reach 4.2 V or sags
+    // lower than 3.0 V holds proportionally less charge - and reports that
+    // instead of the fixed nominal value. 0 = always report battery_capacity_mah.
+    uint16_t battery_capacity_mah; // [100, 10000] mAh, default 1560
+    uint8_t  battery_capacity_auto; // bool: 0 fixed nominal, 1 auto-estimate (default)
 };
 
 struct __attribute__((packed)) Config {

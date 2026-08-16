@@ -23,11 +23,15 @@ static constexpr uint8_t UPS_ST_SHUTDOWN_IMMIN  = 0x08;
 
 // Capacities in AmpSec (the descriptor declares this unit). Windows only uses
 // the RemainingCapacity / FullChargeCapacity RATIO for the tray percentage, so
-// 100/100 simply means "0-100%".
-static constexpr uint16_t UPS_FULL_CAPACITY   = 100;
-static constexpr uint16_t UPS_DESIGN_CAPACITY = 100;
-static constexpr uint16_t UPS_CRITICAL_LIMIT  = 5;   // RemainingCapacityLimit  (DefaultAlert1)
-static constexpr uint16_t UPS_WARN_LIMIT      = 10;  // WarningCapacityLimit    (DefaultAlert2)
+// with 100/100 that ratio simply meant "0-100%". Since v1.20.x we report REAL
+// mAh instead: FullChargeCapacity = the (auto-estimated) full capacity, Design
+// = the nominal battery_capacity_mah, Remaining = pct * capacity / 100. Windows
+// keeps deriving the tray % from the ratio (same as before), but the power
+// settings now show an honest mAh figure, and the "remaining capacity" is
+// physically meaningful.
+static constexpr uint16_t UPS_DESIGN_CAPACITY_DEFAULT = 1560; // DualSense nominal, mAh
+static constexpr uint16_t UPS_CRITICAL_PCT = 5;   // RemainingCapacityLimit  (DefaultAlert1), % of full
+static constexpr uint16_t UPS_WARN_PCT     = 10;  // WarningCapacityLimit    (DefaultAlert2), % of full
 
 // Never report a level below this: Windows treats a critical HID UPS battery as
 // a system battery and may trigger its configured critical action (hibernate /
@@ -197,14 +201,15 @@ static_assert(sizeof(ups_report_descriptor_bytes) == UPS_REPORT_DESC_LEN,
 namespace {
 
 uint8_t  g_status   = UPS_ST_DISCHARGING;
-uint16_t g_remaining = UPS_FULL_CAPACITY;
+uint16_t g_remaining = 0;      // RemainingCapacity, mAh
+uint16_t g_full_cap  = UPS_DESIGN_CAPACITY_DEFAULT; // FullChargeCapacity, mAh (auto-estimated)
 uint16_t g_runtime   = 0;
 uint32_t g_last_tick_ms = 0;
 bool     g_real_seen   = false;
 
 // Smoothing state: the percentage actually reported to Windows eases toward
 // the target rather than stepping, when battery_smooth is enabled.
-uint8_t  g_smooth_current = UPS_FULL_CAPACITY;
+uint8_t  g_smooth_current = 100;
 bool     g_smooth_seeded  = false;   // first real report seeds the smooth value
 
 // Voltage-blend state. Polling is rate-limited and cooperative: we record the
@@ -339,11 +344,11 @@ uint16_t ups_get_report(uint8_t report_id, uint8_t report_type, uint8_t *buffer,
         case UPS_RID_IDEVICECHEMISTRY:  return ups_copy8(buffer, reqlen, 5);    // "LiP"
         case UPS_RID_CAPACITYMODE:      return ups_copy8(buffer, reqlen, 0);    // 0 = mAh
         case UPS_RID_PRESENTSTATUS:     return ups_copy8(buffer, reqlen, g_status);
-        case UPS_RID_FULLCHARGE:        return ups_copy16(buffer, reqlen, UPS_FULL_CAPACITY);
-        case UPS_RID_DESIGNCAPACITY:    return ups_copy16(buffer, reqlen, UPS_DESIGN_CAPACITY);
+        case UPS_RID_FULLCHARGE:        return ups_copy16(buffer, reqlen, g_full_cap);
+        case UPS_RID_DESIGNCAPACITY:    return ups_copy16(buffer, reqlen, get_config().battery_capacity_mah);
         case UPS_RID_REMAINING:         return ups_copy16(buffer, reqlen, g_remaining);
-        case UPS_RID_REMNCAPLIMIT:      return ups_copy16(buffer, reqlen, UPS_CRITICAL_LIMIT);
-        case UPS_RID_WARNCAPLIMIT:      return ups_copy16(buffer, reqlen, UPS_WARN_LIMIT);
+        case UPS_RID_REMNCAPLIMIT:      return ups_copy16(buffer, reqlen, (uint16_t)(((uint32_t)g_full_cap * UPS_CRITICAL_PCT + 50u) / 100u));
+        case UPS_RID_WARNCAPLIMIT:      return ups_copy16(buffer, reqlen, (uint16_t)(((uint32_t)g_full_cap * UPS_WARN_PCT + 50u) / 100u));
         case UPS_RID_MANUFACTUREDATE:   return ups_copy16(buffer, reqlen, UPS_MANUFACTURE_DATE);
         case UPS_RID_RUNTIMETOEMPTY:    return ups_copy16(buffer, reqlen, g_runtime);
         case UPS_RID_CYCLECOUNT:        return ups_copy16(buffer, reqlen, 0);
@@ -454,11 +459,13 @@ void ups_battery_tick() {
                     g_volt_pending = false; // timeout: command unanswered
                 }
             }
-            // Throttled persistence: anchor changes are RAM-only while they
-            // accumulate; write to flash at most every 10 s while dirty, so a
-            // single session of use doesn't wear the flash sector with a write
-            // per voltage poll (which can be 100 ms apart).
-            if (g_calib_dirty && now - g_calib_last_save_ms >= 10000) {
+            // Throttled persistence: anchors and the auto-capacity estimate
+            // accumulate in RAM; write to flash only when a sample actually
+            // MOVED a value (EMA convergence means later samples change less
+            // and less, so writes naturally taper off), and never more often
+            // than every 5 minutes, so a long session can't wear the config
+            // sector with a write per voltage poll (up to 10/s at 100 ms).
+            if (g_calib_dirty && now - g_calib_last_save_ms >= 300000) {
                 g_calib_dirty = false;
                 g_calib_last_save_ms = now;
                 config_save();
@@ -523,7 +530,18 @@ void ups_battery_tick() {
         }
     }
 
-    g_remaining = level;
+    // Refresh the reported full capacity (auto-estimate tracks the calibration
+    // curve as it grows). Must precede the RemainingCapacity derivation below.
+    ups_calib_refresh_capacity();
+
+    // Report capacities in real mAh: RemainingCapacity = pct * full / 100.
+    // Windows' tray percentage = Remaining/Full (identical to before), but the
+    // power settings now show honest mAh. g_full_cap is refreshed below so the
+    // auto-estimate tracks calibration growth.
+    {
+        const uint32_t rem = ((uint32_t) level * g_full_cap + 50u) / 100u;
+        g_remaining = (uint16_t) rem;
+    }
     g_status    = status;
     g_runtime   = (uint16_t) (level * 60u); // cosmetic: 1% ~ 1 minute
 
@@ -572,4 +590,64 @@ uint8_t ups_calib_sample_count() {
 void ups_calib_save_now() {
     g_calib_dirty = false;
     config_save();
+}
+
+// Estimate the battery's ACTUAL full capacity (mAh) from the calibration
+// anchors' voltage span. A healthy cell spans roughly 4.2 V (full) to 3.0 V
+// (empty), 1200 mV. An aged battery that can no longer reach 4.2 V (or sags
+// below 3.0 V) holds proportionally less charge, so the estimated capacity is
+// the nominal one scaled by (max_seen - min_seen) / 1200. Only anchors with
+// plausible voltages count, and the result is clamped so a half-sampled curve
+// can't produce nonsense. Returns the estimate, or 0 when auto is off / no
+// data.
+static uint16_t ups_calc_auto_capacity_mah() {
+    const auto &body = get_config();
+    if (!body.battery_capacity_auto) return 0;
+    uint16_t v_min = 0xFFFF, v_max = 0;
+    uint8_t  n = 0;
+    for (uint8_t i = 0; i < 11; i++) {
+        const uint16_t mv = body.battery_calib_volt[i];
+        if (mv >= 3000 && mv <= 4500) {
+            if (mv < v_min) v_min = mv;
+            if (mv > v_max) v_max = mv;
+            n++;
+        }
+    }
+    if (n < 2 || v_max <= v_min) return 0;
+    // Span of the sampled window vs the full 1200 mV Li-ion window.
+    uint32_t span = (uint32_t) v_max - v_min;
+    if (span < 300) span = 300;          // don't collapse on a tiny window
+    if (span > 1200) span = 1200;        // cap: can't hold MORE than a healthy cell
+    const uint32_t nom = body.battery_capacity_mah;
+    // Scale nominal by span/1200, keep within [40%, 100%] of nominal: an aged
+    // cell loses capacity, it doesn't gain it, and a barely-sampled curve
+    // shouldn't cut capacity to a sliver.
+    uint32_t est = nom * span / 1200u;
+    if (est < nom * 40u / 100u) est = nom * 40u / 100u;
+    if (est > nom) est = nom;
+    return (uint16_t) est;
+}
+
+// Called every tick (and after calibration updates): refresh the reported full
+// capacity. With auto on it tracks the calibration curve; otherwise it stays at
+// the configured nominal. Also re-derives the current RemainingCapacity.
+void ups_calib_refresh_capacity() {
+    const auto &body = get_config();
+    const uint16_t est = ups_calc_auto_capacity_mah();
+    g_full_cap = est ? est : body.battery_capacity_mah;
+}
+
+// Portal read-only: current FullChargeCapacity actually reported (mAh).
+uint16_t ups_full_capacity_mah() {
+    return g_full_cap;
+}
+
+// Portal read-only: nominal capacity from config (DesignCapacity, mAh).
+uint16_t ups_design_capacity_mah() {
+    return get_config().battery_capacity_mah;
+}
+
+// Portal read-only: the auto-estimated capacity (0 = auto off / no data yet).
+uint16_t ups_auto_capacity_mah() {
+    return ups_calc_auto_capacity_mah();
 }

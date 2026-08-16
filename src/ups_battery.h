@@ -57,3 +57,12 @@ uint8_t ups_calib_sample_count();
 
 // Write pending calibration anchors to flash immediately (portal "Save now").
 void ups_calib_save_now();
+
+// Refresh the reported FullChargeCapacity (mAh) from config + auto-estimate.
+// Called from ups_battery_tick(); also re-derives RemainingCapacity.
+void ups_calib_refresh_capacity();
+
+// Portal read-only diagnostics (mAh):
+uint16_t ups_full_capacity_mah();   // FullChargeCapacity actually reported
+uint16_t ups_design_capacity_mah(); // nominal from config (DesignCapacity)
+uint16_t ups_auto_capacity_mah();   // auto-estimate (0 = off / no data yet)
