@@ -647,11 +647,12 @@ static uint16_t ups_calc_auto_capacity_mah() {
             n++;
         }
     }
-    // Need a genuinely wide window before trusting the span: at least 3
-    // sampled levels AND a level gap of 5+ (e.g. 3..8). Two adjacent levels
-    // (e.g. 50%+60%) tell us nothing about total capacity.
-    if (n < 3) return 0;
-    if (lvl_max < lvl_min + 5) return 0;
+    // Need a genuinely wide window before trusting the span: at least
+    // battery_cap_min_levels sampled levels AND a level gap of at least
+    // battery_cap_min_span (both portal-configurable, defaults 3/5). Two
+    // adjacent levels (e.g. 50%+60%) tell us nothing about total capacity.
+    if (n < body.battery_cap_min_levels) return 0;
+    if (lvl_max < lvl_min + body.battery_cap_min_span) return 0;
     if (v_max <= v_min) return 0;
     // Span of the sampled window vs the full 1200 mV Li-ion window.
     uint32_t span = (uint32_t) v_max - v_min;

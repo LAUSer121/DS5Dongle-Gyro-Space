@@ -357,6 +357,8 @@ const FIELD_ZH = {
   battery_calib_enable: { label:'自动校准电量映射' },
   battery_capacity_mah: { label:'电池容量（mAh）' },
   battery_capacity_auto: { label:'自动估算电池容量' },
+  battery_cap_min_levels: { label:'容量估算最少档位数' },
+  battery_cap_min_span: { label:'容量估算最少档位跨度' },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -436,6 +438,10 @@ const SECTIONS = [
     // voltage span (aged cells hold less). FullCharge/Remaining follow below.
     [0xa4,'battery_capacity_mah','u16','Battery capacity (mAh)','number',[100,10000]],
     [0xa5,'battery_capacity_auto','u8','Auto-estimate actual capacity','bool'],
+    // Coverage gate for the auto estimate: how many sampled levels and what
+    // minimum level gap before the capacity estimate is trusted.
+    [0xa8,'battery_cap_min_levels','u8','Capacity estimate min levels','number',[2,11]],
+    [0xa9,'battery_cap_min_span','u8','Capacity estimate min level span','number',[1,10]],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -622,6 +628,8 @@ const DESCRIPTIONS = {
   battery_calib_enable: "Auto-calibrates the voltage → percentage mapping while the controller is in use. Every factory-test voltage sample paired with the controller's reported level (0-10) nudges that level's anchor toward the observed voltage (exponential smoothing), so the curve gradually matches THIS battery — age, chemistry, charging habits — instead of a generic Li-ion curve. Off uses the fixed built-in curve. The card below plots the fitted curve vs the default and the live (voltage, level) observation. Anchors persist across reboots.",
   battery_capacity_mah: "Nominal full-charge capacity in mAh, reported as DesignCapacity on the HID UPS battery (default 1560 = DualSense). Windows shows it in power settings; the tray percentage is unaffected (it comes from the Remaining/Full ratio).",
   battery_capacity_auto: "When on (default), the firmware estimates the battery's ACTUAL capacity from the calibrated voltage span — a cell that can no longer reach 4.2 V or sags below 3.0 V holds proportionally less charge — and reports that as FullChargeCapacity (clamped to 40-100% of nominal). Off reports the fixed nominal capacity. The estimate updates as calibration grows.",
+  battery_cap_min_levels: "Auto-capacity gate: the capacity estimate only runs once the calibration has sampled at least this many BT levels. Two adjacent levels (e.g. 50%+60%) have a tiny voltage window that says nothing about total capacity — waiting for wide coverage avoids nonsense results. Default 3.",
+  battery_cap_min_span: "Auto-capacity gate: the capacity estimate only runs once the sampled levels span at least this big a level gap (highest minus lowest). E.g. 5 means levels 3..8 or wider. Default 5.",
 };
 
 // Escape text for safe embedding inside a double-quoted HTML attribute. PORTAL
@@ -3865,7 +3873,8 @@ function fieldRowHTML(f){
   // Calibration toggle likewise only makes sense with the battery interface on.
   if (key === 'battery_calib_enable' && +config['battery_mode'] === 0) return '';
   // Capacity fields likewise only matter with the battery interface on.
-  if ((key === 'battery_capacity_mah' || key === 'battery_capacity_auto') && +config['battery_mode'] === 0) return '';
+  if ((key === 'battery_capacity_mah' || key === 'battery_capacity_auto' ||
+       key === 'battery_cap_min_levels' || key === 'battery_cap_min_span') && +config['battery_mode'] === 0) return '';
   // Voltage blend + poll interval + weight only apply to Real mode (mode == 1).
   if ((key === 'battery_volt_blend' || key === 'battery_volt_poll_s' || key === 'battery_volt_weight') &&
       +config['battery_mode'] !== 1) return '';

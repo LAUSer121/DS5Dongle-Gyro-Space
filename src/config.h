@@ -306,6 +306,13 @@ struct __attribute__((packed)) Config_body {
     // instead of the fixed nominal value. 0 = always report battery_capacity_mah.
     uint16_t battery_capacity_mah; // [100, 10000] mAh, default 1560
     uint8_t  battery_capacity_auto; // bool: 0 fixed nominal, 1 auto-estimate (default)
+    // Auto-capacity coverage gate: the estimate only kicks in once the
+    // calibration has sampled at least battery_cap_min_levels levels AND spans
+    // a level gap of at least battery_cap_min_span (e.g. 3..8). Two adjacent
+    // levels (50%+60%) have a tiny voltage window that says nothing about total
+    // capacity; waiting for wide coverage avoids nonsense like "624 mAh".
+    uint8_t battery_cap_min_levels; // [2, 11] sampled levels required, default 3
+    uint8_t battery_cap_min_span;   // [1, 10] level gap required, default 5
 };
 
 struct __attribute__((packed)) Config {

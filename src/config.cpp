@@ -257,6 +257,9 @@ void config_valid() {
     // Capacity: fresh-flash 0xFFFF -> 1560 mAh (DualSense nominal).
     if (body->battery_capacity_mah < 100 || body->battery_capacity_mah > 10000) body->battery_capacity_mah = 1560;
     if (body->battery_capacity_auto > 1) body->battery_capacity_auto = 1; // default ON
+    // Coverage gate: fresh-flash 0xFF -> defaults (3 levels, 5 span).
+    if (body->battery_cap_min_levels < 2 || body->battery_cap_min_levels > 11) body->battery_cap_min_levels = 3;
+    if (body->battery_cap_min_span < 1 || body->battery_cap_min_span > 10) body->battery_cap_min_span = 5;
 }
 
 static void migrate_legacy_slots(); // defined after the slot machinery below

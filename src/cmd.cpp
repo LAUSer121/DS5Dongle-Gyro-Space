@@ -269,6 +269,10 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // Capacity (v1.20.x): 0xA4 nominal mAh, 0xA5 auto-estimate toggle.
         case 0xa4: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_capacity_mah=v; break; }
         case 0xa5: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_capacity_auto=v; break; }
+        // Coverage gate for the auto-capacity estimate (v1.20.x): how many
+        // sampled levels and what minimum level gap before the estimate runs.
+        case 0xa8: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_cap_min_levels=v; break; }
+        case 0xa9: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_cap_min_span=v; break; }
         // 0xA2 = persist calibration anchors now (dummy payload). 0xA3 = reset
         // calibration: clear every anchor IN the staged body so the subsequent
         // set_config() lands an empty table (and the caller's save persists it).
@@ -427,6 +431,8 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x95: return write_config_value(buffer, bufsize, config.battery_calib_enable);
         case 0xa4: return write_config_value(buffer, bufsize, config.battery_capacity_mah);
         case 0xa5: return write_config_value(buffer, bufsize, config.battery_capacity_auto);
+        case 0xa8: return write_config_value(buffer, bufsize, config.battery_cap_min_levels);
+        case 0xa9: return write_config_value(buffer, bufsize, config.battery_cap_min_span);
         // Read-only capacity diagnostics (mAh).
         case 0xa6: return write_config_value(buffer, bufsize, ups_full_capacity_mah());
         case 0xa7: return write_config_value(buffer, bufsize, ups_auto_capacity_mah());
