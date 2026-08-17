@@ -9,10 +9,10 @@ Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed â€
 macros are migrated in place on first boot.
 
 ### Added
-- **Motion gestures.** Hold a button as a gate, draw a shape with the controller,
+- **Motion gestures.** Hold a button as a gate, flick your wrist with the controller,
   release â€” and a macro fires. One to four strokes of up / down / left / right.
   - **Recording calibrates to your own movement.** The portal measures how far you
-    actually moved while drawing and stores a step size per macro, so a small
+    actually moved while flicking and stores a step size per macro, so a small
     flick and a broad sweep are each recognised as performed. A fixed threshold
     picked without hardware produced a storm of spurious strokes.
   - **Gyro aiming is suspended while a gate is held**, since the wrist movement
