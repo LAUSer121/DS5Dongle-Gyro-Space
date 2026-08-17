@@ -2446,8 +2446,15 @@ function askYesNo(title, body, yesLabel, noLabel){
 // event attribute. Every generated handler takes numeric arguments only.
 
 const MACRO_COUNT = 32;
-const MACRO_KEYS = 4;            // keys per combo INCLUDING modifiers (src/macro.h)
-const MACRO_REC_LEN = 28;        // 12-byte entry + 16-byte label
+const MACRO_KEYS = 4;
+const MACRO_MOTION_MAX = 8;      // strokes stored per gesture (src/macro.h)            // keys per combo INCLUDING modifiers (src/macro.h)
+const MACRO_REC_LEN = 33;        // 17-byte entry + 16-byte label
+// Motion template offsets INSIDE the 17-byte entry: motion[2], motion_len,
+// motion_step (LE u16). Mirrors MacroEntry in src/macro.h; the firmware
+// migrates shorter records, so a device written by a pre-motion build still
+// loads - but a record written SHORT here would silently truncate the tail.
+const MACRO_OFF_MOTION = 12, MACRO_OFF_MOTION_LEN = 14, MACRO_OFF_MOTION_STEP = 15;
+const GEST_MOTION = 0x10;
 const MACRO_NONE_ENABLED = 0xFFFFFFFF;
 
 // Transcription of src/input_buttons.h. Bit values are persisted inside every
@@ -2509,6 +2516,192 @@ function macroGestureName(g){
   t += (g & GEST_ZONE_RIGHT) ? ' (right half)' : ' (left half)';
   if (g & GEST_TWO_FINGER) t += ', two fingers';
   return t;
+}
+
+// ---- Motion gestures: PORTAL-SIDE PROTOTYPE ONLY -------------------------
+// The firmware knows two trigger kinds, chord and touchpad swipe. It has NO
+// motion template and NO matcher, so nothing here is written to the device and
+// nothing here can fire a key. This is an INSTRUMENT: it answers "are these
+// gestures repeatable, and how often does normal play trip them?" before any
+// firmware is spent on the question.
+//
+// Templates therefore live in a store PARALLEL to _macroRows, never inside a
+// row. The row object is serialised into the 28-byte device record and into the
+// export JSON; a stray field there is how prototype data reaches flash.
+window._macroMotion = window._macroMotion || [];   // index-parallel, null = none
+window._macroTest   = null;                        // live match test state
+
+// Gyro offsets in the report the portal receives. Byte 17 is the HORIZONTAL
+// turn, NOT byte 19 - the DualSense field names say otherwise and main.cpp
+// carries the hardware-verified correction from v1.0.6. Reading 19 as yaw gives
+// a recogniser that responds to the wrong axis and looks merely "unreliable".
+const MOT_OFF_PITCH = 15, MOT_OFF_YAW = 17;
+// Emit one direction code per this much accumulated rotation. Raw gyro counts,
+// NOT a physical unit - the right value is whatever makes a comfortable wrist
+// motion produce 2-4 codes, and that is a hardware question. Tunable in the UI
+// with a live magnitude readout rather than guessed here.
+const MOT_STEP_DEFAULT = 1800;
+const MOT_MAX_CODES = 8;           // a real gesture is 2-4; hitting this is a fault signal
+const MOT_MAX_SAMPLES = 4000;      // 2000 sample pairs - many seconds of gate window
+const MOT_NOISE = 24;              // per-sample deadzone, raw counts (see motFeed)
+const MOT_DIRS = ['→','↑','←','↓'];
+
+function motRead16(d, off){
+  const v = d.getUint8(off) | (d.getUint8(off+1) << 8);
+  return v & 0x8000 ? v - 0x10000 : v;
+}
+// FOUR directions, not eight. Eight put the boundaries 22.5 degrees apart, and a
+// hand cannot hold an axis that well: a single up-flick quantised as
+// up/up-left/up/up-left/up, dithering across the boundary, and since only
+// CONSECUTIVE duplicates collapse, none of it collapsed. Real capture that
+// killed the 8-way version: 12 codes for one gesture.
+function motDir(dx, dy){
+  const adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+  if (adx >= ady) return dx > 0 ? 0 : 2;
+  return dy > 0 ? 1 : 3;
+}
+function motStep(){
+  const v = +(window._motStep || MOT_STEP_DEFAULT);
+  return (v >= 200 && v <= 200000) ? v : MOT_STEP_DEFAULT;
+}
+function motPathName(codes){
+  if (!codes || !codes.length) return '';
+  return codes.map(c => MOT_DIRS[c] || '?').join(' ');
+}
+function motNewState(){
+  return { raw:[], peak:0, n:0, total:0, codes:[], over:false };
+}
+// Capture is now RAW. The previous version quantised as samples arrived, which
+// meant the auto-calibrated step was computed from a capture it could no longer
+// affect - the stored template was always built at the OLD threshold. Buffering
+// the window and quantising afterwards makes the step a knob that can be turned
+// after the fact, and makes the quantiser a pure function the harness can drive.
+function motFeed(ms, d){
+  if (!d || d.byteLength < MOT_OFF_YAW + 2) return;
+  const gx = -motRead16(d, MOT_OFF_YAW);
+  const gy = -motRead16(d, MOT_OFF_PITCH);
+  const mag = (gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy);
+  if (mag > ms.peak) ms.peak = mag;
+  ms.n++;
+  // Noise floor, same idea as apply_gyro_stick's deadzone. Without it a small
+  // resting BIAS sums to the threshold over a long gate hold and emits a code
+  // from a controller that never moved.
+  if (mag < MOT_NOISE) return;
+  ms.total += mag;
+  if (ms.raw.length < MOT_MAX_SAMPLES) ms.raw.push(gx, gy);
+}
+// How much harder it is to TURN than to continue. Without this a 45-degree
+// diagonal alternates forever between the two axes it sits between: the real
+// capture that killed the previous version was up-left read as
+// "up left up left up left down left". Projecting onto the current stroke and
+// requiring the PERPENDICULAR component to win by this factor means a diagonal
+// resolves to whichever axis led, and stays there.
+const MOT_TURN = 2;
+// A reversal is UNAMBIGUOUS in a way a perpendicular turn is not: sideways
+// drift happens constantly during a stroke, but nobody reverses by accident.
+// Holding both to 2x cost real captures both ways - a weak return stroke was
+// swallowed entirely (down-up read as just "down"), and on another attempt
+// lateral drift crossed 2x before the reversal did, injecting a phantom "right"
+// into the middle of a down-up. Reversals commit sooner, so they win that race.
+const MOT_REVERSE = 1;
+// Pure quantiser: raw sample pairs -> direction codes.
+function motQuantise(raw, step){
+  const out = { codes:[], over:false };
+  if (!raw || raw.length < 2 || !(step > 0)) return out;
+  let cx = 0, cy = 0, cur = -1;
+  for (let i = 0; i + 1 < raw.length; i += 2){
+    cx += raw[i]; cy += raw[i+1];
+    if (cur < 0){
+      if ((cx < 0 ? -cx : cx) + (cy < 0 ? -cy : cy) < step) continue;
+      cur = motDir(cx, cy); cx = 0; cy = 0;
+      out.codes.push(cur);
+      continue;
+    }
+    // cur is axis-aligned, so parallel/perpendicular are just the two axes.
+    // fwd is signed ALONG the stroke: a reversal shows up as a large negative
+    // fwd with perp near zero, so it needs its own test - checking only |par|
+    // treats a reversal as the stroke continuing and swallows it entirely.
+    const horiz = (cur === 0 || cur === 2);
+    const fwd  = (cur === 0) ? cx : (cur === 2) ? -cx : (cur === 1) ? cy : -cy;
+    const perp = horiz ? cy : cx;
+    const aperp = perp < 0 ? -perp : perp;
+    if (fwd >= step){ cx = 0; cy = 0; continue; }        // stroke continues
+    let next = -1;
+    if (fwd <= -step * MOT_REVERSE) next = (cur + 2) & 3;   // committed reversal
+    else if (aperp >= step * MOT_TURN) next = horiz ? (perp > 0 ? 1 : 3) : (perp > 0 ? 0 : 2);
+    if (next < 0) continue;                              // not committed yet
+    cur = next;
+    cx = 0; cy = 0;
+    if (out.codes.length < MOT_MAX_CODES) out.codes.push(cur);
+    else { out.over = true; break; }
+  }
+  return out;
+}
+// A gesture should land at 2-4 codes. Suggest the step that would have produced
+// three from THIS capture, so the threshold is calibrated from the user's own
+// motion instead of a constant I picked without hardware.
+function motSuggestStep(ms){
+  if (!ms || !ms.total) return MOT_STEP_DEFAULT;
+  return Math.max(200, Math.round(ms.total / 3 / 100) * 100);
+}
+// Re-quantise every stored template at the current step. Called when the step
+// changes so the displayed paths are always what the matcher would actually see.
+function motReQuantiseAll(){
+  const mot = window._macroMotion || [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    if (!mot[i] || !mot[i].raw) continue;
+    const q = motQuantise(mot[i].raw, motStep());
+    mot[i].codes = q.codes; mot[i].over = q.over; mot[i].step = motStep();
+  }
+}
+// The template must match the START of the capture, not the whole of it.
+// The gate window ends when the button is RELEASED, so any motion between
+// finishing the gesture and letting go becomes codes: holding L2 a beat longer
+// turned a clean down-up into "down up down up right down". The gesture is
+// performed at the start of the window by construction - that is what the gate
+// is for - so trailing motion is settling and is ignored.
+//
+// One spurious code may be dropped from inside the matched prefix - but ONLY
+// for templates of two strokes or more. The tolerance exists for mid-path drift
+// during a reversal (down-up captured as "down right up"), where one slack code
+// out of three is modest. Applied to a SINGLE-stroke template it means "any
+// capture whose first two codes include this one", so a left-flick that drifted
+// down matched both the left template and the down template. Four single-stroke
+// templates on one gate produced 7 ambiguous matches out of 33 for exactly this
+// reason. The slack has to be proportional to the template, not a flat one.
+function motMatch(codes, tpl){
+  if (!tpl || !tpl.length || !codes || !codes.length) return false;
+  const eq = (a,b) => a.length === b.length && a.every((v,i) => v === b[i]);
+  const slack = tpl.length >= 2 ? 1 : 0;
+  for (let k = tpl.length; k <= tpl.length + slack; k++){
+    if (codes.length < k) continue;
+    const head = codes.slice(0, k);
+    if (eq(head, tpl)) return true;
+    if (k === tpl.length) continue;
+    for (let i=0;i<head.length;i++){
+      if (eq(head.slice(0,i).concat(head.slice(i+1)), tpl)) return true;
+    }
+  }
+  return false;
+}
+// Returns the matching row, or -1. Prefers the LONGEST template that matches:
+// with prefix matching a short template shadows every longer one that starts
+// the same way, so "down up" would always win over "down up right". Ambiguity
+// is reported only between templates of EQUAL length, where there is no
+// principled way to choose - the test panel shows it rather than hiding it.
+function motFind(codes, gateMask){
+  const mot = window._macroMotion || [];
+  let hit = -1, best = -1, n = 0;
+  for (let i=0;i<MACRO_COUNT;i++){
+    const t = mot[i];
+    if (!t || !t.codes || !t.codes.length) continue;
+    if ((gateMask & t.gate) !== t.gate) continue;   // gate must have been held
+    if (!motMatch(codes, t.codes)) continue;
+    if (t.codes.length > best){ best = t.codes.length; hit = i; n = 1; }
+    else if (t.codes.length === best) n++;
+  }
+  window._motAmbig = (n > 1);
+  return hit;
 }
 
 // event.code -> HID usage. Modifiers are usages 0xE0-0xE7 so they sit in keys[]
@@ -2673,7 +2866,7 @@ async function macroReadAll(){
     // Skip the read entirely for rows the device says are empty.
     if (used !== null && !(used & (1<<i))){ rows.push(macroBlankRow()); continue; }
     await sendCmd(0x17, [i]);
-    const r = await readCmdReplyOn(SLOT_REPORT, 0x17, i, 12);
+    const r = await readCmdReplyOn(SLOT_REPORT, 0x17, i, 12);   // rec_len 33 + header
     if (!r || r[2] !== 0x00){ rows.push(macroBlankRow()); continue; }
     const dv = new DataView(r.buffer, r.byteOffset);
     const row = {
@@ -2683,8 +2876,22 @@ async function macroReadAll(){
       rel_order: r[15],
       label: ''
     };
-    let lbl = ''; for (let k=0;k<16;k++){ const c = r[16+k]; if (!c) break; lbl += String.fromCharCode(c); }
+    let lbl = ''; for (let k=0;k<16;k++){ const c = r[21+k]; if (!c) break; lbl += String.fromCharCode(c); }
     row.label = lbl;
+    // Motion entries round-trip into the parallel store, not the row.
+    if (row.gesture & GEST_MOTION){
+      const n = r[18] || 0;
+      if (n > 0 && n <= 8){
+        const codes = [];
+        for (let k=0;k<n;k++){
+          const b = (k < 4) ? r[16] : r[17];
+          codes.push((b >> ((k & 3) * 2)) & 3);
+        }
+        const mot = window._macroMotion || (window._macroMotion = []);
+        mot[i] = {codes, gate: row.chord >>> 0,
+                  step: (r[19] | (r[20] << 8)) || MOT_STEP_DEFAULT, raw: null};
+      }
+    }
     row.present = !macroRowEmpty(row);
     rows.push(row);
   }
@@ -2700,7 +2907,26 @@ async function macroWriteAll(){
     a[5] = m.gesture & 0xff; a[6] = m.flags & 0xff; a[7] = m.hold_cs & 0xff;
     a[8] = m.keys[0]|0; a[9] = m.keys[1]|0; a[10] = m.keys[2]|0; a[11] = m.keys[3]|0;
     a[12] = m.rel_order & 0xff;
-    for (let k=0;k<16;k++) a[13+k] = m.label.charCodeAt(k) || 0;
+    // Motion template. Held in _macroMotion, NOT in the row: the row is what the
+    // export JSON carries, and a motion path there would travel to builds that
+    // cannot read it. A row with a template is written as a MOTION entry - its
+    // chord becomes the gate and its swipe gesture is replaced.
+    const mt = (window._macroMotion || [])[i];
+    if (mt && mt.codes && mt.codes.length){
+      let b0 = 0, b1 = 0;
+      for (let k=0;k<mt.codes.length && k<8;k++){
+        const sh = (k & 3) * 2, v = (mt.codes[k] & 3) << sh;
+        if (k < 4) b0 |= v; else b1 |= v;
+      }
+      a[5]  = (GEST_VALID | GEST_MOTION) & 0xff;
+      a[1]  = mt.gate & 0xff; a[2] = (mt.gate>>>8)&0xff;
+      a[3]  = (mt.gate>>>16)&0xff; a[4] = (mt.gate>>>24)&0xff;
+      a[13] = b0; a[14] = b1;
+      a[15] = Math.min(mt.codes.length, 8);
+      const st = mt.step || MOT_STEP_DEFAULT;
+      a[16] = st & 0xff; a[17] = (st >>> 8) & 0xff;
+    }
+    for (let k=0;k<16;k++) a[18+k] = m.label.charCodeAt(k) || 0;
     await sendCmd(0x18, a);
     await new Promise(r => setTimeout(r, 8));
   }
@@ -2715,9 +2941,15 @@ function macroTableToJson(rows){
   const out = [];
   (rows || []).forEach((m, i) => {
     if (!m || macroRowEmpty(m)) return;
+    // motion_* MUST travel with the entry. Dropping it does not merely lose the
+    // gesture: macro_is_motion() needs GEST_MOTION and motion_len > 0, so a
+    // stripped motion macro reloads as an ordinary CHORD macro and its gate
+    // button fires it on its own, with no gesture drawn.
     out.push({ index: i, label: m.label || '', chord: m.chord >>> 0, gesture: m.gesture|0,
                flags: m.flags|0, hold_cs: m.hold_cs|0, keys: (m.keys||[0,0,0,0]).slice(0,4),
-               rel_order: m.rel_order|0 });
+               rel_order: m.rel_order|0,
+               motion: (m.motion||[0,0]).slice(0,2).map(x=>x|0),
+               motion_len: m.motion_len|0, motion_step: m.motion_step|0 });
   });
   return out;
 }
@@ -2726,9 +2958,15 @@ function macroTableFromJson(list){
   for (let i=0;i<MACRO_COUNT;i++) rows.push(macroBlankRow());
   for (const e of (list || [])){
     const i = e.index|0; if (i < 0 || i >= MACRO_COUNT) continue;
+    // Files written before 1.20.0 carry no motion_*; they default to zero, which
+    // is exactly "not a motion macro" and is the correct reading of them.
+    const ml = Math.min(e.motion_len|0, MACRO_MOTION_MAX);
     rows[i] = { chord: (e.chord|0)>>>0, gesture: e.gesture|0, flags: e.flags|0,
                 hold_cs: e.hold_cs|0, keys: (e.keys||[0,0,0,0]).slice(0,4).map(k=>k|0),
-                rel_order: e.rel_order|0, label: String(e.label||'').slice(0,15), present: true };
+                rel_order: e.rel_order|0, label: String(e.label||'').slice(0,15),
+                motion: (e.motion||[0,0]).slice(0,2).map(x=>x|0),
+                motion_len: ml, motion_step: e.motion_step|0,
+                present: true };
   }
   return rows;
 }
@@ -2792,8 +3030,22 @@ async function refreshMacros(){
 // Input capture reads the gamepad's own input reports. The portal opens the
 // device but never subscribed to them before, so this is the first use of the
 // full-rate stream - no firmware round-trip and no polling granularity.
+// Motion recording (which === 2). Hold the gate button, move, release: the gate
+// removes start/end detection entirely, which is the whole reason it exists.
+// Kept as its own branch so the chord/swipe recorder above is untouched.
+function macroMotionRecReport(st, d){
+  const mask = macroButtonMask(d);
+  if (mask && !st.gate){                 // first buttons down define the gate
+    st.gate = mask >>> 0;
+    st.mot  = motNewState();
+  }
+  if (st.gate && mask){ motFeed(st.mot, d); st.held = true; return; }
+  if (st.held && !mask) st.done = true;  // gate released - path is complete
+}
+
 function macroOnInputReport(ev){
   const st = window._macroRec;
+  if (st && st.which === 2){ macroMotionRecReport(st, ev.data); macroRecStatus(); return; }
   if (!st || st.which !== 0) return;
   const m = macroButtonMask(ev.data);
   if (m && !st.firstDown) st.firstDown = performance.now();
@@ -2880,7 +3132,18 @@ function macroRecStatus(){
   const st = window._macroRec; if (!st) return;
   const el = document.getElementById('macrorec');
   if (!el) return;
-  if (st.which === 1){
+  if (st.which === 2){
+    const q = st.mot ? motQuantise(st.mot.raw, motStep()) : null;
+    const p = q ? motPathName(q.codes) : '';
+    el.textContent = 'Recording motion — ' +
+      (!st.gate ? 'hold the gate button, then move the controller'
+                : (st.done ? 'captured: ' + (p || '(no movement)') +
+                             (st.mot ? '   suggested step ' + motSuggestStep(st.mot) : '') +
+                             (q && q.over ? '   TOO NOISY — raise the step' : '')
+                           : (macroChordName(st.gate) + '  ' + (p || '…') +
+                              '   peak ' + (st.mot ? st.mot.peak : 0)))) +
+      '   (press Stop when done)';
+  } else if (st.which === 1){
     el.textContent = 'Recording keyboard — ' + (st.press.map(u => USAGE_NAME[u] || u).join(' + ') || 'press your combo');
   } else {
     const seen = st.gesture ? macroGestureName(st.gesture)
@@ -2895,8 +3158,14 @@ async function macroRecord(row, which){
   window._macroRec = {row, which, peak:0, peakAt:0, firstDown:0, upAt:0,
                       press:[], release:[], sawMeta:false, unknown:false,
                       tDown:false, tStart:0, tEnd:0, tX0:0, tY0:0,
-                      tLastX:0, tLastY:0, tTwo:false, gesture:0};
-  if (which === 0){
+                      tLastX:0, tLastY:0, tTwo:false, gesture:0,
+                      gate:0, held:false, done:false, mot:null};
+  if (which === 2){
+    // No macroSuspendFiring here: motion cannot fire anything, and the gate
+    // button might itself be bound to a chord macro. Suspending would mask
+    // exactly the interference this prototype exists to measure.
+    try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
+  } else if (which === 0){
     await macroSuspendFiring(true);   // don't let an enabled macro type into the portal
     try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
   } else {
@@ -2912,6 +3181,25 @@ async function macroRecordStop(){
   const rows = window._macroRows || [];
   const m = rows[st.row] || (rows[st.row] = macroBlankRow());
 
+  if (st.which === 2){
+    try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
+    const mot = window._macroMotion || (window._macroMotion = []);
+    if (st.mot && st.mot.raw.length >= 2){
+      // Calibrate FIRST, then quantise. The previous order set the step from a
+      // capture it could no longer affect, so the stored template was always
+      // built at the stale threshold - the calibration silently did nothing.
+      if (!window._motCalibrated){
+        window._motStep = motSuggestStep(st.mot);
+        window._motCalibrated = true;
+      }
+      const q = motQuantise(st.mot.raw, motStep());
+      mot[st.row] = { codes: q.codes, over: q.over, raw: st.mot.raw.slice(),
+                      gate: st.gate >>> 0, step: motStep(),
+                      peak: st.mot.peak, samples: st.mot.n, total: st.mot.total };
+    }
+    macroRender();
+    return;
+  }
   if (st.which === 0){
     try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
     await macroSuspendFiring(false);
@@ -2995,6 +3283,161 @@ function macroSubsetWarnings(){
     }
   }
   return out;
+}
+
+// ---- Motion prototype: live test mode ------------------------------------
+// Counts what matters and nothing else: how many gate windows produced a path,
+// how many matched, and which template. A "near miss" (a path that matched
+// nothing) and a WRONG match are different failures - one is a strictness
+// problem, the other a confusability problem, and averaging them hides both.
+function macroMotionTestReport(ev){
+  const t = window._macroTest; if (!t) return;
+  const d = ev.data;
+  const mask = macroButtonMask(d);
+  if (mask && !t.gate){ t.gate = mask >>> 0; t.mot = motNewState(); }
+  if (t.gate && mask){ motFeed(t.mot, d); t.held = true; return; }
+  if (!t.held || mask) return;
+  t.held = false;
+  const codes = t.mot ? motQuantise(t.mot.raw, motStep()).codes : [];
+  const gate  = t.gate; t.gate = 0; t.mot = null;
+  if (!codes.length) return;            // gate held but no real movement
+  t.windows++;
+  const idx = motFind(codes, gate);
+  const ambig = !!window._motAmbig;
+  const rows = window._macroRows || [];
+  const name = idx >= 0 ? ((rows[idx] && rows[idx].label) || ('row ' + (idx+1))) : null;
+  if (idx >= 0) t.hits++; else t.misses++;
+  if (ambig) t.ambig++;
+  t.log.unshift((name ? (ambig ? '? ' : '✓ ') + name : '✗ no match') + '  ' + motPathName(codes) +
+                (ambig ? '  AMBIGUOUS' : '') + '  [' + macroChordName(gate) + ']');
+  if (t.log.length > 12) t.log.length = 12;
+  macroRender();
+}
+function macroMotionTest(){
+  if (window._macroTest){
+    try { device.removeEventListener('inputreport', macroMotionTestReport); } catch(e){}
+    window._macroTest = null;
+  } else {
+    if (!device) return;
+    window._macroTest = {gate:0, mot:null, held:false, windows:0, hits:0, misses:0, ambig:0, log:[]};
+    try { device.addEventListener('inputreport', macroMotionTestReport); } catch(e){}
+  }
+  macroRender();
+}
+function macroMotionStepSet(v){
+  window._motStep = +v || MOT_STEP_DEFAULT;
+  window._motCalibrated = true;   // a hand-set value is never overwritten
+  motReQuantiseAll();
+  macroRender();
+}
+function macroMotionClear(i){
+  const mot = window._macroMotion || []; mot[i] = null; macroRender();
+}
+// Templates are prototype data and never touch the device, so they get their
+// own file rather than riding in the macro export - importing a macro set into
+// a build without this prototype must not fail on an unknown key.
+function macroMotionExport(){
+  const mot = window._macroMotion || [], rows = window._macroRows || [];
+  const list = [];
+  for (let i=0;i<MACRO_COUNT;i++){
+    if (mot[i] && mot[i].codes && mot[i].codes.length){
+      list.push({row:i, label:(rows[i] && rows[i].label) || '',
+                 codes:mot[i].codes.slice(), gate:mot[i].gate, step:mot[i].step,
+                 peak:mot[i].peak, samples:mot[i].samples, raw:mot[i].raw||[]});
+    }
+  }
+  if (!list.length) return;
+  const dump = {format:'ds5dongle-motion-prototype', version:1,
+                savedAt:new Date().toISOString(), templates:list};
+  const blob = new Blob([JSON.stringify(dump, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ds5dongle-motion-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function macroMotionImportPick(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => {
+    if (!inp.files || !inp.files[0]) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      let dump; try { dump = JSON.parse(fr.result); } catch(e){ return; }
+      if (!dump || dump.format !== 'ds5dongle-motion-prototype') return;
+      const mot = window._macroMotion || (window._macroMotion = []);
+      for (const t of (dump.templates || [])){
+        if (t && t.row >= 0 && t.row < MACRO_COUNT && Array.isArray(t.codes)){
+          mot[t.row] = {codes:t.codes.slice(), gate:(t.gate>>>0)||0, step:t.step||MOT_STEP_DEFAULT,
+                        raw:Array.isArray(t.raw)?t.raw.slice():null, peak:t.peak||0};
+        }
+      }
+      macroRender();
+    };
+    fr.readAsText(inp.files[0]);
+  };
+  inp.click();
+}
+
+// The prototype block. Deliberately SELF-CONTAINED and below the macro table:
+// the table above is hardware-verified and this must not be able to regress it.
+// If motion never ships, this block is what gets deleted.
+function macroMotionPanelHTML(){
+  const rows = window._macroRows || [], mot = window._macroMotion || [];
+  const rec = window._macroRec, t = window._macroTest;
+  let h = '<div style="margin-top:14px;border:1px solid var(--line,#333);border-radius:6px;padding:10px">';
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Motion gestures — experimental</div>';
+  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
+       'Hold a gate button, move the controller, release. A row with a template is written to the ' +
+       'dongle as a motion entry — its gate replaces the row\'s controller input. Use Test to check ' +
+       'a gesture is repeatable, and to see how often normal play trips it, before saving.</div>';
+  h += '<div style="font-size:12px;margin-bottom:8px">Step threshold ' +
+       '<input type="number" min="200" max="20000" step="100" value="' + motStep() + '" ' +
+       'style="width:80px;padding:2px 4px;font-size:12px" oninput="macroMotionStepSet(this.value)"> ' +
+       '<span style="color:var(--sub)">raw gyro counts per direction code. Lower = more codes per motion. ' +
+       'Aim for 2–4 codes on a comfortable flick; the peak readout while recording tells you the scale.</span></div>';
+  let any = 0;
+  h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  for (let i=0;i<MACRO_COUNT;i++){
+    const m = rows[i]; if (!m || !m.present) continue;
+    any++;
+    const tpl = mot[i];
+    const clash = tpl && (m.chord || m.gesture);
+    const recM = rec && rec.row === i && rec.which === 2;
+    const dis  = (rec && !recM) || t ? ' disabled' : '';
+    h += '<tr style="border-top:1px solid var(--line,#333)">';
+    h += '<td style="padding:2px 6px;width:120px">' + escAttr(m.label || ('Row ' + (i+1))) + '</td>';
+    h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',2)"' + dis + '>' +
+         (recM ? 'Stop' : 'Record motion') + '</button></td>';
+    h += '<td style="padding:2px 8px;color:' + (tpl ? 'inherit' : 'var(--sub)') + '">' +
+         (tpl ? (motPathName(tpl.codes) + '  <span style="color:var(--sub)">gate ' +
+                 (macroChordName(tpl.gate) || 'none') + '</span>') : '—') + '</td>';
+    if (clash){
+      h += '<td colspan="2" style="padding:2px 8px;color:#e90;font-size:12px">' +
+           'motion replaces this row\'s controller input on save</td>';
+    }
+    h += '<td style="width:30px">' + (tpl ?
+         '<button class="btn btn-outline" style="padding:2px 6px" onclick="macroMotionClear(' + i + ')"' + dis + '>−</button>' : '') + '</td>';
+    h += '</tr>';
+  }
+  h += '</table>';
+  if (!any) h += '<div style="padding:6px 2px;color:var(--sub);font-size:12px">Add a macro above first — a motion is a trigger for one.</div>';
+  h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionTest()"' + (rec ? ' disabled' : '') + '>' +
+       (t ? 'Stop test' : 'Test') + '</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionExport()"' + (rec || t ? ' disabled' : '') + '>Export templates</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionImportPick()"' + (rec || t ? ' disabled' : '') + '>Import templates</button>';
+  h += '</div>';
+  if (t){
+    h += '<div style="margin-top:8px;font-size:12px">' +
+         'Gate windows with movement: <b>' + t.windows + '</b> · matched <b>' + t.hits +
+         '</b> · unmatched <b>' + t.misses + '</b>' +
+         (t.ambig ? ' · <b style="color:#e90">ambiguous ' + t.ambig + '</b>' : '') + '</div>';
+    h += '<div style="margin-top:4px;font-family:monospace;font-size:11px;color:var(--sub);white-space:pre-line">' +
+         (t.log.length ? t.log.map(escAttr).join('\n') : 'waiting…') + '</div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 function macroRender(){
@@ -3091,6 +3534,7 @@ function macroRender(){
   h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroImportPick()"' + (rec ? ' disabled' : '') + '>Import macros</button>';
   h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
   h += '</div>';
+  h += macroMotionPanelHTML();
   box.innerHTML = h;
 }
 
@@ -3361,7 +3805,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.19.1</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.20.0</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>

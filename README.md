@@ -1,8 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.19.1** — portal-only update. The firmware is unchanged from 1.19.0
-and the `.uf2` files in this release are the 1.19.0 build, so **no reflashing is
-needed**; replace `ds5-config-portal.html` and you're done.
+**Version 1.20.0**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -21,7 +19,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.19.0-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.20.0-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -89,6 +87,8 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
+- **Motion gestures** — hold a button and flick your controller to 
+  fire a macro. Calibrated to your own movement when you record it.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
   keyboard combo, recorded by pressing the actual buttons and typing the actual
   keys. Up to 32, with tap-vs-hold and captured release order. Definitions are
@@ -263,7 +263,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.19.0.uf2` (Pico 2 W) or `ds5-v1.19.0-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.20.0.uf2` (Pico 2 W) or `ds5-v1.20.0-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -1105,6 +1105,45 @@ The panel warns you when the enable state has changed but not yet been saved.
 > This is the same constraint as wake: a game with native DualSense support may
 > stop recognising the controller while the keyboard interface is present.
 
+#### Motion gestures *(new in 1.20.0)*
+
+A third way to trigger a macro: hold a button and flick your wrists with the
+controller. Hold **L2**, flick **down then up**, release — and the macro fires.
+
+The held button is a **gate**, not a modifier. It marks when you are "drawing", so
+the dongle is not watching your wrist the whole time you play. Recording starts
+when the gate goes down (button is pressed) and the gesture is matched when you let go.
+
+| | |
+|---|---|
+| Strokes per gesture | 1–4 (up to 8 are stored) |
+| Directions | up, down, left, right |
+| Gate | any button or combination, held while you draw |
+| Fires | on release of the gate |
+
+While a gate is held, **gyro aiming is suspended** — the same wrist movement that
+draws the gesture would otherwise swing your aim. It resumes the moment you let
+go.
+
+**Recording calibrates to you.** Press **Record motion**, hold the gate, flick the controller, release. 
+The portal measures how far you actually moved and stores a step
+size with that macro, so a small flick and a broad sweep are both recognised as
+what you performed. A fixed threshold chosen without your hardware in front of it
+does not survive contact with a real wrist.
+
+Two behaviours worth knowing, both learned the hard way:
+
+- **Only the start of the window has to match.** Holding the gate a beat longer
+  after finishing adds strokes — a clean *down-up* becomes *down up down up right
+  down*. Trailing movement is treated as settling and ignored.
+- **A single-stroke gesture is matched strictly.** Longer gestures tolerate one
+  stray stroke inside the match, because a reversal often drifts. Allowing that
+  on a one-stroke gesture would make a leftward flick that sagged match both
+  *left* and *down*.
+
+Gestures are macros like any other, so they carry names, live in the same 32
+rows, and are enabled per profile.
+
 #### Backing up and sharing macros *(new in 1.19.1)*
 
 Definitions and enablement travel separately, because they are stored separately.
@@ -1365,9 +1404,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.19.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.19.0)
-- `ds5-v1.19.0-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.20.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.20.0)
+- `ds5-v1.20.0-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

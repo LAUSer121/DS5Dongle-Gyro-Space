@@ -2,6 +2,56 @@
 
 All notable changes to this project are documented here.
 
+## [1.20.0] — 2026-08-17
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+`Config_body` is unchanged. The macro table's on-flash record grows, and existing
+macros are migrated in place on first boot.
+
+### Added
+- **Motion gestures.** Hold a button as a gate, draw a shape with the controller,
+  release — and a macro fires. One to four strokes of up / down / left / right.
+  - **Recording calibrates to your own movement.** The portal measures how far you
+    actually moved while drawing and stores a step size per macro, so a small
+    flick and a broad sweep are each recognised as performed. A fixed threshold
+    picked without hardware produced a storm of spurious strokes.
+  - **Gyro aiming is suspended while a gate is held**, since the wrist movement
+    that draws a gesture would otherwise swing the aim. It resumes on release.
+  - Only the **start** of the capture window has to match the template. Holding
+    the gate a beat after finishing turned a clean down-up into six strokes;
+    trailing movement is treated as settling.
+  - Single-stroke gestures match strictly, while longer ones tolerate one stray
+    stroke inside the match. The tolerance is proportional to the template — flat
+    slack made a drooping leftward flick match both *left* and *down*.
+
+### Fixed
+- **Upgrading from 1.19.x corrupted every macro name.** `MacroEntry` grew from 12
+  to 17 bytes for the motion fields, which moved `label` inside `MacroRecord` from
+  offset 12 to 17 — so migrating a record by copying its stored length flat landed
+  the name over the new fields. A macro called `rivatuner` reloaded as `uner` with
+  a `motion_len` of 118, which is the letter `v`. Migration now splits entry and
+  label by the layout each record length actually had, and refuses an unrecognised
+  length rather than guessing at the split.
+- **`motion_len` was unbounded on the write path.** It indexes a two-byte array
+  two bits at a time, so a value above the maximum of 8 read past the record into
+  its neighbour. It arrives straight from the host in command `0x18`; it is now
+  clamped where records enter the table rather than at each point of use.
+- **The macro table loader refused shorter records instead of migrating them.**
+  `macro.h` had always documented `rec_len` as making a record self-describing so
+  that later firmware could read older tables — but the loader required an exact
+  match, so the first time the record grew, every user's macros would have been
+  discarded. The claim was in the comment and not in the code.
+- **Exporting a macro dropped its gesture, and the result was worse than data
+  loss.** The macro file format predates motion, so `motion`, `motion_len` and
+  `motion_step` were not written or read. A motion macro survived a round trip as
+  an ordinary *chord* macro — `macro_is_motion()` needs `GEST_MOTION` and a
+  non-zero `motion_len` — so its gate button would have fired it on its own, with
+  no gesture drawn. Files written before 1.20.0 still import correctly, as
+  non-motion macros.
+- **`portal-motion-test.js` was not invoked by `run-portal-tests.sh`.** The file
+  shipped and reported nothing while the suite reported success. Now wired in.
+
+
 ## [1.19.1] — 2026-08-14
 
 **Portal only.** The firmware is unchanged from 1.19.0 — same `.uf2` files, same
