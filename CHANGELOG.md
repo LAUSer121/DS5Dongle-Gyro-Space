@@ -16,7 +16,7 @@ macros are migrated in place on first boot.
     flick and a broad sweep are each recognised as performed. A fixed threshold
     picked without hardware produced a storm of spurious strokes.
   - **Gyro aiming is suspended while a gate is held**, since the wrist movement
-    that draws a gesture would otherwise swing the aim. It resumes on release.
+    that makes a gesture would otherwise swing the aim. It resumes on release.
   - Only the **start** of the capture window has to match the template. Holding
     the gate a beat after finishing turned a clean down-up into six strokes;
     trailing movement is treated as settling.
@@ -46,7 +46,7 @@ macros are migrated in place on first boot.
   `motion_step` were not written or read. A motion macro survived a round trip as
   an ordinary *chord* macro — `macro_is_motion()` needs `GEST_MOTION` and a
   non-zero `motion_len` — so its gate button would have fired it on its own, with
-  no gesture drawn. Files written before 1.20.0 still import correctly, as
+  no gesture performed. Files written before 1.20.0 still import correctly, as
   non-motion macros.
 - **`portal-motion-test.js` was not invoked by `run-portal-tests.sh`.** The file
   shipped and reported nothing while the suite reported success. Now wired in.

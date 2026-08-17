@@ -1118,11 +1118,11 @@ when the gate goes down (button is pressed) and the gesture is matched when you 
 |---|---|
 | Strokes per gesture | 1–4 (up to 8 are stored) |
 | Directions | up, down, left, right |
-| Gate | any button or combination, held while you draw |
+| Gate | any button or combination, held while you flick |
 | Fires | on release of the gate |
 
 While a gate is held, **gyro aiming is suspended** — the same wrist movement that
-draws the gesture would otherwise swing your aim. It resumes the moment you let
+makes the gesture would otherwise swing your aim. It resumes the moment you let
 go.
 
 **Recording calibrates to you.** Press **Record motion**, hold the gate, flick the controller, release. 
