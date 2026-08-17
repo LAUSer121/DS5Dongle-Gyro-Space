@@ -90,8 +90,36 @@ enum : uint8_t {
     GEST_DIR_MASK   = 3u << 0,
     GEST_ZONE_RIGHT = 1u << 2, // swipe STARTED on the right half of the pad
     GEST_TWO_FINGER = 1u << 3,
+    GEST_MOTION     = 1u << 4, // MOTION gesture: motion[] holds the template
     GEST_VALID      = 1u << 7, // set on every real gesture so the byte is non-zero
 };
+
+// --- Motion gestures ---------------------------------------------------------
+// A THIRD trigger kind: hold a gate button, move the controller, release. The
+// gate is what removes start/end detection - without it an always-on recogniser
+// competes with gyro aiming and fires during normal play.
+//
+// `chord` carries the GATE mask for a motion entry. It is otherwise unused on a
+// non-chord entry, and reusing it means find_entry()/best_chord() already skip
+// these records (they skip anything with gesture != GESTURE_NONE), so the gate
+// button cannot be stolen by chord matching.
+//
+// The template is a sequence of STROKE directions, 4-way, 2 bits each. Eight
+// directions were tried first and failed on hardware: at 22.5 degrees per
+// sector a hand cannot hold an axis, and one up-flick quantised as
+// up/up-left/up/up-left to the length ceiling.
+constexpr uint8_t MACRO_MOTION_MAX   = 8;  // codes; a real gesture is 1-4
+constexpr uint8_t MACRO_MOTION_BYTES = 2;  // 8 codes x 2 bits
+enum : uint8_t {
+    MOTION_RIGHT = 0,
+    MOTION_UP    = 1,
+    MOTION_LEFT  = 2,
+    MOTION_DOWN  = 3,
+};
+// Default step threshold in raw gyro counts. Per-entry because it is CALIBRATED
+// from the user's own motion - a constant chosen without hardware produced a
+// code storm, which is what sent the portal prototype back twice.
+constexpr uint16_t MACRO_MOTION_STEP_DEFAULT = 1800;
 
 enum : uint8_t {
     MACRO_FLAG_LONG_PRESS = 1u << 0, // fire at hold_cs, not on release
@@ -107,17 +135,34 @@ struct __attribute__((packed)) MacroEntry {
     uint8_t  hold_cs;     // long-press threshold, centiseconds (0 -> default)
     uint8_t  keys[MACRO_KEYS]; // HID usages in PRESS order, 0 = unused
     uint8_t  rel_order;   // release permutation, 2 bits per slot
+    // --- appended for motion gestures; absent from rec_len 28 tables ---
+    uint8_t  motion[MACRO_MOTION_BYTES]; // 2 bits per stroke, index 0 first
+    uint8_t  motion_len;  // strokes used, 0 on every non-motion entry
+    uint16_t motion_step; // raw gyro counts per stroke; 0 -> default
     // No reserved padding: MacroTable.rec_len makes the record self-describing,
     // so a later firmware with a LARGER record still reads today's tables (the
     // same mechanism SlotRecordV2.body_len uses to survive Config_body growth).
 };
-static_assert(sizeof(MacroEntry) == 12, "MacroEntry size is part of the flash format");
+static_assert(sizeof(MacroEntry) == 17, "MacroEntry size is part of the flash format");
+
+static inline uint8_t macro_motion_code(const MacroEntry &e, uint8_t i) {
+    if (i >= MACRO_MOTION_MAX) return 0;
+    return (uint8_t) ((e.motion[i >> 2] >> ((i & 3u) * 2u)) & 3u);
+}
+static inline void macro_motion_set_code(MacroEntry &e, uint8_t i, uint8_t code) {
+    if (i >= MACRO_MOTION_MAX) return;
+    const uint8_t sh = (uint8_t) ((i & 3u) * 2u);
+    e.motion[i >> 2] = (uint8_t) ((e.motion[i >> 2] & ~(3u << sh)) | ((code & 3u) << sh));
+}
+static inline bool macro_is_motion(const MacroEntry &e) {
+    return (e.gesture & GEST_MOTION) != 0 && e.motion_len > 0;
+}
 
 struct __attribute__((packed)) MacroRecord {
     MacroEntry entry;
     uint8_t    label[MACRO_LABEL_LEN]; // NUL-padded, portal display only
 };
-static_assert(sizeof(MacroRecord) == 28);
+static_assert(sizeof(MacroRecord) == 33);
 
 // Whole table + header, rewritten as one sector image like the slot sectors.
 constexpr uint32_t MACRO_MAGIC   = 0x4D355344; // "DS5M"
@@ -164,6 +209,12 @@ void macro_reset();
 // but never fire, so capturing a chord that matches an already-enabled macro
 // cannot type into the portal while the user is recording it.
 void macro_suspend(bool on);
+
+// True while a motion gate is held and strokes are being accumulated. main.cpp
+// suppresses gyro-to-stick aiming while this is set, so performing a gesture
+// does not also swing the aim - the same idea as gyro_mode 4 pausing on a
+// touchpad touch.
+bool macro_motion_capturing();
 
 // True while the engine holds keys down or has queued playback steps. wake.cpp
 // uses it to avoid interleaving its F15 keystroke with a macro on the shared

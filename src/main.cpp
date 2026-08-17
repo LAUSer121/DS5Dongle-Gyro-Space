@@ -150,6 +150,10 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (cfg.gyro_mode == 5 && d[5] < 30)         return;         // R2 held
     if (cfg.gyro_mode == 6 && !(d[8] & 0x01))    return;         // L1 held
     if (cfg.gyro_mode == 7 && !(d[8] & 0x02))    return;         // R1 held
+    // A motion macro's gate is held: the same wrist movement that draws the
+    // gesture would otherwise also swing the aim. Same idea as gyro_mode 4
+    // pausing while the touchpad is touched.
+    if (macro_motion_capturing()) return;
     auto rd16 = [&](int off) -> int32_t {
         return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
     };
