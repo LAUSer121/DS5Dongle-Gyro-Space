@@ -20,6 +20,7 @@
 #include "macro.h"
 #include "input_buttons.h"
 #include "config.h"
+#include "stubs/utils.h"   // the stub, not src/utils.h: -I$SRC precedes -Istubs
 #include "flash_map.h"
 #include "wake.h"
 
@@ -299,6 +300,46 @@ static void t_known_subset_behaviour() {
        "R3+Up did NOT fire - documented, portal warns instead of an arm delay");
 }
 
+// Upgrading from the 1.19.x on-disk layout must preserve BOTH halves of a record.
+// MacroEntry grew 12 -> 17 for motion gestures, which moved `label` inside
+// MacroRecord, so a flat rec_len-byte copy shifts the name over the appended
+// fields. Caught exactly this way: "rivatuner" reloaded as "uner", motion_len 118.
+static void t_migrate_v1_layout() {
+    printf("migrating a 1.19.x table preserves entry AND label\n");
+    #pragma pack(push,1)
+    struct OldEntry { uint32_t chord; uint8_t gesture, flags, hold_cs, keys[4], rel_order; };
+    struct OldRecord { OldEntry e; uint8_t label[16]; };
+    #pragma pack(pop)
+    static_assert(sizeof(OldRecord) == 28, "the 1.19.x record was 28 bytes");
+
+    memset(g_fake_flash, 0xFF, sizeof(g_fake_flash));
+    memset(&g_cfg, 0, sizeof(g_cfg));
+    g_cfg.macro_disable = MACRO_NONE_ENABLED;
+
+    uint8_t *p = g_fake_flash + MACRO_FLASH_OFFSET;
+    memset(p, 0, 8 + (size_t) MACRO_COUNT * 28 + 4);
+    const uint32_t magic = MACRO_MAGIC; memcpy(p, &magic, 4);
+    p[4] = 1; p[5] = MACRO_COUNT;
+    const uint16_t rl = 28; memcpy(p + 6, &rl, 2);
+
+    OldRecord recs[MACRO_COUNT]; memset(recs, 0, sizeof(recs));
+    recs[0].e.chord = BTN_R3 | BTN_DPAD_UP;
+    recs[0].e.keys[0] = 0xE0; recs[0].e.keys[1] = 0x0D; recs[0].e.rel_order = 1;
+    memcpy(recs[0].label, "rivatuner", 9);
+    memcpy(p + 8, recs, sizeof(recs));
+    const uint32_t c = crc32(p + 8, (size_t) MACRO_COUNT * 28);
+    memcpy(p + 8 + (size_t) MACRO_COUNT * 28, &c, 4);
+
+    macro_load();
+    MacroRecord out{};
+    ok(macro_get(0, out), "old table loads");
+    ok(out.entry.chord == (uint32_t)(BTN_R3 | BTN_DPAD_UP), "chord survives");
+    ok(out.entry.keys[0] == 0xE0 && out.entry.keys[1] == 0x0D, "keys survive");
+    ok(strncmp((const char *) out.label, "rivatuner", 9) == 0, "label survives intact");
+    ok(out.entry.motion_len == 0, "appended motion_len defaults to 0");
+    ok(out.entry.motion[0] == 0 && out.entry.motion[1] == 0, "appended motion bytes default to 0");
+}
+
 int main() {
     printf("=== macro engine tests ===\n");
     t_press_then_second_button();
@@ -312,6 +353,7 @@ int main() {
     t_gesture();
     t_persistence();
     t_virgin_flash();
+    t_migrate_v1_layout();
     t_known_subset_behaviour();
     printf("\n%s (%d failure%s)\n", g_fail ? "MACRO TESTS FAILED" : "MACRO TESTS OK",
            g_fail, g_fail == 1 ? "" : "s");
