@@ -30,6 +30,9 @@ const fn = new Function('window', 'document', 'navigator', 'location', js + `
            setRows: r => { window._macroRows = r; },
            getRows: () => window._macroRows,
            setPick: p => { window._macroPick = p; },
+           setSnap: x => { savedSnapshot = x; },
+           macroTableToJson, macroTableFromJson,
+           macroSetBit, getCfg: () => config,
            setCfg: c => { config = c; },
            setDev: d => { device = d; } };`);
 const M = fn(global.window, global.document, global.navigator, global.location);
@@ -103,6 +106,52 @@ for (const mods of [[],[0xE0],[0xE0,0xE1],[0xE0,0xE1,0xE2]]){
   if (!isPerm(e.rel_order, mods.length + 1)) allPerm = false;
 }
 ok(allPerm, 'picker always emits a valid release permutation');
+
+// The dirty banner is drawn from savedSnapshot. saveAll()'s common path refreshes
+// the snapshot but deliberately does NOT render, so the panel must repaint itself
+// after a save or it keeps claiming unsaved changes.
+(function bannerClears(){
+  console.log('dirty banner tracks the saved snapshot');
+  const rows2 = []; for (let i=0;i<32;i++) rows2.push(blank());
+  rows2[0] = {chord:1<<15, gesture:0, flags:0, hold_cs:0, keys:[0xE0,0x0D,0,0],
+              rel_order:1, label:'t', present:true};
+  M.setRows(rows2);
+  M.setPick(null);
+  M.setCfg({macro_disable: 0xFFFFFFFF});
+  M.setSnap({macro_disable: 0xFFFFFFFF});
+  M.macroRender();
+  ok(!/Enable state changed/.test(boxHtml), 'hidden when config matches the snapshot');
+  M.macroSetBit(0, true);
+  ok(/Enable state changed/.test(boxHtml), 'shown after a checkbox change');
+  M.setSnap({...M.getCfg()});          // what a successful saveAll() does
+  M.macroRender();                     // the repaint macroSaveTable performs
+  ok(!/Enable state changed/.test(boxHtml), 'cleared once the snapshot is refreshed');
+})();
+
+// The macro file format must carry the motion fields. Dropping them does not
+// just lose the gesture: macro_is_motion() requires GEST_MOTION and
+// motion_len > 0, so a stripped motion macro reloads as a plain CHORD macro and
+// its gate button fires it on its own, with nothing drawn.
+(function motionSurvivesRoundTrip(){
+  console.log('macro file format carries motion gestures');
+  const rows3 = []; for (let i=0;i<32;i++) rows3.push(blank());
+  rows3[2] = {chord:1<<10, gesture:0x40, flags:0, hold_cs:0, keys:[0xE0,0x0D,0,0],
+              rel_order:1, label:'down-up', motion:[0x0D,0x00], motion_len:2,
+              motion_step:2100, present:true};
+  const j = M.macroTableToJson(rows3);
+  const back = M.macroTableFromJson(j)[2];
+  ok(JSON.stringify(back.motion) === JSON.stringify([0x0D,0x00]), 'motion strokes survive');
+  ok(back.motion_len === 2, 'motion_len survives');
+  ok(back.motion_step === 2100, 'the calibrated step survives');
+  ok(back.gesture === 0x40, 'GEST_MOTION survives - it does not degrade to a chord macro');
+
+  const legacy = M.macroTableFromJson(
+    [{index:5,label:'legacy',chord:1<<15,gesture:0,flags:0,hold_cs:0,keys:[0xE0,0x0D,0,0],rel_order:1}])[5];
+  ok(legacy.motion_len === 0, 'a pre-1.20.0 file imports as a non-motion macro');
+
+  const bad = M.macroTableFromJson([{index:0,motion_len:200,chord:1,keys:[4,0,0,0]}])[0];
+  ok(bad.motion_len <= 8, 'an out-of-range motion_len is clamped on import');
+})();
 
 console.log('\nmacro panel handlers checked:', checked, '| problems:', bad);
 console.log(bad ? 'MACRO PANEL TEST FAILED' : 'MACRO PANEL TEST OK');
