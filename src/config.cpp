@@ -213,6 +213,18 @@ void config_valid() {
     // Native-haptics smoothing: 0 is invalid so a fresh config defaults to Light (2).
     if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 2;
     if (body->synth_force > 1) body->synth_force = 0;
+    // Two-stage triggers. A slot written before v1.21 reads back 0xFF here, so
+    // the OFF default has to come from the clamp, not from the stored value.
+    if ((body->t2_mode & T2_AXIS_MASK) > T2_AXIS_RESCALE ||
+        (body->t2_mode & ~(T2_AXIS_MASK | T2_RELEASE_STAGE1))) body->t2_mode = 0;
+    if ((body->t2_l2_mode & T2_AXIS_MASK) > T2_AXIS_RESCALE ||
+        (body->t2_l2_mode & ~(T2_AXIS_MASK | T2_RELEASE_STAGE1))) body->t2_l2_mode = 0;
+    if (body->t2_button >= T2BTN_COUNT) body->t2_button = T2BTN_NONE;
+    if (body->t2_l2_button >= T2BTN_COUNT) body->t2_l2_button = T2BTN_NONE;
+    // pos 0 disables the stage; 0xFF from an old slot would put the boundary at
+    // the very top of travel, which is indistinguishable from unreachable.
+    if (body->t2_pos == 0xFF) body->t2_pos = 0;
+    if (body->t2_l2_pos == 0xFF) body->t2_l2_pos = 0;
     if (body->enable_wake > 1) {
         body->enable_wake = 0;
         printf("[Config] enable_wake is invalid\n");

@@ -57,16 +57,101 @@ volatile bool report_dirty = false;
 // report copy: every internal consumer (AT gating, kick, shapes, gyro) keeps
 // reading the raw trigger. Report body: [4]=L2 analog, [5]=R2 analog,
 // [8] bit2=L2 pressed, bit3=R2 pressed. Zone N starts at N*25.5 counts.
-static inline void apply_trigger_deadzone(uint8_t *r) {
+// Stage-2 output button -> report bit. Report offsets: 7 = hat + face buttons,
+// 8 = shoulders / sticks / system (same layout input_buttons.h decodes).
+static inline void t2_press(uint8_t *r, uint8_t btn) {
+    switch (btn) {
+        case T2BTN_SQUARE:   r[7] |= 0x10u; break;
+        case T2BTN_CROSS:    r[7] |= 0x20u; break;
+        case T2BTN_CIRCLE:   r[7] |= 0x40u; break;
+        case T2BTN_TRIANGLE: r[7] |= 0x80u; break;
+        case T2BTN_L1:       r[8] |= 0x01u; break;
+        case T2BTN_R1:       r[8] |= 0x02u; break;
+        case T2BTN_L3:       r[8] |= 0x40u; break;
+        case T2BTN_R3:       r[8] |= 0x80u; break;
+        // Trigger targets have to move the ANALOG AXIS as well as the click bit.
+        // Games read L2/R2 as axes - the digital bits in byte 8 are barely used -
+        // so setting the bit alone was invisible, which is why picking L2 or R2
+        // appeared to do nothing at all. Take the max so a real physical pull on
+        // that trigger is never reduced by the synthetic press.
+        case T2BTN_L2:       r[8] |= 0x04u; if (r[4] < 255u) r[4] = 255u; break;
+        case T2BTN_R2:       r[8] |= 0x08u; if (r[5] < 255u) r[5] = 255u; break;
+        default: break;
+    }
+}
+
+// Release hysteresis, in raw trigger counts (~3% of travel). Resting a finger
+// exactly on the boundary makes the raw value dither by a few counts, so a bare
+// threshold pressed and released the stage-2 button at report rate. In a game
+// that reacts to the button - nitro engaging and disengaging over and over -
+// that reads as a buzz right at the wall. Engage at the boundary, release below
+// it, so the two edges cannot chase each other.
+constexpr uint8_t T2_HYST = 8;
+
+// Per-trigger latch state. RAM only, never Config_body: this is transient, not
+// a setting, and it must not travel into a profile or a slot. The boundary and
+// mode are kept alongside so a slot activation that retunes them while the
+// trigger is held cannot strand the latch in its old state.
+struct T2State { bool latched; uint8_t pos; uint8_t mode; };
+
+// Dead zone + two-stage handling for ONE trigger. Everything is computed from
+// the ORIGINAL axis value captured on entry: the dead zone rewrites r[axis_off]
+// and the rescale would otherwise read its own output back.
+// Returns true when this trigger's second stage is latched. The PRESS itself is
+// applied by the caller after BOTH triggers have been processed - see
+// apply_trigger_output.
+static inline bool apply_trigger_out_one(uint8_t *r, uint8_t axis_off, uint8_t dig_mask,
+                                         uint8_t dz, uint8_t mode, uint8_t pos, uint8_t btn,
+                                         T2State &st) {
+    const uint8_t raw = r[axis_off];
+    if (st.pos != pos || st.mode != mode) { st.latched = false; st.pos = pos; st.mode = mode; }
+    const uint8_t dz_thr = dz ? (uint8_t) (((uint16_t) dz * 51u) / 2u) : 0u;
+
+    if (dz && raw < dz_thr) { r[axis_off] = 0; r[8] &= (uint8_t) ~dig_mask; }
+
+    if ((mode & T2_AXIS_MASK) == T2_AXIS_OFF || pos == 0) { st.latched = false; return false; }
+
+    // Rescale stretches [dead zone .. boundary] over the full 0-255, so the
+    // shortened travel keeps full analog authority instead of being clipped.
+    // Position-only: it does not depend on the latch.
+    if ((mode & T2_AXIS_MASK) == T2_AXIS_RESCALE && pos > dz_thr) {
+        const uint32_t v   = raw <= dz_thr ? 0u : (uint32_t) (raw - dz_thr);
+        const uint32_t out = (v * 255u) / (uint32_t) (pos - dz_thr);
+        r[axis_off] = (uint8_t) (out > 255u ? 255u : out);
+    }
+
+    // A boundary at or below the hysteresis would leave the release threshold at
+    // 0 and the latch could never clear, so it falls back to "fully released".
+    const uint8_t rel = (pos > T2_HYST) ? (uint8_t) (pos - T2_HYST) : 1u;
+    if (st.latched) { if (raw < rel) st.latched = false; }
+    else            { if (raw >= pos) st.latched = true;  }
+    if (!st.latched) return false;
+
+    if (mode & T2_RELEASE_STAGE1) r[8] &= (uint8_t) ~dig_mask;
+    return true;   // caller presses, once both triggers have been processed
+}
+
+static inline void apply_trigger_output(uint8_t *r) {
     const auto &c = get_config();
-    if (c.at_deadzone) {        // R2
-        const uint8_t thr = (uint8_t)(((uint16_t)c.at_deadzone * 51u) / 2u);
-        if (r[5] < thr) { r[5] = 0; r[8] &= (uint8_t)~0x08; }
-    }
-    if (c.at_l2_deadzone) {     // L2
-        const uint8_t thr = (uint8_t)(((uint16_t)c.at_l2_deadzone * 51u) / 2u);
-        if (r[4] < thr) { r[4] = 0; r[8] &= (uint8_t)~0x04; }
-    }
+    static T2State r2_st{}, l2_st{};
+    // Both passes read the PHYSICAL trigger values and decide their own latch
+    // first. Only then are the stage-2 presses applied. Doing it inline meant
+    // R2's press landed before L2's pass, which then cleared the very click bit
+    // R2 had just set (its dead-zone branch clears that same mask) - and a
+    // synthetic full-scale value on L2 would have been read by L2's own latch as
+    // a real pull, so a press on one trigger could trip the other's second stage.
+    const bool r2_fire = apply_trigger_out_one(r, 5, 0x08u, c.at_deadzone,    c.t2_mode,    c.t2_pos,    c.t2_button,    r2_st);
+    const bool l2_fire = apply_trigger_out_one(r, 4, 0x04u, c.at_l2_deadzone, c.t2_l2_mode, c.t2_l2_pos, c.t2_l2_button, l2_st);
+    if (r2_fire) t2_press(r, c.t2_button);
+    if (l2_fire) t2_press(r, c.t2_l2_button);
+}
+
+// Cheap gate so the untouched-report fast path survives for everyone not using
+// either feature.
+static inline bool trigger_output_active(const Config_body &c) {
+    return c.at_deadzone || c.at_l2_deadzone ||
+           (c.t2_mode & T2_AXIS_MASK) != T2_AXIS_OFF ||
+           (c.t2_l2_mode & T2_AXIS_MASK) != T2_AXIS_OFF;
 }
 
 void __not_in_flash_func(interrupt_loop)() {
@@ -75,10 +160,10 @@ void __not_in_flash_func(interrupt_loop)() {
     // TODO: Refactor for better code reuse
     if (get_config().polling_rate_mode != 2) {
         const auto &cdz = get_config();
-        if (cdz.at_deadzone || cdz.at_l2_deadzone) {
+        if (trigger_output_active(cdz)) {
             static uint8_t dz_report[63];
             memcpy(dz_report, interrupt_in_data, 63);
-            apply_trigger_deadzone(dz_report);
+            apply_trigger_output(dz_report);
             if (!tud_hid_report(0x01, dz_report, 63)) {
                 printf("[USBHID] tud_hid_report error\n");
             }
@@ -103,7 +188,7 @@ void __not_in_flash_func(interrupt_loop)() {
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
-        apply_trigger_deadzone(safe_report); // no-op when both dead zones are 0
+        apply_trigger_output(safe_report); // no-op when dead zones and stages are off
         if (!tud_hid_report(0x01, safe_report, 63)) {
             printf("[USBHID] tud_hid_report error\n");
 

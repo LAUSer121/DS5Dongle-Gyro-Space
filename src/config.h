@@ -213,7 +213,7 @@ struct __attribute__((packed)) Config_body {
     // The table itself lives in its own flash sector (MACRO_FLASH_OFFSET) and is
     // NOT per-slot - only this mask is, so a slot selects which subset of the
     // shared macros is live. That is what lets Playnite switch macro sets per
-    // game without duplicating definitions into all 24 slots.
+    // game without duplicating definitions into all 32 slots.
     //
     // STORED INVERTED - a SET bit means macro N is DISABLED - and this is not a
     // style choice. Slots written by older firmware are read back 0xFF-filled
@@ -234,6 +234,60 @@ struct __attribute__((packed)) Config_body {
     // usb_descriptors.cpp), so crossing MACRO_NONE_ENABLED changes the USB
     // descriptor. Flipping WHICH macros are on does not.
     uint32_t macro_disable;
+
+    // --- Two-stage triggers (v1.21) ------------------------------------------
+    // One physical pull, two signals, with an adaptive-trigger wall marking the
+    // boundary so the stage change is FELT rather than hunted for. Applied only
+    // to the OUTBOUND report in main.cpp; every internal consumer (AT gating,
+    // custom effects, gyro, macros) still reads the raw trigger position.
+    //
+    // t2_mode: bits 0-1 = what happens to the ANALOG axis below the boundary
+    //   0 = off       - feature disabled
+    //   1 = additive  - axis untouched, stage 2 just adds its button
+    //   2 = rescale   - [deadzone..t2_pos] is stretched to the full 0..255, so
+    //                   full throttle authority survives the shortened travel
+    //                   and everything above t2_pos is a dedicated stage-2 zone
+    // bit 2 (0x04)   = RELEASE STAGE 1 above the boundary: clears the trigger's
+    //   DIGITAL button bit so stage 1 stops. Racing wants this OFF (throttle
+    //   must stay held through nitro); FPS alt-fire wants it ON, because
+    //   otherwise the primary fire bit stays set and you keep firing through
+    //   the alt-fire - which is the objection that sank the first design.
+    // Rescale distorts the throttle curve a game sees, which is right for an
+    // arcade racer and wrong for a sim: prefer additive where the analog value
+    // is being modulated deliberately.
+    uint8_t t2_mode;      // R2. 0 = off (default)
+    uint8_t t2_pos;       // R2 boundary, 0-255 raw trigger counts
+    uint8_t t2_button;    // R2 stage-2 button, T2Button enum, 0 = none
+    uint8_t t2_l2_mode;   // L2, same encoding
+    uint8_t t2_l2_pos;
+    uint8_t t2_l2_button;
+};
+
+// Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
+// this list is APPEND ONLY - renumbering silently rebinds saved profiles.
+enum : uint8_t {
+    T2BTN_NONE     = 0,
+    T2BTN_CROSS    = 1,
+    T2BTN_CIRCLE   = 2,
+    T2BTN_SQUARE   = 3,
+    T2BTN_TRIANGLE = 4,
+    T2BTN_L1       = 5,
+    T2BTN_R1       = 6,
+    T2BTN_L3       = 7,
+    T2BTN_R3       = 8,
+    // The trigger CLICK bits. A trigger can drive the other trigger's digital
+    // button - R2's second stage pressing L2 is a normal ask - but never its own,
+    // which the portal filters per trigger rather than by splitting the enum.
+    T2BTN_L2       = 9,
+    T2BTN_R2       = 10,
+    T2BTN_COUNT    = 11,
+};
+enum : uint8_t {
+    T2_AXIS_OFF      = 0,
+    T2_AXIS_ADDITIVE = 1,
+    T2_AXIS_RESCALE  = 2,
+    T2_AXIS_MASK     = 0x03,
+    T2_RELEASE_STAGE1 = 0x04,
 };
 
 struct __attribute__((packed)) Config {
@@ -252,7 +306,7 @@ bool config_save();
 // below the active-config sector). Saving a slot is a rare manual portal
 // action; activating one at game launch is a single atomic command instead of
 // a 30-field write.
-constexpr uint8_t SLOT_COUNT = 24;       // v1.17.0: 24 (was 16) - 8 per flash sector, 3 sectors
+constexpr uint8_t SLOT_COUNT = 32;       // v1.22.0: 32 (was 24) - 8 per flash sector, 4 sectors
 constexpr uint8_t SLOTS_PER_SECTOR = 8;  // 512-byte stride in a 4 KB sector
 constexpr uint8_t SLOT_NAME_LEN = 16;
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current config.body -> slot
