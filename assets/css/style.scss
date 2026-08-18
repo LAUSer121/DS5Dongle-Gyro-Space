@@ -1,0 +1,70 @@
+---
+# Front matter must stay (even empty) or Jekyll will not process this file.
+---
+
+@import "{{ site.theme }}";
+
+// ---------------------------------------------------------------------------
+// Restore the "View On GitHub" button on phones.
+//
+// jekyll-theme-midnight hides the whole nav below 480px:
+//
+//     @media print, screen and (max-width: 480px) {
+//       #header { margin-top: -20px; }
+//       section { margin-top: 40px; }
+//       nav     { display: none; }      <-- the GitHub link lives in here
+//     }
+//
+// The nav is the ONLY link back to the repository, so on a phone the site
+// became a dead end - readable, but with no way to reach the code, releases or
+// issues. The theme presumably hid it because the fixed 60px header is tight on
+// a narrow screen, so rather than simply un-hiding it, this shrinks the button
+// to fit and gives the header its full height back.
+// ---------------------------------------------------------------------------
+@media print, screen and (max-width: 480px) {
+  #header {
+    margin-top: 0;          // theme pulls it up 20px once the nav is hidden
+    height: 48px;
+  }
+
+  nav {
+    display: block;
+  }
+
+  #header nav {
+    margin: 4px auto;
+    padding: 0 8px;
+
+    ul li {
+      line-height: 40px;
+
+      a {
+        padding: 6px 10px;
+        font-size: 12px;
+        line-height: 12px;
+      }
+
+      // The site title is repeated as the page heading immediately below, so
+      // drop it here and give the button the width instead.
+      &.title {
+        display: none;
+      }
+    }
+  }
+
+  section {
+    margin-top: 58px;       // clear the header we just made visible again
+  }
+}
+
+// Long tables (the settings references) overflow a phone screen and get clipped
+// rather than scrolled, because the theme sets no overflow behaviour on them.
+@media print, screen and (max-width: 720px) {
+  section {
+    table {
+      display: block;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+  }
+}
