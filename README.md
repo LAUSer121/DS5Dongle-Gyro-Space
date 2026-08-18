@@ -88,10 +88,10 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
-- **Motion gestures** — hold a button and flick your controller to 
+- **Motion gestures** — hold a button and flick your controller to fire a macro.
+  Calibrated to your own movement when you record it.
 - **Two-stage triggers** — a second action past a point in the trigger's travel,
   so one pull gives you two signals with a detent you can feel between them.
-  fire a macro. Calibrated to your own movement when you record it.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
   keyboard combo, recorded by pressing the actual buttons and typing the actual
   keys. Up to 32, with tap-vs-hold and captured release order. Definitions are
