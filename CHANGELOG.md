@@ -2,6 +2,57 @@
 
 All notable changes to this project are documented here.
 
+## [1.22.0] — 2026-08-19
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+the new settings are appended at the tail of the struct, so existing settings and
+every saved slot load untouched.
+
+Supersedes the 1.21.x development builds, which were not released.
+
+### Added
+- **Two-stage triggers.** A second action part-way through the trigger's travel:
+  pull to the boundary and the game sees the trigger as normal, push past it and a
+  button press is added. Pair it with a weapon-break effect and the wall you feel
+  *is* the boundary.
+  - **Add** keeps the trigger held past the boundary; **Swap** releases it so only
+    the button remains.
+  - **Rescale** stretches the travel below the boundary over the full range, so a
+    shortened first stage keeps its full analog resolution.
+  - **Hysteresis** on the boundary: holding at the crossing point gives one press
+    rather than a stream.
+  - The second stage can press **the other trigger** — R2 can drive L2 and vice
+    versa. A trigger is never offered as its own second-stage button.
+  - The portal warns when the chosen button is also what gates that trigger's
+    resistance, since pressing through the detent would open the gate arming the
+    resistance being pressed against.
+- **32 profile slots**, up from 24. Existing slots keep their addresses and
+  survive the upgrade untouched — growth is downward into the sector reservation
+  added in 1.19.0, so the macro table is unaffected. The portal's slot sweep grows
+  from roughly 1.5 s to 2 s; activating a slot is unchanged.
+
+### Fixed
+- **A trigger chosen as the second-stage button did nothing.** Only the digital
+  click bit in byte 8 was set, and games read L2/R2 as analog axes — the digital
+  bits are barely used — so the press was invisible in both Add and Swap. The axis
+  is now driven as well, taking the max so a real pull is never reduced.
+- **A dead zone on the target trigger wiped the press.** Stage-2 presses were
+  applied inside each trigger's own pass, so R2's press landed before L2's pass,
+  whose dead-zone branch clears that same bit. Both triggers now decide their
+  latch from the physical values first and the presses are applied afterwards —
+  which also stops a synthetic full-scale value being read by the other trigger's
+  latch as a real pull.
+- **The automation slot bound was capped in a third place.** Raising the slot
+  count needs four separate bounds updated, and the profile-restore path in
+  `ds5-setup.ps1` was still limited to 1-16 — it had survived both the v1.17.1 and
+  v1.18.18 fixes to the same class of bug. All five sites now agree, including the
+  copy of `slot-activate.html` embedded in the setup script.
+
+### Changed
+- `automation/ds5-setup.ps1` and `automation/profiles/slot-activate.html` accept
+  slots 1-32. Out-of-range values still log the valid range rather than falling
+  through to a filename lookup.
+
 ## [1.20.0] — 2026-08-17
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —

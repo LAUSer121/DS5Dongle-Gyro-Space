@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.20.0**
+**Version 1.22.0**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -19,7 +19,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.20.0-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.22.0-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -61,6 +61,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [General Haptics & Audio](#general-haptics--audio)
   - [Trigger-to-Rumble (R2T)](#trigger-to-rumble-r2t)
   - [Adaptive Triggers (Stage 1: resistance, Stage 2: push-back kick)](#adaptive-triggers-stage-1-resistance-stage-2-push-back-kick)
+  - [Two-stage triggers (new in 1.22.0)](#two-stage-triggers-new-in-1220)
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
@@ -88,6 +89,8 @@ to RAM so native fine haptics and controller audio work without overclocking.
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
 - **Motion gestures** — hold a button and flick your controller to 
+- **Two-stage triggers** — a second action past a point in the trigger's travel,
+  so one pull gives you two signals with a detent you can feel between them.
   fire a macro. Calibrated to your own movement when you record it.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
   keyboard combo, recorded by pressing the actual buttons and typing the actual
@@ -144,7 +147,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   same bytes the firmware's own writers emit — so a hand-built effect is
   byte-identical to one a game would have sent. Built effects live alongside
   captured ones and save to the same JSON files.
-- **Profile slots** — up to 24 complete configurations stored on the dongle
+- **Profile slots** — up to 32 complete configurations stored on the dongle
   itself. Save your setups once in the portal; switching later is a single
   instant command instead of a full profile write — used by the automation for
   per-game profiles (`Game = slot 3` in `profile-overrides.txt`), and applied
@@ -263,14 +266,14 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.20.0.uf2` (Pico 2 W) or `ds5-v1.20.0-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.22.0.uf2` (Pico 2 W) or `ds5-v1.22.0-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
      run it if a release note explicitly says to, or if the portal shows settings
-     that are clearly nonsense. **It erases every setting *and* all 24 profile
+     that are clearly nonsense. **It erases every setting *and* all 32 profile
      slots**, so back up your slots first (*Slots* tab → *Back up all slots*).
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
    downloaded file in Chrome or Edge. (WebHID needs a secure context — opening it
@@ -673,6 +676,37 @@ on gunfire via the auto-haptics envelope. The diagnostics box shows the live
 **push-back envelope (0–255)** and a **KICK** flag — the kick fires at envelope
 ≥ 32, so if the number stays 0 while the game rumbles, the selected source isn't
 producing signal.
+
+### Two-stage triggers *(new in 1.22.0)*
+
+A second action part-way through the trigger's travel. Pull to the boundary and
+the game sees the trigger as normal; push past it and a button press is added.
+Pair it with a **weapon-break** effect and the wall you feel *is* the boundary,
+so the second stage lands at a point your finger can find.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Two-stage trigger | Off / Add / Add + rescale / Swap / Swap + rescale | Off | *Add* keeps the trigger held past the boundary; *Swap* releases it so only the button remains |
+| Second-stage boundary | 0–254 | 0 (off) | Trigger position where the second stage engages |
+| Second-stage button | any face, shoulder, stick or trigger button | None | What the second stage presses |
+
+**Add** suits anything where the trigger must stay held — a racing throttle that
+also engages a boost. **Swap** suits a soft-press / hard-press split where the two
+actions are alternatives rather than layers.
+
+**Rescale** stretches the travel below the boundary over the full range, so the
+shortened first stage keeps its full analog resolution instead of being clipped.
+
+The second stage can press **the other trigger** — R2 can drive L2 and vice
+versa. That moves the analog axis, not just the digital bit, since games read the
+triggers as axes. A trigger is never offered as its own second-stage button.
+
+If the button you pick is also what gates that trigger's resistance, the portal
+warns: pressing through the detent would open the gate arming the resistance you
+are pressing against, changing the feel under the finger making the press.
+
+There is hysteresis on the boundary, so holding at exactly the crossing point
+gives one press rather than a stream of them.
 
 ### Custom Captured Effects (new in 1.14.0)
 
@@ -1404,9 +1438,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.20.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.20.0)
-- `ds5-v1.20.0-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.22.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.22.0)
+- `ds5-v1.22.0-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

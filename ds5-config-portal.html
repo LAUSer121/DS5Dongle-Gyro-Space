@@ -198,6 +198,9 @@ const SECTIONS = [
     [0x4e,'at_strength_b','u8','Strength B (ramp end / detent wall)','number',[0,100]],
     [0x4f,'at_detent_pos','u8','Detent zone / break point','number',[0,9]],
     [0x53,'at_deadzone','u8','Activation dead zone (0=off; game registers press from zone N)','number',[0,9]],
+    [0x6d,'t2_mode','u8','Two-stage trigger','select',{0:'Off',1:'Add button (keep trigger held)',2:'Add button + rescale below',5:'Swap to button (release trigger)',6:'Swap to button + rescale below'}],
+    [0x6e,'t2_pos','u8','Second-stage boundary (0=off, trigger position 1-254)','number',[0,254]],
+    [0x6f,'t2_button','u8','Second-stage button','select',{0:'None',1:'Cross',2:'Circle',3:'Square',4:'Triangle',5:'L1',6:'R1',7:'L3',8:'R3',9:'L2 (click)'}],
     [0x39,'at_pushback','u8','Push-back kick (recoil) strength, 0 = no kick','number',[0,100]],
     [0x44,'at_kick_style','u8','Kick style','select',{0:'Vibration thump (buzz)',1:'Bow snap (mechanical push-back)'}],
     [0x3b,'at_pushback_freq','u8','Kick thump frequency (lower = heavier)','number',[10,200]],
@@ -218,6 +221,9 @@ const SECTIONS = [
     [0x51,'at_l2_strength_b','u8','Strength B (ramp end / detent wall)','number',[0,100]],
     [0x52,'at_l2_detent_pos','u8','Detent zone / break point','number',[0,9]],
     [0x54,'at_l2_deadzone','u8','Activation dead zone (0=off; game registers press from zone N)','number',[0,9]],
+    [0x70,'t2_l2_mode','u8','Two-stage trigger','select',{0:'Off',1:'Add button (keep trigger held)',2:'Add button + rescale below',5:'Swap to button (release trigger)',6:'Swap to button + rescale below'}],
+    [0x71,'t2_l2_pos','u8','Second-stage boundary (0=off, trigger position 1-254)','number',[0,254]],
+    [0x72,'t2_l2_button','u8','Second-stage button','select',{0:'None',1:'Cross',2:'Circle',3:'Square',4:'Triangle',5:'L1',6:'R1',7:'L3',8:'R3',10:'R2 (click)'}],
     [0x47,'at_l2_pushback','u8','Push-back kick (recoil) strength, 0 = no kick','number',[0,100]],
     [0x49,'at_l2_kick_style','u8','Kick style','select',{0:'Vibration thump (buzz)',1:'Bow snap (mechanical push-back)'}],
     [0x48,'at_l2_pushback_freq','u8','Kick thump frequency (lower = heavier)','number',[10,200]],
@@ -330,6 +336,12 @@ const DESCRIPTIONS = {
   at_l2_strength_b: "The end or wall strength used by the ramp and detent shapes.",
   at_l2_detent_pos: "The trigger position of the detent or break point.",
   at_l2_deadzone: "Ignores the first part of the pull so the game only registers a press past this zone.",
+  t2_mode: "Turns the pull into two stages: the trigger below the boundary, a button above it. 'Rescale' stretches the shorter travel back over the full range so you keep full throttle authority. 'Swap' releases the trigger when the button engages - needed for alt-fire, wrong for racing.",
+  t2_pos: "Where the second stage begins, in raw trigger counts (0-255). Set an adaptive-trigger wall at the same point so you can feel the boundary.",
+  t2_button: "The controller button the second stage presses. A real gamepad button, so games keep showing controller prompts.",
+  t2_l2_mode: "Turns the pull into two stages: the trigger below the boundary, a button above it. 'Rescale' stretches the shorter travel back over the full range so you keep full throttle authority. 'Swap' releases the trigger when the button engages - needed for alt-fire, wrong for racing.",
+  t2_l2_pos: "Where the second stage begins, in raw trigger counts (0-255). Set an adaptive-trigger wall at the same point so you can feel the boundary.",
+  t2_l2_button: "The controller button the second stage presses. A real gamepad button, so games keep showing controller prompts.",
   at_l2_pushback: "Strength of a recoil kick fired at the break point (0 = no kick).",
   at_l2_kick_style: "Whether the recoil kick is a buzz or a mechanical push-back.",
   at_l2_pushback_freq: "Frequency of the kick's thump - lower feels heavier.",
@@ -565,7 +577,7 @@ async function slotActivate(idx){
 // Must match the firmware's SLOT_COUNT. A mismatch degrades gracefully both ways:
 // an older dongle simply reports the extra indices as empty, and an older portal
 // just shows fewer slots than exist.
-const UI_SLOT_COUNT = 24;
+const UI_SLOT_COUNT = 32;
 let slotsBusy = false, slotsRerun = false;
 let _slotHealTries = 0;
 async function _refreshSlotsOnce(){
@@ -3677,6 +3689,29 @@ function portalSelfCheck(){
 // side always does; the slider side only plays where its resistance mode is armed.
 // Rather than silently rewriting a resistance mode the user chose, flag the
 // combination and name the setting to change.
+// A trigger's second stage can drive a button that is ALSO the gate arming that
+// same trigger's resistance. Pressing through the detent then opens the gate it
+// is gated by, so the stage-2 press changes the resistance underneath the finger
+// that is making it. Flag it rather than removing the option: gating on the
+// OPPOSITE trigger is a legitimate setup, and only this overlap is a problem.
+function t2GateWarning(key){
+  const isR2 = key === 't2_button';
+  const btn  = +config[isR2 ? 't2_button' : 't2_l2_button'] || 0;
+  if (!btn) return '';
+  const mode = +config[isR2 ? 'at_mode' : 'at_l2_mode'] || 0;
+  const T    = isR2 ? 'R2' : 'L2';
+  // at_mode 1 = gated by the opposite trigger, 3 = gated by that shoulder button.
+  const gateBtn   = mode === 1 ? (isR2 ? 9 : 10)      // T2BTN_L2 : T2BTN_R2
+                  : mode === 3 ? (isR2 ? 5 : 6)       // T2BTN_L1 : T2BTN_R1
+                  : 0;
+  if (!gateBtn || btn !== gateBtn) return '';
+  const name = {5:'L1', 6:'R1', 9:'L2', 10:'R2'}[gateBtn];
+  return `<b>${name}</b> is also what gates <b>${T} resistance</b>. Pressing through the ` +
+         `detent would open that gate, changing the resistance under the finger making ` +
+         `the press. Pick another button, or set <b>${T} resistance mode</b> to something ` +
+         `that is not gated by ${name}.`;
+}
+
 function ceGateWarning(key){
   const isR2 = key === 'ce_r2_yield';
   const y = +config[isR2 ? 'ce_r2_yield' : 'ce_l2_yield'] || 0;
@@ -3743,7 +3778,7 @@ function fieldRowHTML(f){
     // NOTE: never embed a JSON array here - its double quotes close the onchange
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
-    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable'].includes(key);
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','t2_button','t2_l2_button'].includes(key);
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
     { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
     html += `</select>`;
@@ -3759,6 +3794,10 @@ function fieldRowHTML(f){
     const w = ceGateWarning(key);
     if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
   }
+  if(key === 't2_button' || key === 't2_l2_button'){
+    const w = t2GateWarning(key);
+    if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
+  }
   return html;
 }
 
@@ -3771,7 +3810,7 @@ function fieldRowHTML(f){
 const R2_TITLE = 'Adaptive Triggers — R2 (right trigger)';
 const L2_TITLE = 'Adaptive Triggers — L2 (left trigger)';
 const SHARED_TRIGGER_KEYS = new Set(['at_pushback_src']);
-const trigLogical = k => k.replace('at_l2_','at_').replace('ce_l2_','ce_').replace('ce_r2_','ce_');
+const trigLogical = k => k.replace('at_l2_','at_').replace('ce_l2_','ce_').replace('ce_r2_','ce_').replace('t2_l2_','t2_');
 function triggerPairHTML(){
   const secOf = t => (SECTIONS.find(s => s.title === t) || {fields:[]}).fields;
   const r2 = secOf(R2_TITLE), l2 = secOf(L2_TITLE);
@@ -3805,7 +3844,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.20.0</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.22.0</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
