@@ -8,6 +8,11 @@
   desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
   wake: true
 
+  - game: "Burnout_Paradise"
+  file: "/shared/profiles/Burnout_Paradise.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50, Two-stage R2 with Boost."
+  wake: true
+
 - game: "Control"
   file: "/shared/profiles/Control.json"
   desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
