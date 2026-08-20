@@ -50,8 +50,35 @@ static inline bool macro_any_enabled(uint32_t disable_mask) {
 // NOTE enable_wake still needs its own re-enumeration test elsewhere: beyond
 // this interface it also sets bcdUSB 2.1, the BOS descriptor and the
 // REMOTE_WAKEUP attribute bit.
+// Is the gyro-to-mouse HID interface present?
+static inline bool usb_mouse_iface_needed(const Config_body &c) {
+    return c.gyro_output >= 1;   // 1 = mouse, 2 = mouse + flick stick
+}
+
+// Is the keyboard interface present?
+//
+// Note the last clause: enabling the MOUSE also brings the keyboard up, even if
+// nothing wants to type. The configuration descriptor is a fixed array that is
+// trimmed by shortening wTotalLength, so an interface can only be dropped from
+// the END. The order has to be [base][keyboard][mouse] - the mouse must come
+// after the keyboard, because wake.cpp, macro.cpp and ps_shortcut.cpp all
+// address the keyboard as a literal instance 1 and anything that let the mouse
+// take that index would point them at the wrong device (the v1.18.9 failure).
+// With that order fixed, "mouse but no keyboard" would mean cutting a block out
+// of the MIDDLE, so instead the mouse implies the keyboard. The cost is one idle
+// interface; the benefit is that the mouse is always instance 2 and the trimming
+// stays a simple suffix.
 static inline bool usb_kbd_iface_needed(const Config_body &c) {
-    return c.enable_wake || c.ps_shortcut_enabled || macro_any_enabled(c.macro_disable);
+    return c.enable_wake || c.ps_shortcut_enabled || macro_any_enabled(c.macro_disable)
+           || usb_mouse_iface_needed(c);
+}
+
+// The mouse is the last HID interface and the keyboard is always present with
+// it, so this is a constant - but it is still expressed as a function so there
+// is one place to change if the ordering ever moves.
+static inline uint8_t usb_mouse_instance(const Config_body &c) {
+    (void) c;
+    return 2u;
 }
 constexpr uint8_t  MACRO_KEYS      = 4;  // keys per combo, excluding nothing - modifiers count
 constexpr uint8_t  MACRO_LABEL_LEN = 16; // portal display name, stored on device

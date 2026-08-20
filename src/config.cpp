@@ -220,6 +220,16 @@ void config_valid() {
     if ((body->t2_l2_mode & T2_AXIS_MASK) > T2_AXIS_RESCALE ||
         (body->t2_l2_mode & ~(T2_AXIS_MASK | T2_RELEASE_STAGE1))) body->t2_l2_mode = 0;
     if (body->t2_button >= T2BTN_COUNT) body->t2_button = T2BTN_NONE;
+    if (body->gyro_output > 2) body->gyro_output = 0;   // 0xFF fill from an older slot -> stick
+    // Flick calibration. Anything outside a plausible range - including 0, and
+    // including the 0xFFFF an older slot's tail fill produces - becomes a usable
+    // default rather than disabling the flick. A zero here meant selecting
+    // "Mouse + Flick Stick" did nothing at all until a second, separate field was
+    // also set, which reads as the feature being broken. The MODE selector is
+    // what turns the flick on; this only decides how far it turns.
+    if (body->flick_counts_360 < 500 || body->flick_counts_360 > 50000) {
+        body->flick_counts_360 = 6500;   // ~40cm/360 at 400 dpi; mid-range start
+    }
     if (body->t2_l2_button >= T2BTN_COUNT) body->t2_l2_button = T2BTN_NONE;
     // pos 0 disables the stage; 0xFF from an old slot would put the boundary at
     // the very top of travel, which is indistinguishable from unreachable.
@@ -536,7 +546,10 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    // dropped the device on every slot switch that altered the
                    // macro set. enable_wake keeps its own test above because it
                    // also moves bcdUSB, the BOS descriptor and REMOTE_WAKEUP.
-                   (usb_kbd_iface_needed(o) != usb_kbd_iface_needed(n));
+                   (usb_kbd_iface_needed(o)   != usb_kbd_iface_needed(n))   ||
+                   // The mouse is its own interface, and it implies the keyboard -
+                   // so the keyboard test above does not cover losing the mouse.
+                   (usb_mouse_iface_needed(o) != usb_mouse_iface_needed(n));
     config.body = slot_body;
     config_valid(); // clamp anything out of range (e.g. slot saved by older fw)
     active_profile_set(idx); // record the loaded slot (RAM) for the portal readout

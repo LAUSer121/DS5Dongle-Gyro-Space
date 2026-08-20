@@ -51,6 +51,15 @@ enum {
 #ifdef ENABLE_WAKE_HID
     ITF_NUM_HID_KBD,
 #endif
+#ifdef ENABLE_WAKE_HID
+    // Gyro-to-mouse. ALWAYS LAST among the HID interfaces, and that ordering is
+    // load-bearing: TinyUSB numbers HID instances by their order here, and the
+    // keyboard is addressed as a hardcoded instance 1 in wake.cpp, macro.cpp and
+    // ps_shortcut.cpp. Placing the mouse before the keyboard - or letting it take
+    // instance 1 when the keyboard is absent - would silently point those three
+    // senders at the mouse. That is the v1.18.9 failure exactly.
+    ITF_NUM_HID_MOUSE,
+#endif
     ITF_NUM_TOTAL,
 
     CONFIG_DESC_LEN_AUDIO_IAD =
@@ -68,11 +77,33 @@ enum {
 #else
         0,
 #endif
+    // Mouse interface adds the same 25 bytes as the keyboard:
+    //   9 (interface) + 9 (HID class) + 7 (EP IN) = 25
+    CONFIG_DESC_LEN_MOUSE = 25,
     CONFIG_DESC_LEN_TOTAL = CONFIG_DESC_LEN_BASE + CONFIG_DESC_LEN_WAKE_KBD
+        + CONFIG_DESC_LEN_MOUSE
 #if ENABLE_SERIAL
         + TUD_CDC_DESC_LEN
 #endif
 };
+
+// Number of HID interfaces this build can ever present. CFG_TUD_HID in
+// tusb_config.h is a COMPILE-TIME ceiling while the descriptor is assembled at
+// RUNTIME, so the ceiling has to cover the largest configuration, not the
+// current one. Getting this wrong does not degrade gracefully: adding the mouse
+// interface while CFG_TUD_HID was still 2 left TinyUSB with no instance for it
+// and the device stopped enumerating entirely - no gamepad, no portal, nothing
+// on the bus, and no way to switch the setting back off from the portal.
+enum {
+    HID_ITF_COUNT_MAX = 1                 // gamepad
+#ifdef ENABLE_WAKE_HID
+                        + 1               // wake / macro keyboard
+                        + 1               // gyro mouse
+#endif
+};
+static_assert(CFG_TUD_HID >= HID_ITF_COUNT_MAX,
+              "CFG_TUD_HID in tusb_config.h is lower than the number of HID "
+              "interfaces this build can present - the device will not enumerate");
 
 // String Descriptor Index
 enum {
@@ -477,6 +508,38 @@ uint8_t descriptor_configuration[] = {
     0x08, 0x00, // wMaxPacketSize: 8 (boot keyboard report)
     0x0A, // bInterval: 10ms
 #endif
+
+#ifdef ENABLE_WAKE_HID
+    // --- INTERFACE DESCRIPTOR (HID Mouse, gyro aim) -------------------------
+    // LAST block in the array, so it can be trimmed off by shortening
+    // wTotalLength. EP IN 0x88 (0x87 is the keyboard).
+    0x09,             // bLength
+    0x04,             // bDescriptorType (INTERFACE)
+    ITF_NUM_HID_MOUSE,// bInterfaceNumber
+    0x00,             // bAlternateSetting
+    0x01,             // bNumEndpoints: 1 (IN only)
+    0x03,             // bInterfaceClass: HID
+    0x00,             // bInterfaceSubClass: none (NOT boot - 16-bit deltas)
+    0x02,             // bInterfaceProtocol: Mouse
+    0x00,             // iInterface
+
+    // HID Descriptor (mouse)
+    0x09,             // bLength
+    0x21,             // bDescriptorType (HID)
+    0x11, 0x01,       // bcdHID: 1.11
+    0x00,             // bCountryCode
+    0x01,             // bNumDescriptors
+    0x22,             // bDescriptorType: Report
+    0x34, 0x00,       // wDescriptorLength: 52 (sizeof desc_hid_report_mouse)
+
+    // Endpoint Descriptor (HID IN: EP8)
+    0x07,             // bLength
+    0x05,             // bDescriptorType (ENDPOINT)
+    0x88,             // bEndpointAddress: IN EP8
+    0x03,             // bmAttributes: Interrupt
+    0x08, 0x00,       // wMaxPacketSize: 8 (3 buttons + padding + 2x int16)
+    0x01,             // bInterval: 1ms
+#endif
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -523,13 +586,19 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     // usb_kbd_iface_needed() is the single definition; slot_activate and the
     // portal's ENUM_FIELDS test the same function so the three sites cannot
     // disagree about when a reconnect is actually required.
-    const bool kbd = usb_kbd_iface_needed(get_config());
+    const bool kbd   = usb_kbd_iface_needed(get_config());
+    const bool mouse = usb_mouse_iface_needed(get_config());
     descriptor_configuration[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
-    const uint16_t total = kbd ? CONFIG_DESC_LEN_TOTAL
-                               : (uint16_t) (CONFIG_DESC_LEN_TOTAL - CONFIG_DESC_LEN_WAKE_KBD);
-    descriptor_configuration[2] = (uint8_t) (total & 0xFF);                  // wTotalLength lo
-    descriptor_configuration[3] = (uint8_t) (total >> 8);                    // wTotalLength hi
-    descriptor_configuration[4] = kbd ? ITF_NUM_TOTAL : (ITF_NUM_TOTAL - 1); // bNumInterfaces
+    // Suffix trim. Blocks are laid out [base][keyboard][mouse], and the mouse
+    // implies the keyboard (see usb_kbd_iface_needed), so only three of the four
+    // combinations exist and each is a plain truncation.
+    uint16_t total = CONFIG_DESC_LEN_TOTAL;
+    uint8_t  itfs  = ITF_NUM_TOTAL;
+    if (!mouse) { total -= CONFIG_DESC_LEN_MOUSE;   itfs -= 1; }
+    if (!kbd)   { total -= CONFIG_DESC_LEN_WAKE_KBD; itfs -= 1; }
+    descriptor_configuration[2] = (uint8_t) (total & 0xFF);  // wTotalLength lo
+    descriptor_configuration[3] = (uint8_t) (total >> 8);    // wTotalLength hi
+    descriptor_configuration[4] = itfs;                      // bNumInterfaces
     return descriptor_configuration;
 }
 
@@ -924,6 +993,39 @@ _Static_assert(sizeof(desc_hid_report_kbd) == 45, "keyboard report descriptor le
 // Invoked when received GET HID REPORT DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
+// Relative mouse: 3 buttons + 16-bit X/Y deltas. 16-bit rather than the usual
+// 8-bit because a fast flick at high sensitivity exceeds +/-127 in one report,
+// and a clamped delta is a turn that stops short of where you aimed.
+static uint8_t const desc_hid_report_mouse[] = {
+    0x05, 0x01,       // Usage Page (Generic Desktop)
+    0x09, 0x02,       // Usage (Mouse)
+    0xA1, 0x01,       // Collection (Application)
+    0x09, 0x01,       //   Usage (Pointer)
+    0xA1, 0x00,       //   Collection (Physical)
+    0x05, 0x09,       //     Usage Page (Button)
+    0x19, 0x01,       //     Usage Minimum (1)
+    0x29, 0x03,       //     Usage Maximum (3)
+    0x15, 0x00,       //     Logical Minimum (0)
+    0x25, 0x01,       //     Logical Maximum (1)
+    0x95, 0x03,       //     Report Count (3)
+    0x75, 0x01,       //     Report Size (1)
+    0x81, 0x02,       //     Input (Data,Var,Abs)
+    0x95, 0x01,       //     Report Count (1)
+    0x75, 0x05,       //     Report Size (5)
+    0x81, 0x03,       //     Input (Const,Var,Abs) - padding
+    0x05, 0x01,       //     Usage Page (Generic Desktop)
+    0x09, 0x30,       //     Usage (X)
+    0x09, 0x31,       //     Usage (Y)
+    0x16, 0x01, 0x80, //     Logical Minimum (-32767)
+    0x26, 0xFF, 0x7F, //     Logical Maximum (32767)
+    0x75, 0x10,       //     Report Size (16)
+    0x95, 0x02,       //     Report Count (2)
+    0x81, 0x06,       //     Input (Data,Var,Rel)
+    0xC0,             //   End Collection
+    0xC0,             // End Collection
+};
+static_assert(sizeof(desc_hid_report_mouse) == 52, "wDescriptorLength in the interface block must match");
+
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // In keyboard-only mode the keyboard is the ONLY HID interface, so it is
     // instance 0 rather than 1.
@@ -931,6 +1033,10 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // HID instance 1 is the wake-only boot keyboard added by ENABLE_WAKE_HID.
     if (itf == 1) return desc_hid_report_kbd;
 #endif
+    // The mouse is always the LAST HID instance, so its index is 2 when the
+    // keyboard is present and 1 when it is not. usb_mouse_instance() is the one
+    // definition of that; everything else asks it rather than assuming.
+    if (itf != 0 && itf == usb_mouse_instance(get_config())) return desc_hid_report_mouse;
     (void) itf;
     if (ds_mode()) {
         return desc_hid_report_ds;

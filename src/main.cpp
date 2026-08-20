@@ -3,6 +3,7 @@
 //
 
 #include <cstdio>
+#include <cmath>
 #include "bsp/board_api.h"
 #include "bt.h"
 #include "button_functions.h"
@@ -210,6 +211,233 @@ void __not_in_flash_func(interrupt_loop)() {
 // AngularVelocityX(pitch)=15, Z(roll)=17, Y(yaw)=19 (int16 LE).
 volatile uint16_t g_diag_gyro = 0; // |horizontal gyro raw|, field 0x35
 
+// --- gyro as a mouse -------------------------------------------------------
+//
+// A mouse takes DELTAS, which is what a gyro produces natively. The stick path
+// clamps into a 0-255 absolute range, so a fast turn pegs and stops.
+//
+// The accumulator is the whole trick. `raw * sens / 200` truncates, and the loss
+// is per REPORT - so the slower you turn, the more reports the same rotation
+// takes and the more of it is thrown away. Simulated over a 90-degree turn at
+// sens 50: fast (30 reports) travels the full 1500 counts, slow (600 reports)
+// only 1200. A 20% shortfall that appears only when aiming carefully, which is
+// exactly when it is least wanted. Keeping the remainder in integer form makes
+// every speed land on the same total. No floats: this runs in the report path.
+struct __attribute__((packed)) GyroMouseReport {
+    uint8_t buttons;   // unused; gyro never clicks
+    int16_t x;
+    int16_t y;
+};
+static_assert(sizeof(GyroMouseReport) == 5, "must match desc_hid_report_mouse");
+
+static int32_t g_gm_acc_x = 0, g_gm_acc_y = 0;   // leftover numerator, not counts
+static volatile int32_t g_gm_pend_x = 0, g_gm_pend_y = 0; // computed in the report
+                                                          // path, sent from the loop
+
+void gyro_mouse_reset() { g_gm_acc_x = 0; g_gm_acc_y = 0; g_gm_pend_x = 0; g_gm_pend_y = 0; }
+
+// A mouse is a DELTA device and the stick is an ABSOLUTE one, so they need
+// completely different scales. A stick deflection of dx is a steady turn RATE
+// for as long as it is held; a mouse delta of dx moves the pointer dx counts on
+// EVERY report and then needs another one. Reusing the stick's /200 meant sens 5
+// produced roughly 40 counts per report - about 40,000 counts per second at
+// 1 kHz, which is why it flew off the screen. /256 then overshot the other way;
+// /64 puts a 90-degree turn at roughly 5,700 counts at sens 50, with the 1-100
+// range spanning very slow to very fast.
+constexpr int32_t GYRO_MOUSE_DIV = 200 * 64;
+
+// Reports arrive at the polling rate, so a delta-per-report scale would make the
+// mouse four times slower at 250 Hz than at 1 kHz for the same wrist movement.
+// Multiply back up so the FEEL is the same at every polling rate.
+//   mode 0 = 250 Hz (bInterval 4), 1 = 500 Hz (2), 2 = 1 kHz (1)
+static inline int32_t gyro_rate_mul(uint8_t polling_rate_mode) {
+    switch (polling_rate_mode) {
+        case 0:  return 4;
+        case 1:  return 2;
+        default: return 1;
+    }
+}
+
+// Computed in the report path, SENT from the main loop.
+//
+// This function runs inside on_bt_data(), which the comment above calls the
+// report critical section. Calling into TinyUSB from here re-enters the USB
+// stack from the BT callback: the first version did exactly that and the portal
+// started failing to read config fields, including the version registers, so it
+// reported "pre-1.0.5". Only arithmetic belongs here.
+static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t pitch,
+                                                        const Config_body &cfg) {
+    const int32_t s   = cfg.gyro_sens;
+    const int32_t mul = gyro_rate_mul(cfg.polling_rate_mode);
+    int32_t nx = -horiz * s * mul + g_gm_acc_x;
+    int32_t ny = -pitch * s * mul + g_gm_acc_y;
+    int32_t dx = nx / GYRO_MOUSE_DIV;        // truncates toward zero
+    int32_t dy = ny / GYRO_MOUSE_DIV;
+    g_gm_acc_x = nx - dx * GYRO_MOUSE_DIV;   // exact remainder, sign follows nx
+    g_gm_acc_y = ny - dy * GYRO_MOUSE_DIV;
+    if (cfg.gyro_invert & 1) dx = -dx;
+    if (cfg.gyro_invert & 2) dy = -dy;
+    g_gm_pend_x += dx;
+    g_gm_pend_y += dy;
+}
+
+// --- Flick Stick -----------------------------------------------------------
+//
+// Implemented to Jibb Smart's specification (gyrowiki.jibbsmart.com, "Good Gyro
+// Controls Part 2"). He invented it, and the constants below are the shipped
+// JoyShockMapper defaults rather than numbers chosen here.
+//
+// The stick angle maps to the SAME in-game angle. Two behaviours:
+//   flick  - crossing the threshold from centre turns by the stick's angle
+//   turn   - rotating a held stick adds the angle change directly
+//
+// Crucially it adds a RELATIVE yaw change and never an absolute heading, so the
+// gyro can still adjust during and after a flick. That is the whole point of
+// pairing it with gyro aim.
+//
+// Runs in the main loop, not the report path: it needs atan2 and a time delta,
+// and the report path is documented integer-only.
+constexpr float FLICK_THRESHOLD       = 0.9f;   // huge deadzone: a flick is deliberate
+constexpr float FLICK_TIME_S          = 0.10f;  // 0.2s "feels slow enough that I feel
+                                                // like I'm waiting for it"
+constexpr float TURN_SMOOTH_THRESHOLD = 0.1f;   // only SMALL movements get smoothed
+constexpr int   TURN_SMOOTH_SAMPLES   = 8;
+
+static volatile uint8_t g_fs_stick_x = 128, g_fs_stick_y = 128; // captured raw
+static float g_fs_last_x = 0.0f, g_fs_last_y = 0.0f;
+static float g_fs_progress = FLICK_TIME_S;   // finished
+static float g_fs_size = 0.0f;               // radians still to deliver
+static float g_fs_buf[TURN_SMOOTH_SAMPLES];
+static int   g_fs_buf_i = 0;
+static uint32_t g_fs_last_ms = 0;
+static float g_fs_count_rem = 0.0f;   // sub-count remainder, carried between ticks
+
+static void flick_zero_smoothing() {
+    for (int i = 0; i < TURN_SMOOTH_SAMPLES; i++) g_fs_buf[i] = 0.0f;
+}
+void flick_stick_reset() {
+    g_fs_last_x = g_fs_last_y = 0.0f;
+    g_fs_progress = FLICK_TIME_S;
+    g_fs_size = 0.0f;
+    g_fs_last_ms = 0;
+    g_fs_count_rem = 0.0f;
+    flick_zero_smoothing();
+}
+
+// Ease OUT only. Jibb Smart: easing in is deliberately skipped so the flick
+// feels responsive rather than animated.
+static inline float flick_warp(float t) {
+    const float f = 1.0f - t;
+    return 1.0f - f * f;
+}
+static inline float wrap_pi(float a) {
+    while (a >  3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    return a;
+}
+static inline float flick_smoothed(float in) {
+    g_fs_buf_i = (g_fs_buf_i + 1) % TURN_SMOOTH_SAMPLES;
+    g_fs_buf[g_fs_buf_i] = in;
+    float sum = 0.0f;
+    for (int i = 0; i < TURN_SMOOTH_SAMPLES; i++) sum += g_fs_buf[i];
+    return sum / (float) TURN_SMOOTH_SAMPLES;
+}
+// Soft tiered smoothing: no smoothing at all above a small threshold, and the
+// blend is weighted so total displacement is unchanged either way.
+static inline float flick_tiered(float in) {
+    const float t1 = TURN_SMOOTH_THRESHOLD * 0.5f, t2 = TURN_SMOOTH_THRESHOLD;
+    float w = (fabsf(in) - t1) / (t2 - t1);
+    if (w < 0.0f) w = 0.0f; else if (w > 1.0f) w = 1.0f;
+    return in * w + flick_smoothed(in * (1.0f - w));
+}
+
+// Returns the yaw change in radians for this tick.
+static float flick_stick_step(float sx, float sy, float dt) {
+    float result = 0.0f;
+    const float len     = sqrtf(sx * sx + sy * sy);
+    const float lastLen = sqrtf(g_fs_last_x * g_fs_last_x + g_fs_last_y * g_fs_last_y);
+
+    if (len >= FLICK_THRESHOLD) {
+        if (lastLen < FLICK_THRESHOLD) {
+            g_fs_progress = 0.0f;                    // flick start
+            g_fs_size = atan2f(-sx, sy);             // angle from forward
+        } else {
+            const float a  = atan2f(-sx, sy);
+            const float la = atan2f(-g_fs_last_x, g_fs_last_y);
+            result += flick_tiered(wrap_pi(a - la));  // turn
+        }
+    } else if (lastLen >= FLICK_THRESHOLD) {
+        flick_zero_smoothing();                      // released: drop the tail
+    }
+
+    if (g_fs_progress < FLICK_TIME_S) {              // continue an in-flight flick
+        const float last = g_fs_progress;
+        g_fs_progress += dt;
+        if (g_fs_progress > FLICK_TIME_S) g_fs_progress = FLICK_TIME_S;
+        result += (flick_warp(g_fs_progress / FLICK_TIME_S)
+                 - flick_warp(last / FLICK_TIME_S)) * g_fs_size;
+    }
+
+    g_fs_last_x = sx; g_fs_last_y = sy;
+    return result;
+}
+
+// Drained from the main loop, where touching TinyUSB is safe.
+void gyro_mouse_task() {
+    const auto &cfg = get_config();
+    if (!usb_mouse_iface_needed(cfg)) return;
+
+    if (cfg.gyro_output == 2 && cfg.flick_counts_360 > 0) {
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (g_fs_last_ms == 0) g_fs_last_ms = now;
+        const uint32_t dms = now - g_fs_last_ms;
+        if (dms > 0) {
+            g_fs_last_ms = now;
+            // Stick to -1..1, Y up-positive to match atan2f(-x, y) from forward.
+            const float sx =  ((float) g_fs_stick_x - 128.0f) / 127.0f;
+            const float sy = -((float) g_fs_stick_y - 128.0f) / 127.0f;
+            const float yaw = flick_stick_step(sx, sy, (float) dms / 1000.0f);
+            if (yaw != 0.0f) {
+                // radians -> mouse counts using THIS GAME's calibration.
+                //
+                // NEGATED: the spec's atan2(-x, y) measures anticlockwise from
+                // forward, so a flick to the RIGHT is -90 degrees while mouse +X
+                // moves the view right.
+                //
+                // The REMAINDER is carried. A flick is delivered over ~100 ticks
+                // and each one was truncated toward zero, so every flick lost
+                // about half a count per tick - roughly 2.8 degrees on a 180 at
+                // 6500 counts/360, always in the same direction, which showed up
+                // as the view drifting after a few flicks. Ease-out makes it
+                // worse: the tail ticks are fractions of a count and truncated
+                // away entirely. Same fix as the gyro accumulator, which was
+                // built for exactly this and which this conversion bypassed.
+                const float counts = -(yaw / 6.28318531f) * (float) cfg.flick_counts_360
+                                   + g_fs_count_rem;
+                const int32_t whole = (int32_t) counts;
+                g_fs_count_rem = counts - (float) whole;
+                g_gm_pend_x += whole;
+            }
+        }
+    }
+
+    int32_t dx = g_gm_pend_x, dy = g_gm_pend_y;
+    if (dx == 0 && dy == 0) return;
+    const uint8_t inst = usb_mouse_instance(cfg);
+    if (!tud_hid_n_ready(inst)) return;      // busy: keep it pending, lose nothing
+    g_gm_pend_x -= dx;
+    g_gm_pend_y -= dy;
+    if (dx >  32767) dx =  32767; if (dx < -32767) dx = -32767;
+    if (dy >  32767) dy =  32767; if (dy < -32767) dy = -32767;
+    // dy already carries the stick path's sign convention, where aim-up is
+    // NEGATIVE (stick Y: 0 = up, 255 = down). Screen Y also grows downward, so
+    // the two agree and dy passes through unchanged. Negating it here - which the
+    // first version did, reasoning about screen coordinates alone - inverted the
+    // vertical axis relative to stick mode and to the Invert gyro aim setting.
+    GyroMouseReport r{0, (int16_t) dx, (int16_t) dy};
+    tud_hid_n_report(inst, 0, &r, sizeof(r));
+}
+
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     const auto &cfg = get_config();
     // Right-stick inversion (v1.18.21): flip the PHYSICAL stick axes first, so it
@@ -219,6 +447,18 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     // with its own gyro_invert, is added on top below - the two stay independent.
     if (cfg.rstick_invert & 1) d[2] = (uint8_t)(255 - d[2]); // RightStickX
     if (cfg.rstick_invert & 2) d[3] = (uint8_t)(255 - d[3]); // RightStickY
+
+    // Flick Stick is a STICK feature, not a gyro one, so it must run before every
+    // gyro-mode early return below - exactly as the inversion above does. Placed
+    // after them it did nothing whenever gyro was off or its activation gate was
+    // shut (mode 1 needs L2 held, 3 needs the touchpad, and so on), which is why
+    // the right stick appeared completely dead.
+    if (cfg.gyro_output == 2) {
+        g_fs_stick_x = d[2];
+        g_fs_stick_y = d[3];
+        d[2] = 128; d[3] = 128;   // the game must not also turn from the stick
+    }
+
     if (cfg.gyro_mode == 0) return;
     // Activation schemes (industry set: ADS-gated, always-on, touch-enable, ratchet):
     //   1 = only while L2 (aim) held past ~12%
@@ -264,6 +504,10 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     int32_t dy = -pitch * s / 200;    // tilt up -> aim up (flip via invert if wrong)
     if (cfg.gyro_invert & 1) dx = -dx;
     if (cfg.gyro_invert & 2) dy = -dy;
+    if (usb_mouse_iface_needed(cfg)) {
+        gyro_emit_mouse(horiz, pitch, cfg);   // stick already captured above
+        return;
+    }
     int32_t rx = (int32_t)d[2] + dx;
     int32_t ry = (int32_t)d[3] + dy;
     d[2] = (uint8_t)(rx < 0 ? 0 : (rx > 255 ? 255 : rx));
@@ -595,6 +839,7 @@ int main() {
         // advance to release it - macro_on_input only STARTS a macro.
         #ifdef ENABLE_WAKE_HID
         macro_task();
+        gyro_mouse_task();   // USB send happens HERE, never in the BT callback
         #endif
         audio_loop();
         interrupt_loop();

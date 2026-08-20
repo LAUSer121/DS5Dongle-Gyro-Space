@@ -261,6 +261,24 @@ struct __attribute__((packed)) Config_body {
     uint8_t t2_l2_mode;   // L2, same encoding
     uint8_t t2_l2_pos;
     uint8_t t2_l2_button;
+    // Gyro output target. 0 = right stick (as before), 1 = mouse,
+    // 2 = mouse + Flick Stick on the right stick.
+    // A mouse is a DELTA device, which is what a gyro natively produces; the
+    // stick is a velocity input with a dead zone and a limited range, so it
+    // clips a fast turn and rounds away a slow one however good the maths is.
+    //
+    // ENUMERATION-CRITICAL: selecting mouse adds a HID interface, so crossing
+    // between the two re-enumerates. Per-profile like everything else, so a slot
+    // can pick mouse for a game where the pad is hidden and stick for a native
+    // DualSense title.
+    uint8_t gyro_output;
+    // Flick Stick calibration: mouse counts for a full 360 turn IN THIS GAME.
+    // Only meaningful when gyro_output == 2. Jibb Smart's spec is explicit that
+    // faking flick stick with mouse movement needs this and an in-game
+    // implementation would not - we are converting an ANGLE to a displacement,
+    // so without the game's own mouse-to-yaw ratio a 90 degree flick lands
+    // wherever it happens to land.
+    uint16_t flick_counts_360;
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
