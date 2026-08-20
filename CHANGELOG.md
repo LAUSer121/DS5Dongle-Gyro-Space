@@ -2,6 +2,50 @@
 
 All notable changes to this project are documented here.
 
+## [1.24.2] — 2026-08-20
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+the new settings are appended at the tail of the struct, so existing settings and
+every saved slot load untouched.
+
+Supersedes the 1.23.x and 1.24.0–1.24.1 development builds, which were not
+released.
+
+### Added
+- **Gyro output selector.** Motion aiming can now drive a **mouse** instead of the
+  right stick. A mouse takes deltas, which is what a gyro natively produces, so it
+  is finer at low speed and never pegs on a fast turn — where the stick is an
+  absolute input with a dead zone and a limited range. Selecting it adds a HID
+  interface, so the controller re-enumerates once, and most games need the pad
+  hidden before they will read mouse input alongside it.
+  - Sensitivity is matched across polling rates: the same wrist movement turns you
+    the same amount at 250 Hz and at real-time.
+- **Flick Stick**, implemented to Jibb Smart's specification (he invented it).
+  Push the right stick in a direction and the view snaps to face that way; hold it
+  and rotate to keep turning. Fine aim stays with the gyro, which is what the
+  design intends. The stick's own output is removed from the report so the game
+  does not turn from it as well.
+  - Reference constants are the shipped JoyShockMapper defaults: 90% flick
+    threshold, 0.1 s flick time, ease-out with no ease-in, and soft tiered turn
+    smoothing.
+  - Works with **Gyro Mode** off, since it is a stick feature — but the gyro is
+    what makes it worth using.
+  - **Calibration is per game.** Faking a flick with mouse movement means
+    converting an angle into a number of counts, so the dongle needs to know how
+    far a full turn is: `(cm per 360°) × (DPI ÷ 2.54)`. Defaults to 6500. Requires
+    mouse acceleration off and raw input on.
+
+### Changed
+- **The portal and the slot-activation pages now identify the controller by its
+  gamepad usage** rather than by vendor and product ID alone. The gyro mouse is a
+  third HID collection sharing those IDs, so a plain match could open the mouse
+  instead — every configuration read then failed, which showed as "FW: pre-1.0.5"
+  and a device that could not be saved to or have slots activated. Selection falls
+  back to the old behaviour for anything it does not recognise, so it is never
+  stricter than before. Affects `ds5-config-portal.html`,
+  `automation/profiles/slot-activate.html` and the copy embedded in
+  `automation/ds5-setup.ps1` — update all three together.
+
 ## [1.22.0] — 2026-08-19
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —

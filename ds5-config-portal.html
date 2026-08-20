@@ -88,10 +88,28 @@ function isWakeKeyboardIface(d){
   const cols = (d && d.collections) || [];
   return cols.length > 0 && cols.every(c => c.usagePage === 0x01 && c.usage === 0x06);
 }
+// The gyro mouse is a THIRD HID collection sharing the dongle's VID/PID, so from
+// v1.23.0 a plain VID/PID match can land on the mouse instead of the gamepad -
+// and every feature-report read then fails, which surfaces as "FW: pre-1.0.5"
+// and a device that cannot be saved to. Exclusion alone does not scale, so
+// prefer a POSITIVE match on the gamepad usage and keep exclusion as the
+// fallback for anything unrecognised.
+function isGamepadIface(d){
+  const cols = (d && d.collections) || [];
+  // Generic Desktop / Joystick(0x04) or Game Pad(0x05)
+  return cols.some(c => c.usagePage === 0x01 && (c.usage === 0x04 || c.usage === 0x05));
+}
+function isMouseIface(d){
+  const cols = (d && d.collections) || [];
+  return cols.length > 0 && cols.every(c => c.usagePage === 0x01 && c.usage === 0x02);
+}
 function pickDs5(list){
   const m = (list || []).filter(x => x && x.vendorId === SONY_VID
                                   && (x.productId === DS5_PID || x.productId === DSE_PID));
-  return m.find(x => !isWakeKeyboardIface(x)) || m[0] || null;
+  return m.find(isGamepadIface)                                            // the real thing
+      || m.find(x => !isWakeKeyboardIface(x) && !isMouseIface(x))          // known extras out
+      || m[0] || null;                                                     // never stricter
+                                                                           // than VID/PID
 }
 
 // Unthrottled sleep. Chromium throttles main-thread timers on hidden/minimized
@@ -239,6 +257,8 @@ const SECTIONS = [
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
     [0x31,'gyro_axis','u8','Horizontal source','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
     [0x32,'gyro_invert','u8','Invert gyro aim','bits',['X (horizontal)','Y (vertical)']],
+    [0x73,'gyro_output','u8','Gyro output','select',{0:'Right stick (works everywhere)',1:'Mouse (finer aim; needs the pad hidden in most games)',2:'Mouse + Flick Stick (right stick flicks to a bearing)'}],
+    [0x74,'flick_counts_360','u16','Flick Stick — mouse counts per 360°','number',[500,50000]],
   ]},
   { title: 'Right Stick', fields: [
     [0x65,'rstick_invert','u8','Invert right stick','bits',['X (horizontal)','Y (vertical)']],
@@ -355,6 +375,8 @@ const DESCRIPTIONS = {
   gyro_mode: "When gyro aiming is active - off, always, or only while a chosen button is held.",
   gyro_sens: "How much aim movement the gyro produces.",
   gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
+  flick_counts_360: "How far a flick turns you, in this game. It is the same number a real mouse needs to spin a full 360 degrees: (cm per 360) x (DPI / 2.54). If you know your cm/360 and DPI, just calculate it - no trial needed. Otherwise leave 6500 and correct once: flick fully back (a 180), see how far you actually turned, then multiply this value by 180 / the degrees you got. Two tries is usually enough. Turn mouse acceleration OFF and raw input ON, or no single value can be correct. Changing the game's own sensitivity means recalibrating.",
+  gyro_output: "Right stick works in any game with no setup. Mouse sends pointer movement instead, which is what a gyro naturally produces - finer at low speed and it never pegs on a fast turn - but many games ignore mouse input while a gamepad is present, so it usually needs the pad hidden. Changing this re-enumerates the controller.",
   gyro_invert: "Flips the direction gyro aiming moves - X, Y, or both. Only affects gyro, when it's on.",
   rstick_invert: "Inverts the physical right stick itself - X, Y, or both - in any game, separate from gyro.",
   // Advanced - BT Latency
@@ -2212,6 +2234,11 @@ async function saveAll(){
     if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
       needReconnect = true;
     }
+    // The mouse is its own interface, so losing it is a descriptor change even
+    // though the keyboard test above stays true (macros or wake may still hold it).
+    if (!needReconnect && ((+savedSnapshot.gyro_output === 1) !== (+config.gyro_output === 1))) {
+      needReconnect = true;
+    }
 
     if (!needReconnect){
       // No enumeration-time change — settings are already applied live. Just
@@ -2839,8 +2866,12 @@ function macroPresentCount(){
 // shared, so a reconnect is needed only when its PRESENCE changes.
 function kbdIfaceNeeded(c){
   if (!c) return false;
+  // Mirrors usb_kbd_iface_needed() in src/macro.h, INCLUDING that selecting the
+  // mouse brings the keyboard up with it (the descriptor is trimmed from the end,
+  // so the mouse cannot be present without it).
   return !!(+c.enable_wake) || !!(+c.ps_shortcut_enabled) ||
-         ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED);
+         ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED) ||
+         (+c.gyro_output === 1);
 }
 function macroSetLabel(i, v){
   const rows = window._macroRows || [];
@@ -3844,7 +3875,7 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.22.0</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.24.2</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>

@@ -1,8 +1,10 @@
 # DS5Dongle — Studio
 
-**Version 1.22.0**
+**Version 1.24.2**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
+
+💾 **[Downloads, source and releases on GitHub](https://github.com/artzox/DS5Dongle-Studio)** — the firmware `.uf2` files live under *Releases*.
 
 📥 **[Shared game profiles](https://artzox.github.io/DS5Dongle-Studio/profiles.html)** · 🎮 **[Trigger effects](https://artzox.github.io/DS5Dongle-Studio/effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
 
@@ -19,7 +21,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.22.0-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.24.2-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -65,6 +67,8 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
+  - [Gyro as a mouse (new in 1.24.0)](#gyro-as-a-mouse-new-in-1240)
+  - [Flick Stick (new in 1.24.0)](#flick-stick-new-in-1240)
   - [Right Stick Inversion](#right-stick-inversion)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
@@ -90,6 +94,9 @@ to RAM so native fine haptics and controller audio work without overclocking.
   titles that have no native DualSense haptics. Works over Bluetooth.
 - **Motion gestures** — hold a button and flick your controller to fire a macro.
   Calibrated to your own movement when you record it.
+- **Gyro as a mouse, with Flick Stick** — drive a mouse instead of the right
+  stick for finer aim that never pegs, and flick the stick to snap the view to a
+  bearing.
 - **Two-stage triggers** — a second action past a point in the trigger's travel,
   so one pull gives you two signals with a detent you can feel between them.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
@@ -266,7 +273,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.22.0.uf2` (Pico 2 W) or `ds5-v1.22.0-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.24.2.uf2` (Pico 2 W) or `ds5-v1.24.2-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -1027,7 +1034,7 @@ then Save to a slot.
 | Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
 
 ### Gyro Aiming
-Maps controller motion onto the right stick for motion aiming.
+Maps controller motion onto the right stick — or onto a mouse — for motion aiming.
 
 | Setting | Range | Default | Notes |
 |---|---|---|---|
@@ -1035,6 +1042,8 @@ Maps controller motion onto the right stick for motion aiming.
 | Sensitivity | 1–100 | 50 | Motion-to-stick gain (50 ≈ raw) |
 | Horizontal source | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
 | Invert gyro aim | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
+| Gyro output | Right stick / Mouse / Mouse + Flick Stick | Right stick | What the motion drives — see below |
+| Flick Stick — mouse counts per 360° | 500–50000 | 6500 | Calibration, Flick Stick only |
 
 *Gyro modes:*
 - **L2-held** — aim only while L2 is held (flick-stick-style precision on ADS).
@@ -1046,6 +1055,62 @@ Maps controller motion onto the right stick for motion aiming.
 *Guide:* **L2-held + Yaw** is the most natural starting point for shooters — turn
 the controller to fine-tune aim only when aiming down sights. Raise sensitivity if
 the motion feels sluggish; use invert if the direction feels backwards.
+
+#### Gyro as a mouse *(new in 1.24.0)*
+
+**Gyro output** decides what the motion drives.
+
+**Right stick** is the default and works in any game with no setup. Its ceiling is
+the stick itself: an absolute input with a dead zone and a limited range, so a
+fast turn pegs it and a slow one rounds away.
+
+**Mouse** sends pointer movement instead, which is what a gyro naturally produces
+— finer at low speed, and it never pegs. The catch is that many games ignore mouse
+input while a gamepad is present, so this usually needs the pad hidden from that
+game (HidHide). Selecting it adds a HID interface, so the controller re-enumerates
+once.
+
+Mouse sensitivity uses the same **Sensitivity** slider, but expect to run much
+higher numbers than on the stick — roughly 25–75 is the usable band. The feel is
+matched across polling rates, so switching between 250 Hz and real-time does not
+change how far a given movement turns you.
+
+#### Flick Stick *(new in 1.24.0)*
+
+**Mouse + Flick Stick** adds [Flick Stick](http://gyrowiki.jibbsmart.com/blog:good-gyro-controls-part-2:the-flick-stick)
+to the right stick, implemented to Jibb Smart's specification. He invented it, and
+it is designed to pair with gyro aim rather than replace it:
+
+- **Flick** — push the stick in a direction and the view snaps to face that way.
+  Straight back is a 180.
+- **Turn** — keep the stick held and rotate it, and the view follows.
+- **Fine aim is the gyro's job.** The stick stops being an aiming device at all.
+
+The stick's own output is removed from the report while this is on, so the game
+does not also turn from it. Below 90% deflection nothing happens: the dead zone is
+deliberately huge because a flick must be intentional.
+
+Flick Stick works even with **Gyro Mode** off — it is a stick feature — but you
+almost certainly want the gyro on as well, since that is what handles precision.
+**Always** is the simplest choice while you calibrate.
+
+**Calibration is required**, and it is per game. The dongle converts a stick angle
+into a number of mouse counts, so it needs to know how far a full turn is in that
+game:
+
+```
+mouse counts per 360° = (cm per 360°) × (DPI ÷ 2.54)
+```
+
+If you know your cm/360 and DPI, that *is* the number. Otherwise leave the 6500
+default and correct once: flick straight back, see how far you actually turned,
+then multiply by `180 ÷ (degrees you got)`. Two tries is usually enough. Flicking
+back twice is easier to judge than once — you should land exactly where you began.
+
+> Turn **mouse acceleration off and raw input on** in the game. Flick Stick
+> converts an angle into a fixed number of counts and assumes the game turns a
+> fixed amount per count; with acceleration, no single calibration value can be
+> correct. Changing the game's own sensitivity also means recalibrating.
 
 ### Right Stick Inversion
 Inverts the physical right stick in the input report the PC sees — independent of
@@ -1438,9 +1503,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.22.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.22.0)
-- `ds5-v1.22.0-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.24.2.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.24.2)
+- `ds5-v1.24.2-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —
