@@ -14,6 +14,7 @@
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
 #include "macro.h"
+#include "input_buttons.h"   // BTN_* logical masks used by macro_apply_buttons()
 #endif
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
@@ -132,8 +133,76 @@ static inline bool apply_trigger_out_one(uint8_t *r, uint8_t axis_off, uint8_t d
     return true;   // caller presses, once both triggers have been processed
 }
 
+
+// Logical button mask -> report bits. The INVERSE of button_mask() in
+// input_buttons.h; the two lists must stay in step, so they are cross
+// referenced in both directions. Bytes 7/8/9 are b0/b1/b2 there.
+static inline void macro_apply_buttons(uint8_t *r) {
+    const uint32_t sup = macro_suppress_mask();
+    const uint32_t inj = macro_inject_mask();
+    if (sup) {
+        if (sup & BTN_SQUARE)   r[7] &= (uint8_t) ~0x10u;
+        if (sup & BTN_CROSS)    r[7] &= (uint8_t) ~0x20u;
+        if (sup & BTN_CIRCLE)   r[7] &= (uint8_t) ~0x40u;
+        if (sup & BTN_TRIANGLE) r[7] &= (uint8_t) ~0x80u;
+        if (sup & BTN_L1)       r[8] &= (uint8_t) ~0x01u;
+        if (sup & BTN_R1)       r[8] &= (uint8_t) ~0x02u;
+        // Triggers need the AXIS zeroed as well as the click bit. Games read
+        // L2/R2 as analog axes and barely use the digital bits, so clearing the
+        // bit alone left the full pull visible and "hide input from game" did
+        // nothing for a trigger while working for every other button. Same
+        // lesson as the two-stage trigger's L2/R2 output, in reverse.
+        if (sup & BTN_L2)     { r[8] &= (uint8_t) ~0x04u; r[4] = 0; }
+        if (sup & BTN_R2)     { r[8] &= (uint8_t) ~0x08u; r[5] = 0; }
+        if (sup & BTN_CREATE)   r[8] &= (uint8_t) ~0x10u;
+        if (sup & BTN_OPTIONS)  r[8] &= (uint8_t) ~0x20u;
+        if (sup & BTN_L3)       r[8] &= (uint8_t) ~0x40u;
+        if (sup & BTN_R3)       r[8] &= (uint8_t) ~0x80u;
+        if (sup & BTN_PS)       r[9] &= (uint8_t) ~0x01u;
+        if (sup & BTN_TOUCHPAD) r[9] &= (uint8_t) ~0x02u;
+        if (sup & BTN_MUTE)     r[9] &= (uint8_t) ~0x04u;
+        // A suppressed D-pad direction has to rewrite the HAT NIBBLE, which is
+        // an enum (0-7 plus 8 = centred), not a bitfield. Only the exact
+        // direction is cleared; a diagonal keeps its other half.
+        constexpr uint32_t DPAD_ALL = BTN_DPAD_UP | BTN_DPAD_RIGHT |
+                                      BTN_DPAD_DOWN | BTN_DPAD_LEFT;
+        const uint8_t hat = (uint8_t) (r[7] & 0x0Fu);
+        if (hat <= 7 && (sup & DPAD_ALL)) {
+            // Reuses input_buttons.h's own table rather than restating it, so
+            // there is no second copy of the hat encoding to drift.
+            const uint32_t d = HAT_TO_DPAD[hat] & ~(sup & DPAD_ALL);
+            uint8_t out = 8;                       // centred
+            for (uint8_t i = 0; i < 8; i++) if (HAT_TO_DPAD[i] == d) { out = i; break; }
+            r[7] = (uint8_t) ((r[7] & 0xF0u) | out);
+        }
+    }
+    if (inj) {
+        // inj is indexed by the T2Button enum, shared with the two-stage
+        // trigger so there is exactly one place that knows these bit positions.
+        for (uint8_t b = 1; b < T2BTN_COUNT; b++) {
+            if (!(inj & (1u << (b - 1)))) continue;
+            // A trigger output carries ANALOG travel when a trigger drove it, so
+            // L2 -> R2 stays variable instead of collapsing to an on/off switch.
+            // macro_analog_out() returns 255 for a button-driven trigger, which
+            // is exactly what t2_press would have done anyway.
+            if (b == T2BTN_L2 || b == T2BTN_R2) {
+                const bool right = (b == T2BTN_R2);
+                const uint8_t v  = macro_analog_out(right);
+                const uint8_t ax = right ? 5u : 4u;
+                r[8] |= right ? 0x08u : 0x04u;
+                if (v && r[ax] < v) r[ax] = v;
+                continue;
+            }
+            t2_press(r, b);
+        }
+    }
+    if (macro_suppress_stick(false)) { r[0] = 128; r[1] = 128; }
+    if (macro_suppress_stick(true))  { r[2] = 128; r[3] = 128; }
+}
+
 static inline void apply_trigger_output(uint8_t *r) {
     const auto &c = get_config();
+    macro_apply_buttons(r);
     static T2State r2_st{}, l2_st{};
     // Both passes read the PHYSICAL trigger values and decide their own latch
     // first. Only then are the stage-2 presses applied. Doing it inline meant
@@ -224,11 +293,12 @@ volatile uint16_t g_diag_gyro = 0; // |horizontal gyro raw|, field 0x35
 // exactly when it is least wanted. Keeping the remainder in integer form makes
 // every speed land on the same total. No floats: this runs in the report path.
 struct __attribute__((packed)) GyroMouseReport {
-    uint8_t buttons;   // unused; gyro never clicks
+    uint8_t buttons;   // bit0 left, bit1 right, bit2 middle - from macro rows
     int16_t x;
     int16_t y;
+    int8_t  wheel;     // scroll ticks from macro rows
 };
-static_assert(sizeof(GyroMouseReport) == 5, "must match desc_hid_report_mouse");
+static_assert(sizeof(GyroMouseReport) == 6, "must match desc_hid_report_mouse");
 
 static int32_t g_gm_acc_x = 0, g_gm_acc_y = 0;   // leftover numerator, not counts
 static volatile int32_t g_gm_pend_x = 0, g_gm_pend_y = 0; // computed in the report
@@ -386,6 +456,9 @@ static float flick_stick_step(float sx, float sy, float dt) {
 void gyro_mouse_task() {
     const auto &cfg = get_config();
     if (!usb_mouse_iface_needed(cfg)) return;
+    // Macro mouse output shares this report. Clicks are a level, scroll a tick.
+    const uint8_t mbtn = macro_mouse_buttons();
+    static uint8_t s_mbtn_sent = 0;
 
     if (cfg.gyro_output == 2 && cfg.flick_counts_360 > 0) {
         const uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -422,9 +495,17 @@ void gyro_mouse_task() {
     }
 
     int32_t dx = g_gm_pend_x, dy = g_gm_pend_y;
-    if (dx == 0 && dy == 0) return;
+    const int8_t pending = macro_mouse_peek_scroll();
+    // Send when anything changed: movement, a scroll tick, or a button going
+    // down OR up. Returning early on "no movement" would strand a release and
+    // leave the click held at the host.
+    if (dx == 0 && dy == 0 && pending == 0 && mbtn == s_mbtn_sent) return;
     const uint8_t inst = usb_mouse_instance(cfg);
     if (!tud_hid_n_ready(inst)) return;      // busy: keep it pending, lose nothing
+    // Consume the scroll only now that the report is definitely going out. Taking
+    // it before the readiness check dropped the tick whenever the endpoint was
+    // busy - a scroll that silently does nothing under load.
+    const int8_t wheel = macro_mouse_take_scroll();
     g_gm_pend_x -= dx;
     g_gm_pend_y -= dy;
     if (dx >  32767) dx =  32767; if (dx < -32767) dx = -32767;
@@ -434,8 +515,9 @@ void gyro_mouse_task() {
     // the two agree and dy passes through unchanged. Negating it here - which the
     // first version did, reasoning about screen coordinates alone - inverted the
     // vertical axis relative to stick mode and to the Invert gyro aim setting.
-    GyroMouseReport r{0, (int16_t) dx, (int16_t) dy};
+    GyroMouseReport r{mbtn, (int16_t) dx, (int16_t) dy, wheel};
     tud_hid_n_report(inst, 0, &r, sizeof(r));
+    s_mbtn_sent = mbtn;
 }
 
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {

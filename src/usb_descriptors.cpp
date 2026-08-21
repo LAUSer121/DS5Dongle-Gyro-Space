@@ -530,7 +530,7 @@ uint8_t descriptor_configuration[] = {
     0x00,             // bCountryCode
     0x01,             // bNumDescriptors
     0x22,             // bDescriptorType: Report
-    0x34, 0x00,       // wDescriptorLength: 52 (sizeof desc_hid_report_mouse)
+    0x40, 0x00,       // wDescriptorLength: 64 (sizeof desc_hid_report_mouse)
 
     // Endpoint Descriptor (HID IN: EP8)
     0x07,             // bLength
@@ -1021,10 +1021,19 @@ static uint8_t const desc_hid_report_mouse[] = {
     0x75, 0x10,       //     Report Size (16)
     0x95, 0x02,       //     Report Count (2)
     0x81, 0x06,       //     Input (Data,Var,Rel)
+    // Wheel, for macro scroll outputs. 8-bit is the universal shape - every host
+    // understands it, and a scroll tick is +/-1, so the 16-bit treatment the X/Y
+    // axes need for fast flicks buys nothing here.
+    0x09, 0x38,       //     Usage (Wheel)
+    0x15, 0x81,       //     Logical Minimum (-127)
+    0x25, 0x7F,       //     Logical Maximum (127)
+    0x75, 0x08,       //     Report Size (8)
+    0x95, 0x01,       //     Report Count (1)
+    0x81, 0x06,       //     Input (Data,Var,Rel)
     0xC0,             //   End Collection
     0xC0,             // End Collection
 };
-static_assert(sizeof(desc_hid_report_mouse) == 52, "wDescriptorLength in the interface block must match");
+static_assert(sizeof(desc_hid_report_mouse) == 64, "wDescriptorLength in the interface block must match");
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // In keyboard-only mode the keyboard is the ONLY HID interface, so it is

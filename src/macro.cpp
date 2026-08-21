@@ -96,6 +96,35 @@ static uint8_t  g_mot_codes[MACRO_MOTION_MAX];
 static uint8_t  g_mot_n      = 0;
 static bool     g_mot_moved  = false;
 
+// --- HOLD state --------------------------------------------------------------
+// A held row asserts its output for as long as its input is active, so this is
+// a STATE recomputed every input report, not a queued sequence. Playback and
+// hold share one keyboard interface: playback wins while it is running, and the
+// hold set is re-sent when it next changes, so a burst cannot be cut in half by
+// a hold row updating underneath it.
+static uint8_t  g_hold_keys[MACRO_KEYS * 4];
+static uint8_t  g_hold_n       = 0;
+static uint8_t  g_hold_sent[MACRO_KEYS * 4];
+static uint8_t  g_hold_sent_n  = 0;
+static bool     g_hold_pending = false;
+static uint32_t g_suppress     = 0;   // logical buttons hidden from the host
+static uint32_t g_inject       = 0;   // logical buttons asserted for the host
+static bool     g_sup_lstick   = false;
+static bool     g_sup_rstick   = false;
+// Per-row stick direction latches, so a stick resting on a threshold cannot
+// chatter the key. Same reason the two-stage trigger needed hysteresis.
+static uint8_t  g_stick_latch[MACRO_COUNT];
+
+uint32_t macro_suppress_mask() { return g_suppress; }
+uint32_t macro_inject_mask()   { return g_inject; }
+bool     macro_suppress_stick(bool right) { return right ? g_sup_rstick : g_sup_lstick; }
+
+static void hold_add_key(uint8_t usage) {
+    if (usage == 0 || g_hold_n >= sizeof(g_hold_keys)) return;
+    for (uint8_t i = 0; i < g_hold_n; i++) if (g_hold_keys[i] == usage) return;
+    g_hold_keys[g_hold_n++] = usage;
+}
+
 // Playback walk
 static uint8_t  g_pb_keys[MACRO_KEYS];
 static uint8_t  g_pb_rel  = 0;   // release permutation
@@ -166,12 +195,26 @@ void macro_load() {
     //
     // Migration therefore has to know the old LAYOUT, not just the old total
     // size. Each historical record length gets its own entry/label split here.
-    constexpr uint16_t REC_LEN_V1  = 28;  // 1.19.x: 12-byte entry + 16-byte label
+    // EVERY historical record length needs its own entry/label split. The label
+    // lives AFTER MacroEntry inside MacroRecord, so each time the entry grows the
+    // label moves and a flat rec_len-byte copy silently shifts it. Listing only
+    // some lengths is worse than listing none: the unknown branch below discards
+    // the table, so omitting 33 wiped every macro on every device running 1.20.0
+    // through 1.24.2.
+    constexpr uint16_t REC_LEN_V1  = 28;  // 1.19.x:          12-byte entry + label
     constexpr uint8_t  ENTRY_V1    = 12;
+    constexpr uint16_t REC_LEN_V2  = 33;  // 1.20.0-1.24.2:   17-byte entry + label
+    constexpr uint8_t  ENTRY_V2    = 17;
     for (uint8_t i = 0; i < MACRO_COUNT; i++) {
         const uint8_t *src = recs + (size_t) i * rec_len;
         if (rec_len == sizeof(MacroRecord)) {
             memcpy(&g_table.rec[i], src, rec_len);          // current layout
+        } else if (rec_len == REC_LEN_V2) {
+            memcpy(&g_table.rec[i].entry, src, ENTRY_V2);
+            memcpy(g_table.rec[i].label, src + ENTRY_V2, MACRO_LABEL_LEN);
+            // out_btn / stick_thresh keep table_defaults()' zeroes, which read
+            // as "keyboard output, default stick threshold" - correct for a row
+            // written before either field existed.
         } else if (rec_len == REC_LEN_V1) {
             memcpy(&g_table.rec[i].entry, src, ENTRY_V1);   // entry prefix
             memcpy(g_table.rec[i].label, src + ENTRY_V1, MACRO_LABEL_LEN);
@@ -258,14 +301,14 @@ bool macro_set_entry(uint8_t idx, const MacroRecord &rec) {
 // are ordinary usages 0xE0-0xE7 in keys[]; they fold into the modifier byte
 // here, which is why the format needs no separate modifier field and why press
 // order between a modifier and a key is unambiguous.
-static bool send_state(uint32_t pressed_slots) {
+static bool send_usages(const uint8_t *usages, uint8_t n, uint32_t pressed_slots) {
     if (!tud_hid_n_ready(MACRO_KBD_INSTANCE)) return false;
     uint8_t mods = 0;
     uint8_t keys[6] = {0};
     uint8_t kn = 0;
-    for (uint8_t i = 0; i < g_pb_n; i++) {
+    for (uint8_t i = 0; i < n; i++) {
         if (!(pressed_slots & (1u << i))) continue;
-        const uint8_t u = g_pb_keys[i];
+        const uint8_t u = usages[i];
         if (u >= HID_USAGE_MOD_FIRST && u <= HID_USAGE_MOD_LAST) {
             mods |= (uint8_t) (1u << (u - HID_USAGE_MOD_FIRST));
         } else if (u != 0 && kn < 6) {
@@ -273,6 +316,10 @@ static bool send_state(uint32_t pressed_slots) {
         }
     }
     return tud_hid_n_keyboard_report(MACRO_KBD_INSTANCE, 0, mods, kn ? keys : nullptr);
+}
+
+static bool send_state(uint32_t pressed_slots) {
+    return send_usages(g_pb_keys, g_pb_n, pressed_slots);
 }
 
 // Which slot is released at release-position p.
@@ -406,6 +453,160 @@ static uint32_t best_chord(uint32_t mask, uint32_t disable) {
         if (bits > best_bits) { best_bits = bits; best = e.chord; }
     }
     return best;
+}
+
+
+// --- hold / remap / stick evaluation -----------------------------------------
+// Runs every input report and rebuilds the whole output state from scratch. A
+// row is "active" when its input is currently true, which is a different
+// question from the edge detection the burst rows use - that is exactly why
+// HOLD needs its own pass rather than another branch inside find_entry().
+static int16_t stick_axis(const uint8_t *r, uint8_t idx) {
+    return (int16_t) ((int16_t) r[idx] - 128);      // 0..255 -> -128..127
+}
+
+// One cardinal of one stick, with hysteresis: engage at thresh, release at
+// thresh - MACRO_STICK_HYST. Without it a stick parked on the threshold streams
+// key up/down at report rate.
+static bool stick_dir_active(int16_t v, bool positive, uint8_t thresh, bool latched) {
+    const int16_t on  = (int16_t) thresh;
+    const int16_t off = (int16_t) (thresh > MACRO_STICK_HYST
+                                   ? thresh - MACRO_STICK_HYST : 1);
+    const int16_t mag = positive ? v : (int16_t) -v;
+    return latched ? (mag >= off) : (mag >= on);
+}
+
+// Analog travel to apply to an L2/R2 controller output, 0 when that output is
+// not active. Set only when a TRIGGER drives a trigger; a button driving one
+// leaves 255, a full press.
+static uint8_t g_analog_l2 = 0, g_analog_r2 = 0;
+uint8_t macro_analog_out(bool right) { return right ? g_analog_r2 : g_analog_l2; }
+
+// Mouse output. Clicks are a STATE - held while the input is held, so a
+// click-and-drag works. Scroll is an EVENT: one tick per press, latched per row
+// so holding the button does not spin the wheel at report rate.
+static uint8_t  g_mouse_btns   = 0;
+static int8_t   g_mouse_scroll = 0;
+static uint32_t g_scroll_latch = 0;
+uint8_t macro_mouse_buttons() { return g_mouse_btns; }
+int8_t  macro_mouse_peek_scroll() { return g_mouse_scroll; }
+int8_t  macro_mouse_take_scroll() { const int8_t v = g_mouse_scroll; g_mouse_scroll = 0; return v; }
+
+// Whether the COMMITTED table has a mouse output among the enabled rows. Drives
+// whether the mouse interface exists at all, so it must read flash rather than
+// any in-progress edit.
+bool macro_any_mouse_output(uint32_t disable_mask) {
+    if (!g_loaded) macro_load();
+    for (uint8_t i = 0; i < MACRO_COUNT; i++) {
+        if (!macro_is_enabled(disable_mask, i)) continue;
+        if (macro_is_mouse_out(g_table.rec[i].entry.out_btn)) return true;
+    }
+    return false;
+}
+
+static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t disable) {
+    g_hold_n     = 0;
+    g_suppress   = 0;
+    g_inject     = 0;
+    g_sup_lstick = false;
+    g_sup_rstick = false;
+    g_analog_l2  = 0;
+    g_analog_r2  = 0;
+    g_mouse_btns = 0;   // scroll is NOT cleared here: it is a pending tick that
+                        // main.cpp consumes, not a per-report state
+    if (len < RPT_MIN_LEN) return;
+
+    for (uint8_t i = 0; i < MACRO_COUNT; i++) {
+        const MacroEntry &e = g_table.rec[i].entry;
+        if (!macro_is_enabled(disable, i)) { g_stick_latch[i] = 0; continue; }
+
+        if (macro_is_stick(e)) {
+            const bool right = (e.gesture & GEST_STICK_RIGHT) != 0;
+            const uint8_t th = e.stick_thresh ? e.stick_thresh : MACRO_STICK_THRESH;
+            const int16_t x  = stick_axis(r, right ? 2 : 0);
+            const int16_t y  = stick_axis(r, right ? 3 : 1);
+            uint8_t latch = g_stick_latch[i], next = 0;
+            // Screen sense: the report's Y grows DOWNWARD, so "up" is negative.
+            const bool dirs[4] = {
+                stick_dir_active(y, false, th, latch & (1u << MACRO_STICK_UP)),
+                stick_dir_active(x, true,  th, latch & (1u << MACRO_STICK_RIGHT)),
+                stick_dir_active(y, true,  th, latch & (1u << MACRO_STICK_DOWN)),
+                stick_dir_active(x, false, th, latch & (1u << MACRO_STICK_LEFT)),
+            };
+            for (uint8_t d = 0; d < 4; d++) {
+                if (!dirs[d]) continue;
+                next |= (uint8_t) (1u << d);
+                if (e.out_btn == 0) hold_add_key(e.keys[d]);
+            }
+            g_stick_latch[i] = next;
+            if (next && (e.flags & MACRO_FLAG_REPLACE)) {
+                if (right) g_sup_rstick = true; else g_sup_lstick = true;
+            }
+            continue;
+        }
+
+        g_stick_latch[i] = 0;
+        // Button/combo rows only. A swipe or motion gesture is an event that
+        // completes; there is no "while active" for it to hold.
+        if (!macro_is_hold(e) || e.gesture != GESTURE_NONE || e.chord == 0) continue;
+        if ((mask & e.chord) != e.chord) { g_scroll_latch &= ~(1u << i); continue; }
+
+        // Mouse outputs never reach g_inject: that mask is indexed by the
+        // T2Button enum and main.cpp walks it up to T2BTN_COUNT, so a value of
+        // 11+ would either be ignored or, worse, alias a controller button.
+        if (macro_is_mouse_out(e.out_btn)) {
+            if (e.out_btn <= MOUT_MIDDLE) {
+                g_mouse_btns |= (uint8_t) (1u << (e.out_btn - MOUT_LEFT));
+            } else if (!(g_scroll_latch & (1u << i))) {
+                g_scroll_latch |= (1u << i);
+                const int8_t tick = (e.out_btn == MOUT_SCROLL_UP) ? 1 : -1;
+                if (g_mouse_scroll < 100 && g_mouse_scroll > -100) g_mouse_scroll += tick;
+            }
+            if (e.flags & MACRO_FLAG_REPLACE) g_suppress |= e.chord;
+            continue;
+        }
+
+        // g_inject is indexed by the T2Button enum (config.h) - NOT by the
+        // logical button masks from input_buttons.h that g_suppress uses. Two
+        // conventions in one file, with the only note at the CONSUMER
+        // (macro_apply_buttons in main.cpp). Verified end to end by
+        // t_out_btn_maps_to_the_chosen_button in tools/macro-tests.
+        if (e.out_btn != 0) {
+            g_inject |= (1u << (e.out_btn - 1));
+            // ANALOG PASSTHROUGH. Remapping one trigger onto the other is the
+            // one remap where a binary press throws information away: L2 -> R2
+            // as a full press makes a variable throttle into an on/off switch.
+            // When BOTH sides are triggers, carry the source travel across so
+            // the target is pulled exactly as far as the finger pulled it.
+            // Anything else - a face button driving R2 - has no travel to copy
+            // and stays a full press.
+            if (e.out_btn == T2BTN_L2 || e.out_btn == T2BTN_R2) {
+                uint8_t v = 255;
+                if (e.chord == BTN_L2)      v = r[RPT_L2_AXIS];
+                else if (e.chord == BTN_R2) v = r[RPT_R2_AXIS];
+                if (v == 0) v = 1;   // held past the digital point, so never zero
+                if (e.out_btn == T2BTN_L2) g_analog_l2 = v; else g_analog_r2 = v;
+            }
+        }
+        else for (uint8_t k = 0; k < MACRO_KEYS; k++) hold_add_key(e.keys[k]);
+        if (e.flags & MACRO_FLAG_REPLACE) g_suppress |= e.chord;
+    }
+
+    if (g_hold_n != g_hold_sent_n || memcmp(g_hold_keys, g_hold_sent, g_hold_n) != 0) {
+        g_hold_pending = true;
+    }
+}
+
+// Push the hold set to the host. Deferred out of the input path so it never
+// runs inside the report critical section, and skipped while a burst is
+// playing so the two cannot interleave on one interface.
+static void hold_flush() {
+    if (!g_hold_pending || g_pb_busy || g_suspended || wake_owns_keyboard()) return;
+    const uint32_t all = (g_hold_n >= 32) ? 0xFFFFFFFFu : ((1u << g_hold_n) - 1u);
+    if (!send_usages(g_hold_keys, g_hold_n, all)) return;
+    memcpy(g_hold_sent, g_hold_keys, g_hold_n);
+    g_hold_sent_n = g_hold_n;
+    g_hold_pending = false;
 }
 
 static void fire(int idx) {
@@ -699,10 +900,16 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 
     motion_task(report, len, mask, disable);
     touch_task(report, len, now, disable);
+    hold_task(report, len, mask, disable);
 
     if (g_chord != 0) {
-        const int long_idx  = find_entry(g_chord, true,  disable);
-        const int short_idx = find_entry(g_chord, false, disable);
+        const int long_idx_r  = find_entry(g_chord, true,  disable);
+        const int short_idx_r = find_entry(g_chord, false, disable);
+        // A HOLD row is driven entirely by hold_task(); letting it ALSO fire a
+        // burst on release would send the combo twice, once as a state and once
+        // as a one-shot.
+        const int long_idx  = (long_idx_r  >= 0 && macro_is_hold(g_table.rec[long_idx_r].entry))  ? -1 : long_idx_r;
+        const int short_idx = (short_idx_r >= 0 && macro_is_hold(g_table.rec[short_idx_r].entry)) ? -1 : short_idx_r;
 
         if ((mask & g_chord) == g_chord) {
             if (!g_chord_fired && long_idx >= 0 &&
@@ -735,6 +942,7 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 }
 
 void macro_task() {
+    hold_flush();
     if (wake_host_is_suspended()) return;
     // The wake FSM owns the shared keyboard instance from the moment it asks for
     // a resume until its F15 keyup has gone out. That sequence straddles the
@@ -758,6 +966,20 @@ void macro_task() {
 
 void macro_reset() {
     motion_clear();
+    // Everything held must be released, not merely forgotten: a suspend with a
+    // key still down leaves it stuck at the host.
+    g_hold_n = 0;
+    g_suppress = g_inject = 0;
+    g_sup_lstick = g_sup_rstick = false;
+    memset(g_stick_latch, 0, sizeof(g_stick_latch));
+    // Mouse output has to be dropped for the same reason as the keys: a click
+    // still held at a suspend stays latched at the host, and a pending scroll
+    // tick would fire on the far side of a reconnect with nothing pressed.
+    g_mouse_btns   = 0;
+    g_mouse_scroll = 0;
+    g_scroll_latch = 0;
+    if (g_hold_sent_n) { send_usages(g_hold_keys, 0, 0); g_hold_sent_n = 0; }
+    g_hold_pending = false;
     g_chord      = 0;
     g_stable     = 0;
     g_touch_down = false;
