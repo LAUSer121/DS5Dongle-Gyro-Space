@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [1.26.2] — 2026-08-21
+## [1.26.3] — 2026-08-21
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
 Existing macros are migrated in place on first boot — the on-flash record grows
@@ -45,6 +45,11 @@ Supersedes the 1.24.3–1.26.0 development builds, which were not released.
   taps a button once is still a legitimate thing to build.
 
 ### Fixed
+- **A remap showed a long-press time it does not use.** The threshold only
+  applies to a burst macro; a hold row is driven by a different path that reads
+  neither the flag nor the value, so a recorded "(hold 1.18s)" on a remap
+  claimed a delay that never happened. It is no longer shown there, and turning
+  hold on clears it rather than leaving it to reappear later.
 - **Importing a profile could not describe a remap.** The notice that names what
   each enabled macro would fire read the keyboard combo, which is empty on a
   controller or mouse output - so exactly the rows that press a button or click

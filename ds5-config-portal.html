@@ -3675,6 +3675,13 @@ function macroMotionPanelHTML(){
 function macroSetFlag(i, bit, on){
   const m = (window._macroRows||[])[i]; if (!m) return;
   m.flags = on ? ((m.flags|0) | bit) : ((m.flags|0) & ~bit);
+  // Turning HOLD on makes any long-press threshold unreachable. Clearing it now
+  // beats leaving it stored to reappear the moment the box is unticked again -
+  // a threshold the user never chose, resurfacing later.
+  if (bit === MACRO_FLAG_HOLD && on){
+    m.flags = (m.flags|0) & ~MACRO_FLAG_LONG_PRESS;
+    m.hold_cs = 0;
+  }
   macroRender();
 }
 // Output kind: keyboard or controller. Splitting this out is what lets Record and
@@ -3749,6 +3756,7 @@ function macroSetStickThresh(i, v){
 // HOLD is meaningless on a swipe or a motion gesture: those are events that
 // complete, with nothing to hold. Mirrors the firmware check in hold_task();
 // a rule enforced in only one of the two is how the v1.14.5 bow went missing.
+function macroIsHold(m){ return !!(m && ((m.flags|0) & MACRO_FLAG_HOLD)); }
 function macroCanHold(m){
   if (!m) return false;
   if (m.gesture & GEST_STICK) return true;
@@ -3851,7 +3859,13 @@ function macroRender(){
     const isStick = (m.gesture & GEST_STICK) !== 0;
     const inLbl  = isStick ? ((m.gesture & GEST_STICK_RIGHT) ? 'Right stick' : 'Left stick')
                            : (m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord));
-    const inTxt  = inLbl ? (inLbl + ((!isStick && (m.flags & 1)) ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
+    // The long-press threshold only means something on a BURST row. A hold row -
+    // any remap - is driven by hold_task(), which reads neither the flag nor the
+    // threshold, and hold rows are explicitly excluded from the burst path that
+    // does. Showing a time there claimed the remap waited for it when it engages
+    // immediately.
+    const showHold = !isStick && (m.flags & MACRO_FLAG_LONG_PRESS) && !macroIsHold(m);
+    const inTxt  = inLbl ? (inLbl + (showHold ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
     const outTxt = isStick ? (STICK_DIRS.map((d,k) => d + ' ' + (USAGE_NAME[m.keys[k]] || (m.keys[k] ? '0x'+m.keys[k].toString(16) : '—'))).join('  '))
                  : ((m.out_btn ? MACRO_OUT_BTNS[m.out_btn] : macroComboName(m.keys, m.rel_order)) || '—');
     const recIn  = rec && rec.row === i && rec.which === 0;
@@ -4397,7 +4411,7 @@ function render(){
   const _qEl = (typeof document !== 'undefined') ? document.activeElement : null;
   const _qFocused = !!(_qEl && _qEl.id === 'qbox');
   const _qCaret = _qFocused ? _qEl.selectionStart : 0;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.2</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.3</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
