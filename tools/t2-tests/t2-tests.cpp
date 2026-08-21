@@ -3,7 +3,21 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "../../src/input_buttons.h"
 #include "cfg.inc"
+// Macro-engine hooks the outbound rewrite calls. Stubbed here so this harness
+// stays focused on the trigger maths; the button suppression and injection
+// paths are covered by tools/macro-tests.
+static uint32_t g_sup = 0, g_inj = 0;
+static bool g_sup_l = false, g_sup_r = false;
+static uint32_t macro_suppress_mask() { return g_sup; }
+static uint32_t macro_inject_mask()   { return g_inj; }
+static bool macro_suppress_stick(bool right) { return right ? g_sup_r : g_sup_l; }
+// Analog travel for an L2/R2 controller output. 255 mirrors the firmware default
+// for a button-driven trigger; the trigger-to-trigger case is covered in
+// tools/macro-tests, which has the macro engine itself.
+static uint8_t g_an_l2 = 255, g_an_r2 = 255;
+static uint8_t macro_analog_out(bool right) { return right ? g_an_r2 : g_an_l2; }
 static Config_body g_cfg;
 static const Config_body &get_config() { return g_cfg; }
 #include "t2.inc"
@@ -54,6 +68,35 @@ static void t_trigger_target() {
     g_cfg.at_l2_deadzone = 3;
     rpt2(r, 210, 0); apply_trigger_output(r);
     ok((r[8] & 0x04) && r[4] == 255, "an L2 dead zone does not clear R2's stage-2 press");
+}
+
+// "Hide input from game" on a TRIGGER has to zero the analog axis, not just the
+// digital click bit - games read L2/R2 as axes. Clearing the bit alone left the
+// pull fully visible, so Replace worked on every button except the two triggers.
+static void t_trigger_suppression_zeroes_the_axis() {
+    printf("\n-- hiding a trigger input from the game --\n");
+    uint8_t r[63];
+    memset(&g_cfg, 0, sizeof(g_cfg));
+
+    g_sup = BTN_L2; g_inj = 0;
+    rpt2(r, 0, 200); apply_trigger_output(r);
+    ok(r[4] == 0, "a hidden L2 reports no travel");
+    ok(!(r[8] & 0x04), "and no click bit");
+
+    g_sup = BTN_R2;
+    rpt2(r, 200, 0); apply_trigger_output(r);
+    ok(r[5] == 0 && !(r[8] & 0x08), "same for R2");
+
+    // The remap case: L2 hidden AND driving R2. Suppression must not wipe the
+    // injected output, and the injection must not resurrect the hidden input.
+    g_sup = BTN_L2; g_inj = (1u << (T2BTN_R2 - 1)); g_an_r2 = 200;
+    rpt2(r, 0, 200); apply_trigger_output(r);
+    ok(r[4] == 0, "L2 -> R2 with hide: the source trigger stays hidden");
+    ok(r[5] == 200 && (r[8] & 0x08), "and R2 carries the analog travel");
+
+    g_sup = 0; g_inj = 0; g_an_r2 = 255;
+    rpt2(r, 0, 200); apply_trigger_output(r);
+    ok(r[4] == 200, "with no suppression the trigger is untouched");
 }
 
 int main() {
@@ -183,6 +226,7 @@ int main() {
     ok(!(r[7] & 0x40), "retune: a new boundary drops the stale latch");
 
     t_trigger_target();
+    t_trigger_suppression_zeroes_the_axis();
 
     printf(fails ? "\nT2 TESTS FAILED (%d)\n" : "\nT2 TESTS OK (0 failures)\n", fails);
     return fails ? 1 : 0;
