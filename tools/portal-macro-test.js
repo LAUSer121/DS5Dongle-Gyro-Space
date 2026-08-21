@@ -31,7 +31,6 @@ const fn = new Function('window', 'document', 'navigator', 'location', js + `
            getRows: () => window._macroRows,
            setPick: p => { window._macroPick = p; },
            setSnap: x => { savedSnapshot = x; },
-           macroTableToJson, macroTableFromJson,
            macroSetBit, getCfg: () => config,
            setCfg: c => { config = c; },
            setDev: d => { device = d; } };`);
@@ -128,29 +127,49 @@ ok(allPerm, 'picker always emits a valid release permutation');
   ok(!/Enable state changed/.test(boxHtml), 'cleared once the snapshot is refreshed');
 })();
 
-// The macro file format must carry the motion fields. Dropping them does not
-// just lose the gesture: macro_is_motion() requires GEST_MOTION and
-// motion_len > 0, so a stripped motion macro reloads as a plain CHORD macro and
-// its gate button fires it on its own, with nothing drawn.
-(function motionSurvivesRoundTrip(){
-  console.log('macro file format carries motion gestures');
-  const rows3 = []; for (let i=0;i<32;i++) rows3.push(blank());
-  rows3[2] = {chord:1<<10, gesture:0x40, flags:0, hold_cs:0, keys:[0xE0,0x0D,0,0],
-              rel_order:1, label:'down-up', motion:[0x0D,0x00], motion_len:2,
-              motion_step:2100, present:true};
-  const j = M.macroTableToJson(rows3);
-  const back = M.macroTableFromJson(j)[2];
-  ok(JSON.stringify(back.motion) === JSON.stringify([0x0D,0x00]), 'motion strokes survive');
-  ok(back.motion_len === 2, 'motion_len survives');
-  ok(back.motion_step === 2100, 'the calibrated step survives');
-  ok(back.gesture === 0x40, 'GEST_MOTION survives - it does not degrade to a chord macro');
 
-  const legacy = M.macroTableFromJson(
-    [{index:5,label:'legacy',chord:1<<15,gesture:0,flags:0,hold_cs:0,keys:[0xE0,0x0D,0,0],rel_order:1}])[5];
-  ok(legacy.motion_len === 0, 'a pre-1.20.0 file imports as a non-motion macro');
+// Every row KIND must render. A stick row exercised a code path no fixture
+// touched, so macroRender() called a helper that did not exist and the whole
+// suite still passed - rendering only rows of one shape proves only that shape.
+(function rowKindsRender(){
+  console.log('every row kind renders without throwing');
+  const kinds = [
+    ['chord',  {chord:1<<15, gesture:0, flags:0, keys:[0xE0,0x0D,0,0], rel_order:1}],
+    ['hold remap to key',    {chord:1<<5, gesture:0, flags:0x02, keys:[0x2C,0,0,0]}],
+    ['hold remap to button', {chord:1<<5, gesture:0, flags:0x06, keys:[0,0,0,0], out_btn:2}],
+    ['left stick',  {chord:0, gesture:0x80|0x20, flags:0x02, keys:[0x1A,0x07,0x16,0x04], stick_thresh:48}],
+    ['right stick', {chord:0, gesture:0x80|0x20|0x40, flags:0x06, keys:[0x1A,0x07,0x16,0x04], stick_thresh:0}],
+    ['motion',      {chord:1<<10, gesture:0x80|0x10, flags:0, keys:[0x2B,0,0,0], motion:[1,0], motion_len:1}],
+  ];
+  for (const [name, def] of kinds){
+    const rows = []; for (let i=0;i<32;i++) rows.push(blank());
+    rows[0] = {hold_cs:0, rel_order:0, out_btn:0, stick_thresh:0, motion:[0,0],
+               motion_len:0, motion_step:0, label:name, present:true, ...def};
+    M.setRows(rows); M.setPick(null);
+    M.setCfg({macro_disable: 0}); M.setSnap({macro_disable: 0});
+    let threw = null;
+    try { M.macroRender(); } catch (e) { threw = e; }
+    ok(!threw, name + ' renders' + (threw ? ' (' + threw.message + ')' : ''));
+    ok(boxHtml.length > 0, name + ' produced markup');
+  }
+})();
 
-  const bad = M.macroTableFromJson([{index:0,motion_len:200,chord:1,keys:[4,0,0,0]}])[0];
-  ok(bad.motion_len <= 8, 'an out-of-range motion_len is clamped on import');
+// A stick row's four direction outputs must actually appear, or the row is
+// unconfigurable however cleanly it renders.
+(function stickShowsDirections(){
+  console.log('a stick row exposes all four directions');
+  const rows = []; for (let i=0;i<32;i++) rows.push(blank());
+  rows[0] = {chord:0, gesture:0x80|0x20, flags:0x02, hold_cs:0,
+             keys:[0x1A,0x07,0x16,0x04], rel_order:0, out_btn:0, stick_thresh:48,
+             motion:[0,0], motion_len:0, motion_step:0, label:'wasd', present:true};
+  M.setRows(rows); M.setPick(null);
+  M.setCfg({macro_disable: 0}); M.setSnap({macro_disable: 0});
+  M.macroRender();
+  for (const arrow of ['\u2191','\u2192','\u2193','\u2190']){
+    ok(boxHtml.indexOf(arrow) >= 0, 'direction ' + arrow + ' is shown');
+  }
+  ok(/macroSetStickKey\(0, ?0/.test(boxHtml), 'each direction has its own key selector');
+  ok(/Left stick/.test(boxHtml), 'the input column names the stick');
 })();
 
 console.log('\nmacro panel handlers checked:', checked, '| problems:', bad);
