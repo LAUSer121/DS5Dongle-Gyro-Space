@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.24.2**
+**Version 1.26.1**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -21,7 +21,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.24.2-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.26.1-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -92,6 +92,9 @@ to RAM so native fine haptics and controller audio work without overclocking.
 
 - **Audio-derived auto-haptics** — generates haptic feedback from game audio for
   titles that have no native DualSense haptics. Works over Bluetooth.
+- **Remapping** — send a controller button, a mouse click or a scroll instead of
+  a keystroke, hold it while the input is held, and hide the original from the
+  game. Trigger-to-trigger remaps stay analog.
 - **Motion gestures** — hold a button and flick your controller to fire a macro.
   Calibrated to your own movement when you record it.
 - **Gyro as a mouse, with Flick Stick** — drive a mouse instead of the right
@@ -273,7 +276,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.24.2.uf2` (Pico 2 W) or `ds5-v1.24.2-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.26.1.uf2` (Pico 2 W) or `ds5-v1.26.1-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -1243,6 +1246,41 @@ Two behaviours worth knowing, both learned the hard way:
 Gestures are macros like any other, so they carry names, live in the same 32
 rows, and are enabled per profile.
 
+#### Remapping: hold, replace and other outputs *(new in 1.26.0)*
+
+A macro row does not have to send a keystroke. Two settings turn it into a remap:
+
+| Setting | What it does |
+|---|---|
+| **hold while held** | The output is asserted while the input is held, instead of firing once. A remap needs this — without it `X → Circle` taps Circle when you *release* X. |
+| **hide input from game** | The original input is removed from the report, so the game sees only the replacement. |
+
+**Output** chooses where it goes:
+
+- **Keyboard** — a key combination, as before.
+- **Controller button** — any face, shoulder, stick or trigger button. More reliable in-game than a keystroke: a game that sees a DualSense is in controller mode, and many ignore the keyboard entirely or flip every on-screen prompt when one arrives.
+- **Mouse** — left, right or middle click, or scroll up/down. Clicks hold while the input is held, so click-and-drag works; scroll sends one tick per press.
+
+**Record** and **Pick** work the same way for all three. Record captures what you
+actually do — press the controller button, or click the mouse — and Pick lets you
+choose by hand. Selecting a controller or mouse output turns **hold while held**
+on for you, since that is what a remap almost always means.
+
+**Remapping one trigger onto the other stays analog.** `L2 → R2` carries the
+travel across, so a variable throttle stays variable rather than collapsing into
+an on/off switch. Any other input driving a trigger is a full press, since there
+is no travel to copy.
+
+> Choosing a **mouse** output makes the dongle present a mouse to the PC, so the
+> controller re-enumerates once — but only when you **save**, never while you are
+> editing.
+
+#### Sticks as an input *(new in 1.26.0)*
+
+A whole stick can drive four outputs, one per direction — `W A S D` being the
+obvious use. Diagonals press both, and each axis has its own threshold with
+hysteresis so a stick resting on the edge does not chatter.
+
 #### Backing up and sharing macros *(new in 1.19.1)*
 
 Definitions and enablement travel separately, because they are stored separately.
@@ -1503,9 +1541,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.24.2.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.24.2)
-- `ds5-v1.24.2-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.26.1.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.26.1)
+- `ds5-v1.26.1-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

@@ -2,6 +2,61 @@
 
 All notable changes to this project are documented here.
 
+## [1.26.1] — 2026-08-21
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
+Existing macros are migrated in place on first boot — the on-flash record grows
+from 33 to 35 bytes.
+
+Supersedes the 1.24.3–1.26.0 development builds, which were not released.
+
+### Added
+- **Remapping.** A macro row can now replace an input rather than only adding a
+  keystroke to it.
+  - **hold while held** keeps the output asserted for as long as the input is
+    held, instead of firing once. Without it a remap taps its target on release.
+  - **hide input from game** removes the original input from the report, so the
+    game sees only the replacement.
+- **Controller buttons as an output** — any face, shoulder, stick or trigger
+  button. More reliable in-game than a keystroke: a game that sees a DualSense is
+  in controller mode, and many ignore the keyboard entirely or flip every
+  on-screen prompt when one arrives.
+- **Mouse as an output** — left, right and middle click, scroll up and scroll
+  down. Clicks are held while the input is held so click-and-drag works; scroll
+  sends one tick per press. Choosing a mouse output makes the dongle present a
+  mouse, so the controller re-enumerates — but only on **save**, never while a
+  macro is being edited.
+- **Sticks as an input.** One row drives four outputs, one per direction.
+  Diagonals press both, and each axis has its own threshold with hysteresis so a
+  stick resting on the edge does not chatter.
+- **Trigger-to-trigger remaps stay analog.** `L2 → R2` carries the travel across
+  rather than collapsing a variable throttle into an on/off switch. Any other
+  input driving a trigger is a full press, since there is no travel to copy.
+- **Search** in the portal, covering both settings and whole panels — searching
+  for *gesture*, *wasd* or *backup* now finds the feature, not just fields.
+
+### Changed
+- **Record and Pick work the same way for every output kind.** Choosing keyboard,
+  controller or mouse decides what they capture; previously the keyboard had
+  Record and Pick while the controller side had a dropdown, so one row asked the
+  same question two different ways.
+- Selecting a controller or mouse output turns **hold while held** on, since that
+  is what a remap almost always means. The checkbox stays editable — a chord that
+  taps a button once is still a legitimate thing to build.
+
+### Fixed
+- **"hide input from game" did nothing for L2 and R2.** Suppression cleared the
+  digital click bit but left the analog axis untouched, and games read the
+  triggers as axes — so the trigger stayed fully visible while every other button
+  hid correctly.
+- **Upgrading from 1.20.0–1.24.2 would have discarded every macro.** The record
+  grew to 35 bytes and the migration handled the 28-byte layout but not the
+  33-byte one, which is what every device in that range holds; unrecognised
+  lengths are refused rather than guessed at, so the table was dropped.
+- **Switching gyro output straight to Mouse + Flick Stick did not re-enumerate.**
+  The check tested for one specific value rather than the range that needs the
+  mouse interface, so the interface appeared without the host being told.
+
 ## [1.24.2] — 2026-08-20
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —

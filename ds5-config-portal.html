@@ -31,6 +31,19 @@
   .tab:hover { color:var(--fg,#eee); border-color:var(--sub); }
   .tab.active { background:var(--accent,#3a6df0); border-color:var(--accent,#3a6df0); color:#fff; }
   .card-title { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--sub); margin-bottom:12px; }
+  /* Find a setting. Sits under the tab bar so the tabs stay the primary
+     navigation and search is the fallback for "I know what it does, not where
+     it lives". */
+  .searchwrap { display:flex; align-items:center; gap:8px; margin:-4px 0 14px; }
+  .searchwrap input[type=search] { flex:1; min-width:0; width:auto; text-align:left;
+        background:#11141a; border:1px solid var(--border); color:var(--text);
+        border-radius:8px; padding:9px 12px; font-size:14px; }
+  .searchwrap input[type=search]:focus { outline:none; border-color:var(--accent); }
+  .searchwrap input[type=search]::placeholder { color:var(--sub); }
+  .searchwrap .hits { font-size:12px; color:var(--sub); white-space:nowrap; }
+  .card-title .intab { text-transform:none; letter-spacing:0; color:var(--accent); font-weight:600; }
+  .nohits { color:var(--sub); font-size:14px; line-height:1.6; margin:0; }
+  .nohits b { color:var(--text); font-weight:600; }
   .row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
   .row:last-child { border-bottom:none; }
   .row .label { font-size:15px; }
@@ -2234,9 +2247,17 @@ async function saveAll(){
     if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
       needReconnect = true;
     }
+    // The macro TABLE decides whether a mouse interface exists too, and it is
+    // not a config field, so saveAll cannot see it. macroSaveTable sets this
+    // when the committed table gains or loses a mouse output.
+    if (window._macroMouseReenum) { needReconnect = true; window._macroMouseReenum = false; }
     // The mouse is its own interface, so losing it is a descriptor change even
     // though the keyboard test above stays true (macros or wake may still hold it).
-    if (!needReconnect && ((+savedSnapshot.gyro_output === 1) !== (+config.gyro_output === 1))) {
+    // >= 1, not === 1: gyro_output 2 (mouse + flick stick) needs the mouse
+    // interface just as much as 1 does, so an === test missed a straight
+    // "Right stick -> Mouse + Flick Stick" switch entirely - the interface
+    // appeared with no reconnect to make the host notice.
+    if (!needReconnect && ((+savedSnapshot.gyro_output >= 1) !== (+config.gyro_output >= 1))) {
       needReconnect = true;
     }
 
@@ -2487,12 +2508,38 @@ function askYesNo(title, body, yesLabel, noLabel){
 const MACRO_COUNT = 32;
 const MACRO_KEYS = 4;
 const MACRO_MOTION_MAX = 8;      // strokes stored per gesture (src/macro.h)            // keys per combo INCLUDING modifiers (src/macro.h)
-const MACRO_REC_LEN = 33;        // 17-byte entry + 16-byte label
+const MACRO_REC_LEN = 35;        // 19-byte entry + 16-byte label
 // Motion template offsets INSIDE the 17-byte entry: motion[2], motion_len,
 // motion_step (LE u16). Mirrors MacroEntry in src/macro.h; the firmware
 // migrates shorter records, so a device written by a pre-motion build still
 // loads - but a record written SHORT here would silently truncate the tail.
 const MACRO_OFF_MOTION = 12, MACRO_OFF_MOTION_LEN = 14, MACRO_OFF_MOTION_STEP = 15;
+// Appended in v1.25: out_btn selects the OUTPUT kind (0 = keyboard, else a
+// controller button using the two-stage trigger's numbering), stick_thresh is
+// the deflection a stick direction needs. Entry offsets 17 and 18.
+const MACRO_OFF_OUT_BTN = 17, MACRO_OFF_STICK_THRESH = 18;
+const MACRO_FLAG_LONG_PRESS = 0x01, MACRO_FLAG_HOLD = 0x02, MACRO_FLAG_REPLACE = 0x04;
+const GEST_STICK = 0x20, GEST_STICK_RIGHT = 0x40;
+// Index IS the T2Button value, so order and position are load-bearing.
+// L2/R2 carry analog travel when a trigger drives them - see macro_analog_out().
+// A recorded controller button arrives as a LOGICAL bit (the BTN table); out_btn
+// stores a T2Button value. Map by NAME so the two lists can be read against each
+// other, rather than by an offset that looks right and is not - which is exactly
+// how the inject mask went wrong once already.
+const OUT_BTN_FROM_NAME = { CROSS:1, CIRCLE:2, SQUARE:3, TRIANGLE:4,
+                            L1:5, R1:6, L3:7, R3:8, L2:9, R2:10 };
+function outBtnFromMask(mask){
+  for (const b of BTN){ if ((mask & b[1]) && OUT_BTN_FROM_NAME[b[0]]) return OUT_BTN_FROM_NAME[b[0]]; }
+  return 0;
+}
+
+const MACRO_OUT_BTNS = ['Keyboard','Cross','Circle','Square','Triangle','L1','R1','L3','R3','L2','R2',
+                        'Left click','Right click','Middle click','Scroll up','Scroll down'];
+// Index 11+ are MOUSE actions, matching MOUT_* in src/macro.h. The split is by
+// value range so the firmware's controller loop never sees them.
+const MOUT_FIRST = 11, MOUT_LAST = 15;
+function macroIsMouseOut(v){ return (v|0) >= MOUT_FIRST && (v|0) <= MOUT_LAST; }
+const STICK_DIRS = ['\u2191','\u2192','\u2193','\u2190'];   // up, right, down, left
 const GEST_MOTION = 0x10;
 const MACRO_NONE_ENABLED = 0xFFFFFFFF;
 
@@ -2804,6 +2851,24 @@ function macroKeyOptions(){
 
 window._macroPick = window._macroPick || null;   // {row, mods:[usage], key:usage}
 
+// The Pick panel for a CONTROLLER output: the same eleven choices the dropdown
+// carried, but reached the same way as the keyboard picker so a row asks its
+// question once.
+function macroPickBtnHTML(i, m){ return macroPickOutHTML(i, m, 1, MOUT_FIRST - 1, 'Which controller button should this macro send?'); }
+function macroPickOutHTML(i, m, lo, hi, prompt){
+  let h = '<div style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin:6px 0">';
+  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' + prompt + '</div>';
+  for (let k = lo; k <= hi; k++){
+    const on = (m.out_btn|0) === k;
+    h += '<button class="btn' + (on ? '' : ' btn-outline') + '" style="padding:2px 8px;margin:0 4px 4px 0;font-size:12px" ' +
+         'onclick="macroSetOutBtn(' + i + ', ' + k + ');macroPickClose()">' + MACRO_OUT_BTNS[k] + '</button>';
+  }
+  h += '<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickClose()">Close</button></div>';
+  h += '</div>';
+  return h;
+}
+function macroPickClose(){ window._macroPick = null; macroRender(); }
+
 function macroPickOpen(i){
   const rows = window._macroRows || [];
   const m = rows[i]; if (!m) return;
@@ -2849,10 +2914,11 @@ window._macroRows = window._macroRows || null;   // survives render(), like _ceb
 window._macroRec  = null;                        // {row, which, ...} while recording
 
 function macroBlankRow(){
-  return {chord:0, gesture:0, flags:0, hold_cs:0, keys:[0,0,0,0], rel_order:0, label:'', present:false};
+  return {chord:0, gesture:0, flags:0, hold_cs:0, keys:[0,0,0,0], rel_order:0,
+          out_btn:0, stick_thresh:0, label:'', present:false};
 }
 function macroRowEmpty(m){
-  return !m || (!m.chord && !m.gesture && !m.keys.some(k=>k));
+  return !m || (!m.chord && !m.gesture && !m.out_btn && !m.keys.some(k=>k));
 }
 // A row is listed if it holds a definition OR the user just added it with +.
 // Device index is fixed (it maps to a bit of the enable mask), so rows keep
@@ -2919,7 +2985,9 @@ async function macroReadAll(){
       rel_order: r[15],
       label: ''
     };
-    let lbl = ''; for (let k=0;k<16;k++){ const c = r[21+k]; if (!c) break; lbl += String.fromCharCode(c); }
+    row.out_btn = r[21] || 0;
+    row.stick_thresh = r[22] || 0;
+    let lbl = ''; for (let k=0;k<16;k++){ const c = r[23+k]; if (!c) break; lbl += String.fromCharCode(c); }
     row.label = lbl;
     // Motion entries round-trip into the parallel store, not the row.
     if (row.gesture & GEST_MOTION){
@@ -2969,7 +3037,9 @@ async function macroWriteAll(){
       const st = mt.step || MOT_STEP_DEFAULT;
       a[16] = st & 0xff; a[17] = (st >>> 8) & 0xff;
     }
-    for (let k=0;k<16;k++) a[18+k] = m.label.charCodeAt(k) || 0;
+    a[18] = m.out_btn & 0xff;
+    a[19] = m.stick_thresh & 0xff;
+    for (let k=0;k<16;k++) a[20+k] = m.label.charCodeAt(k) || 0;
     await sendCmd(0x18, a);
     await new Promise(r => setTimeout(r, 8));
   }
@@ -2992,7 +3062,11 @@ function macroTableToJson(rows){
                flags: m.flags|0, hold_cs: m.hold_cs|0, keys: (m.keys||[0,0,0,0]).slice(0,4),
                rel_order: m.rel_order|0,
                motion: (m.motion||[0,0]).slice(0,2).map(x=>x|0),
-               motion_len: m.motion_len|0, motion_step: m.motion_step|0 });
+               motion_len: m.motion_len|0, motion_step: m.motion_step|0,
+               // out_btn carries the OUTPUT KIND, so dropping it turns a
+               // controller-button remap into a keyboard row with no keys -
+               // silently inert, exactly the failure motion_* had.
+               out_btn: m.out_btn|0, stick_thresh: m.stick_thresh|0 });
   });
   return out;
 }
@@ -3009,6 +3083,7 @@ function macroTableFromJson(list){
                 rel_order: e.rel_order|0, label: String(e.label||'').slice(0,15),
                 motion: (e.motion||[0,0]).slice(0,2).map(x=>x|0),
                 motion_len: ml, motion_step: e.motion_step|0,
+                out_btn: e.out_btn|0, stick_thresh: e.stick_thresh|0,
                 present: true };
   }
   return rows;
@@ -3089,6 +3164,15 @@ function macroMotionRecReport(st, d){
 function macroOnInputReport(ev){
   const st = window._macroRec;
   if (st && st.which === 2){ macroMotionRecReport(st, ev.data); macroRecStatus(); return; }
+  // which 3 records a controller button as the OUTPUT. It needs the same button
+  // decode as which 0 but none of the touchpad or long-press machinery below -
+  // there is no swipe or hold to capture, just which button was pressed.
+  if (st && st.which === 3){
+    const b = macroButtonMask(ev.data);
+    if (macroPop(b) > macroPop(st.peak)) { st.peak = b; st.peakAt = performance.now(); }
+    macroRecStatus();
+    return;
+  }
   if (!st || st.which !== 0) return;
   const m = macroButtonMask(ev.data);
   if (m && !st.firstDown) st.firstDown = performance.now();
@@ -3191,14 +3275,63 @@ function macroRecStatus(){
   } else {
     const seen = st.gesture ? macroGestureName(st.gesture)
                : (st.peak ? macroChordName(st.peak) : '');
+    if (st.which === 4){
+      el.textContent = 'Recording mouse — ' + (st.mouseOut ? MACRO_OUT_BTNS[st.mouseOut]
+                                                           : 'click or scroll your mouse');
+      return;
+    }
+    if (st.which === 3){
+      const b = outBtnFromMask(st.peak >>> 0);
+      el.textContent = 'Recording output — ' + (b ? MACRO_OUT_BTNS[b] : 'press a controller button') +
+                       '   (press Stop when done)';
+      return;
+    }
     el.textContent = 'Recording controller — ' + (seen || 'press buttons or swipe the touchpad') +
                      '   (press Stop when done)';
   }
 }
 
+// Recording a MOUSE output, captured from a real mouse via DOM events - the same
+// idea as recording a keyboard combo. contextmenu is suppressed so a right-click
+// records instead of opening the menu.
+// Clicks on the portal's OWN controls are not the user demonstrating a mouse
+// action - they are operating the recorder. Pressing Stop is a LEFT click, and
+// mousedown fires before the button's onclick, so without this every recording
+// ended up as "Left click" no matter what had been pressed a moment earlier.
+function macroRecUiTarget(e){
+  const t = e && e.target;
+  return !!(t && t.closest && t.closest('button, select, input, textarea, a, label'));
+}
+
+// Capturing ONE action and stopping immediately is what removes the problem
+// rather than merely working around it: there is no Stop click left to pollute
+// the result, and "click the thing you want" is the whole interaction.
+function macroMouseCaptured(st, v){
+  st.mouseOut = v;
+  macroRecStatus();
+  setTimeout(() => { macroRecordStop(); }, 0);
+}
+
+function macroOnMouseDown(e){
+  const st = window._macroRec; if (!st || st.which !== 4) return;
+  if (macroRecUiTarget(e)) return;          // operating the recorder, not demonstrating
+  e.preventDefault(); e.stopPropagation();
+  const map = { 0: MOUT_FIRST, 2: MOUT_FIRST + 1, 1: MOUT_FIRST + 2 }; // L, R, M
+  if (map[e.button] !== undefined) macroMouseCaptured(st, map[e.button]);
+}
+function macroOnMouseWheel(e){
+  const st = window._macroRec; if (!st || st.which !== 4) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.deltaY === 0) return;
+  macroMouseCaptured(st, (e.deltaY < 0) ? (MOUT_FIRST + 3) : (MOUT_FIRST + 4));
+}
+function macroOnContextMenu(e){
+  const st = window._macroRec; if (st && st.which === 4) e.preventDefault();
+}
+
 async function macroRecord(row, which){
   if (window._macroRec){ await macroRecordStop(); return; }
-  window._macroRec = {row, which, peak:0, peakAt:0, firstDown:0, upAt:0,
+  window._macroRec = {row, which, peak:0, mouseOut:0, peakAt:0, firstDown:0, upAt:0,
                       press:[], release:[], sawMeta:false, unknown:false,
                       tDown:false, tStart:0, tEnd:0, tX0:0, tY0:0,
                       tLastX:0, tLastY:0, tTwo:false, gesture:0,
@@ -3208,9 +3341,16 @@ async function macroRecord(row, which){
     // button might itself be bound to a chord macro. Suspending would mask
     // exactly the interference this prototype exists to measure.
     try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
-  } else if (which === 0){
-    await macroSuspendFiring(true);   // don't let an enabled macro type into the portal
+  } else if (which === 0 || which === 3){
+    // which 3 records the OUTPUT as a controller button. Same input stream as
+    // recording an input, so the same suspend applies: an enabled macro must not
+    // fire while the user is pressing the button they want to capture.
+    await macroSuspendFiring(true);
     try { device.addEventListener('inputreport', macroOnInputReport); } catch(e){}
+  } else if (which === 4){
+    window.addEventListener('mousedown', macroOnMouseDown, true);
+    window.addEventListener('wheel', macroOnMouseWheel, { capture: true, passive: false });
+    window.addEventListener('contextmenu', macroOnContextMenu, true);
   } else {
     window.addEventListener('keydown', macroOnKeyDown, true);
     window.addEventListener('keyup', macroOnKeyUp, true);
@@ -3223,6 +3363,39 @@ async function macroRecordStop(){
   window._macroRec = null;
   const rows = window._macroRows || [];
   const m = rows[st.row] || (rows[st.row] = macroBlankRow());
+
+  if (st.which === 4){
+    window.removeEventListener('mousedown', macroOnMouseDown, true);
+    window.removeEventListener('wheel', macroOnMouseWheel, { capture: true });
+    window.removeEventListener('contextmenu', macroOnContextMenu, true);
+    if (st.mouseOut){
+      m.out_btn = st.mouseOut;
+      if (macroCanHold(m)) m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+    }
+    macroRender();
+    const elm = document.getElementById('macrosave');
+    if (elm) elm.textContent = st.mouseOut ? ('Output set to ' + MACRO_OUT_BTNS[st.mouseOut] + '.')
+                                           : 'No mouse action was captured - try again.';
+    return;
+  }
+
+  if (st.which === 3){
+    // Controller button as the OUTPUT. st.peak is the union of everything held
+    // during the capture; take the first mappable button from it so a stray
+    // second press does not decide the result.
+    try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
+    await macroSuspendFiring(false);
+    const b = outBtnFromMask(st.peak >>> 0);
+    if (b){
+      m.out_btn = b;
+      if (macroCanHold(m)) m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+    }
+    macroRender();
+    const el = document.getElementById('macrosave');
+    if (el) el.textContent = b ? ('Output set to ' + MACRO_OUT_BTNS[b] + '.')
+                               : 'No mappable button was pressed - try again.';
+    return;
+  }
 
   if (st.which === 2){
     try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
@@ -3483,6 +3656,139 @@ function macroMotionPanelHTML(){
   return h;
 }
 
+// --- hold / replace / output kind / stick ------------------------------------
+function macroSetFlag(i, bit, on){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  m.flags = on ? ((m.flags|0) | bit) : ((m.flags|0) & ~bit);
+  macroRender();
+}
+// Output kind: keyboard or controller. Splitting this out is what lets Record and
+// Pick mean the same thing on both sides - previously the keyboard had Record and
+// Pick while the controller had a dropdown, so the same question was asked two
+// different ways in one row.
+// 0 keyboard, 1 controller button, 2 mouse.
+function macroOutKind(i, m){
+  // Stored: out_btn 0 = keyboard, non-zero = that controller button. There is no
+  // encoding for "controller, not chosen yet", so the intent is held here while
+  // the row is being edited. Presetting Cross instead - which this did first -
+  // invents an answer the user never gave and then shows it back to them.
+  const k = (window._macroOutKind || {})[i];
+  if (k !== undefined) return k;
+  if (!m || (m.out_btn|0) === 0) return 0;
+  return macroIsMouseOut(m.out_btn) ? 2 : 1;
+}
+function macroSetOutKind(i, kind){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  const map = (window._macroOutKind = window._macroOutKind || {});
+  map[i] = kind;
+  if (kind === 0){
+    m.out_btn = 0;                       // keyboard: keys[] carries the output
+  } else {
+    // Switching between controller and mouse must drop a button from the other
+    // family, or the row keeps an output the new kind cannot express.
+    const isMouse = macroIsMouseOut(m.out_btn);
+    if ((kind === 2) !== isMouse) m.out_btn = 0;
+    if (macroCanHold(m)) m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+  }
+  macroRender();
+}
+
+function macroSetOutBtn(i, v){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  m.out_btn = (+v)|0;
+  // A controller-button output is almost always a REMAP, and a remap has to be
+  // held: X -> Circle as a burst would tap Circle once when X is released, not
+  // hold Circle while X is down. Same reasoning as a stick row, so switch HOLD
+  // on with the selection rather than leaving a combination that behaves
+  // nothing like what was asked for. Only on the way IN, and the checkbox stays
+  // editable - a chord that taps a button once is still a legitimate thing to
+  // build, it is just not the default reading of "map this to that".
+  if (m.out_btn !== 0 && macroCanHold(m)) m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+  macroRender();
+}
+function macroSetStick(i, which){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  if (which === 0){                       // back to a controller-input row
+    m.gesture = 0;
+  } else {
+    // A stick row is HOLD by construction: the whole point is that a direction
+    // is asserted while the stick is deflected. Setting it here rather than
+    // leaving it to the user removes a combination that silently does nothing.
+    m.gesture = GEST_STICK | 0x80 | (which === 2 ? GEST_STICK_RIGHT : 0);
+    m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+    m.chord = 0;
+  }
+  macroRender();
+}
+function macroSetStickKey(i, dir, usage){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  m.keys = (m.keys||[0,0,0,0]).slice(0,4);
+  m.keys[dir] = (+usage)|0;
+  macroRender();
+}
+function macroSetStickThresh(i, v){
+  const m = (window._macroRows||[])[i]; if (!m) return;
+  const n = +v; m.stick_thresh = (n >= 10 && n <= 120) ? n : 0;
+  macroRender();
+}
+// HOLD is meaningless on a swipe or a motion gesture: those are events that
+// complete, with nothing to hold. Mirrors the firmware check in hold_task();
+// a rule enforced in only one of the two is how the v1.14.5 bow went missing.
+function macroCanHold(m){
+  if (!m) return false;
+  if (m.gesture & GEST_STICK) return true;
+  return (m.gesture|0) === 0 && !!m.chord;
+}
+
+// The second line of each macro row: how the output behaves, and for a stick
+// row the four direction outputs. Kept on the SAME row rather than a separate
+// panel - a remap is a macro with different settings, not a different feature.
+function macroOptionsRowHTML(i, m, isStick, dis){
+  const canHold = macroCanHold(m);
+  const hold    = (m.flags & MACRO_FLAG_HOLD) !== 0;
+  let h = '<tr><td></td><td colspan="6" style="padding:0 6px 6px 6px;font-size:12px;color:var(--sub)">';
+  h += '<select onchange="macroSetStick(' + i + ', +this.value)"' + dis + ' style="padding:1px 3px;font-size:12px;margin-right:10px">';
+  const which = !isStick ? 0 : ((m.gesture & GEST_STICK_RIGHT) ? 2 : 1);
+  [[0,'Input: controller'],[1,'Input: left stick'],[2,'Input: right stick']].forEach(o => {
+    h += '<option value="' + o[0] + '"' + (which === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+  });
+  h += '</select>';
+  if (!isStick){
+    // Just the KIND here. Which key or which button is chosen with Record or
+    // Pick on the row above, the same way for both - the long dropdown made the
+    // controller side look like a different kind of setting from the keyboard.
+    h += '<select onchange="macroSetOutKind(' + i + ', +this.value)"' + dis + ' style="padding:1px 3px;font-size:12px;margin-right:10px">';
+    const outKind2 = macroOutKind(i, m);
+    h += '<option value="0"' + (outKind2 === 0 ? ' selected' : '') + '>Output: keyboard</option>';
+    h += '<option value="1"' + (outKind2 === 1 ? ' selected' : '') + '>Output: controller button</option>';
+    h += '<option value="2"' + (outKind2 === 2 ? ' selected' : '') + '>Output: mouse</option>';
+    h += '</select>';
+
+  }
+  h += '<label style="margin-right:10px"' + (canHold ? '' : ' title="Only a button or stick input can be held - a swipe or gesture is an event that completes"') + '>' +
+       '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_HOLD, this.checked)"' +
+       (hold ? ' checked' : '') + (canHold && !dis ? '' : ' disabled') + '> hold while held</label>';
+  h += '<label' + (hold ? '' : ' title="Only a held row can replace its input"') + '>' +
+       '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_REPLACE, this.checked)"' +
+       ((m.flags & MACRO_FLAG_REPLACE) ? ' checked' : '') + (hold && !dis ? '' : ' disabled') + '> hide input from game</label>';
+  if (isStick){
+    h += '<div style="margin-top:5px">';
+    STICK_DIRS.forEach((d, k) => {
+      h += '<span style="margin-right:8px">' + d + ' <select onchange="macroSetStickKey(' + i + ',' + k + ', +this.value)"' + dis + ' style="padding:1px 3px;font-size:12px">';
+      h += '<option value="0">—</option>';
+      for (const ko of macroKeyOptions()){
+        h += '<option value="' + ko[0] + '"' + ((m.keys[k]|0) === ko[0] ? ' selected' : '') + '>' + escAttr(ko[1]) + '</option>';
+      }
+      h += '</select></span>';
+    });
+    h += ' threshold <input type="number" min="10" max="120" placeholder="48" value="' + (m.stick_thresh || '') + '" ' +
+         'style="width:56px;padding:1px 3px;font-size:12px" oninput="macroSetStickThresh(' + i + ', this.value)"' + dis + '>';
+    h += '</div>';
+  }
+  h += '</td></tr>';
+  return h;
+}
+
 function macroRender(){
   const box = document.getElementById('macrobox');
   if (!box) return;
@@ -3513,6 +3819,8 @@ function macroRender(){
   if (rec){
     h += '<div id="macrorec" style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
          (rec.which === 0 ? 'Recording controller — hold the buttons you want, then press Stop. Hold for ~0.5s or more to record a long press.'
+        : rec.which === 3 ? 'Recording controller OUTPUT — press the button this macro should send, then press Stop.'
+        : rec.which === 4 ? 'Recording mouse OUTPUT — click or scroll anywhere outside the buttons below. It stops on its own once it has one.'
                           : 'Recording keyboard — press your combo, then press Stop.') + '</div>';
   }
 
@@ -3525,9 +3833,12 @@ function macroRender(){
     const m = rows[i];
     if (!m || !m.present) continue;   // only rows that exist; + creates one
     shown++;
-    const inLbl  = m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord);
-    const inTxt  = inLbl ? (inLbl + ((m.flags & 1) ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
-    const outTxt = macroComboName(m.keys, m.rel_order) || '—';
+    const isStick = (m.gesture & GEST_STICK) !== 0;
+    const inLbl  = isStick ? ((m.gesture & GEST_STICK_RIGHT) ? 'Right stick' : 'Left stick')
+                           : (m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord));
+    const inTxt  = inLbl ? (inLbl + ((!isStick && (m.flags & 1)) ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
+    const outTxt = isStick ? (STICK_DIRS.map((d,k) => d + ' ' + (USAGE_NAME[m.keys[k]] || (m.keys[k] ? '0x'+m.keys[k].toString(16) : '—'))).join('  '))
+                 : ((m.out_btn ? MACRO_OUT_BTNS[m.out_btn] : macroComboName(m.keys, m.rel_order)) || '—');
     const recIn  = rec && rec.row === i && rec.which === 0;
     const recOut = rec && rec.row === i && rec.which === 1;
     const dis    = rec ? ' disabled' : '';
@@ -3539,12 +3850,37 @@ function macroRender(){
     h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button></td>';
     h += '<td style="padding:2px 8px;color:' + (inLbl ? 'inherit' : 'var(--sub)') + '">' + inTxt + '</td>';
     const pickOpen = pick && pick.row === i;
-    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',1)"' + (rec && !recOut ? ' disabled' : '') + '>' + (recOut ? 'Stop' : 'Record output') + '</button>';
-    h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickOpen(' + i + ')"' + (rec || pickOpen ? ' disabled' : '') + ' title="Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture">Pick</button></td>';
+    h += '<td style="white-space:nowrap">';
+    if (isStick){
+      h += '<span style="font-size:12px;color:var(--sub)">set below</span>';
+    } else {
+      // Record and Pick mean the same thing on both sides now: which one you
+      // get depends on the output KIND, not on whether the buttons are greyed
+      // out. Previously the keyboard had Record/Pick and the controller had a
+      // dropdown, so the same question was asked two different ways in one row.
+      const outKind = macroOutKind(i, m);
+      const which   = outKind === 1 ? 3 : outKind === 2 ? 4 : 1;
+      const recNow  = rec && rec.row === i && (rec.which === 1 || rec.which === 3 || rec.which === 4);
+      h += '<button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',' + which + ')"' +
+           (rec && !recNow ? ' disabled' : '') + '>' + (recNow ? 'Stop' : 'Record output') + '</button>';
+      h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickOpen(' + i + ')"' +
+           (rec || pickOpen ? ' disabled' : '') +
+           ' title="' + (outKind === 1 ? 'Choose the controller button by hand'
+                        : outKind === 2 ? 'Choose the mouse action by hand'
+                        : 'Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture') +
+           '">Pick</button>';
+    }
+    h += '</td>';
     h += '<td style="padding:2px 8px;color:' + (outTxt !== '—' ? 'inherit' : 'var(--sub)') + '">' + outTxt + '</td>';
     h += '<td><button class="btn btn-outline" style="padding:2px 6px" onclick="macroDeleteRow(' + i + ')"' + dis + '>−</button></td>';
     h += '</tr>';
-    if (pickOpen){
+    h += macroOptionsRowHTML(i, m, isStick, dis);
+    if (pickOpen && macroOutKind(i, m) === 2){
+      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickOutHTML(i, m, MOUT_FIRST, MOUT_LAST, 'Which mouse action should this macro send?') + '</td></tr>';
+    } else if (pickOpen && macroOutKind(i, m) === 1){
+      // Controller output: pick a BUTTON, not a key combo.
+      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickBtnHTML(i, m) + '</td></tr>';
+    } else if (pickOpen){
       h += '<tr><td colspan="7" style="padding:8px 10px;background:#111a22;border-radius:6px">';
       h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' +
            'Set the combo by hand. Needed for anything the browser cannot capture — ' +
@@ -3644,19 +3980,38 @@ async function macroImportFile(file){
     ' \u2014 press "Save macros to device" to write them.';
 }
 
+// Any ENABLED row with a mouse output, in the rows as they will be saved.
+function macroAnyMouseEnabled(){
+  const rows = window._macroRows || [];
+  for (let i = 0; i < MACRO_COUNT; i++){
+    const m = rows[i];
+    if (m && m.present && macroBit(i) && macroIsMouseOut(m.out_btn)) return true;
+  }
+  return false;
+}
+
 async function macroSaveTable(){
   const el = document.getElementById('macrosave');
   if (!device){ if (el) el.textContent = 'No device.'; return; }
   if (el) el.textContent = 'Writing macro table…';
+  // Whether the MOUSE interface exists depends on the committed table: a saved,
+  // enabled mouse row makes the dongle present a mouse. Editing must not
+  // re-enumerate under the user, so the comparison is made across the save -
+  // what the device held before against what it will hold after.
+  const mouseBefore = !!window._macroMouseSaved;
+  const mouseAfter  = macroAnyMouseEnabled();
   try {
     await hidLocked(() => macroWriteAll());
   } catch(e){
     if (el) el.textContent = 'Table write failed: ' + e;
     return;
   }
+  window._macroMouseSaved  = mouseAfter;
+  window._macroMouseReenum = (mouseBefore !== mouseAfter);
   if (el) el.textContent = 'Saving enable state…';
   await saveAll();   // writes macro_disable, persists to flash, reconnects if the
                      // keyboard interface has to appear or disappear
+
 
   // saveAll()'s common path refreshes savedSnapshot and returns WITHOUT calling
   // render(), deliberately - it avoids handle churn when nothing about the USB
@@ -3678,7 +4033,153 @@ const TABS = [
   {id:'slots',    label:'Slots'},
 ];
 window._tab = window._tab || 'triggers';
-function setTab(id){ window._tab = id; render(); }
+// Picking a tab clears any search: the tabs mean "take me to this page", and
+// leaving a filter applied underneath would show that page's name while showing
+// results from everywhere else.
+function setTab(id){ window._tab = id; window._q = ''; render(); }
+
+// ===== Find a setting =====
+// The tabs answer "what can I change on this page"; they cannot answer "where
+// did they put X". This filters EVERY field on EVERY tab at once and groups the
+// matches under the section and tab they actually live in, so the answer also
+// teaches where to look next time.
+//
+// Nothing is re-bound. Matches are drawn by the same fieldRowHTML() the tabs
+// use, so a row edited from a search result writes to config[] and saves exactly
+// as it would in place, and saveAll() still walks FIELDS rather than the DOM.
+// With an empty query render() takes its original path untouched.
+window._q = window._q || '';
+function setSearch(v){ window._q = v || ''; render(); }
+function searchKey(e){ if (e && e.key === 'Escape') setSearch(''); }
+
+// Each term is matched in two folds: the plain lowercase text, which keeps word
+// boundaries, and a squashed form with the punctuation and spaces removed. That
+// is what makes "deadzone" find "Dead zone" and "lowpass" find "low-pass"
+// without maintaining a list of aliases that would go stale as fields are added.
+const _squash = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'');
+function searchTerms(q){
+  return String(q).toLowerCase().split(/\s+/).filter(Boolean)
+           .map(t => ({ plain:t, squashed:_squash(t) }))
+           .filter(t => t.squashed);
+}
+
+// Everything a field can reasonably be searched by: its label, its config key,
+// its section, the glossary line, and the labels of its own dropdown options.
+// The options matter — "flick stick", "ratchet" and "always on" are option
+// labels, not field names, and are exactly what someone types when hunting for
+// the setting that contains them.
+function fieldHaystack(f, sectionTitle){
+  const [fid,key,type,label,kind,opts] = f;
+  let s = `${label} ${key} ${sectionTitle}`;
+  const d = DESCRIPTIONS[key];
+  if (d) s += ' ' + d;
+  if (kind === 'select' && opts){
+    const pairs = Array.isArray(opts) ? opts : Object.entries(opts);
+    for (const [,lbl] of pairs) s += ' ' + lbl;
+  } else if (kind === 'bits' && Array.isArray(opts)){
+    s += ' ' + opts.join(' ');
+  }
+  return s;
+}
+// All terms must match (AND), so adding a word narrows rather than widens.
+function fieldMatches(hay, terms){
+  const plain = String(hay).toLowerCase(), squashed = _squash(hay);
+  return terms.every(t => plain.includes(t.plain) || squashed.includes(t.squashed));
+}
+
+// Sections in their normal order, reduced to the fields that match. Both trigger
+// sections appear separately here rather than as the side-by-side pair: a lone
+// matching row has no partner to align with, and each section's own title says
+// which trigger it belongs to.
+// Whole PANELS that are not config fields, so searchResults' walk over SECTIONS
+// cannot see them. The Macros tab is drawn by macroRender() into #macrobox and
+// the slot list by refreshSlots(), so searching "gesture" or "backup" found
+// nothing at all - the feature exists, the search just had no index for it.
+// Terms are what someone would actually type looking for the thing, not the
+// internal names.
+const PANEL_SEARCH = [
+  { tab:'macros', title:'Macros — button press / combo',
+    blurb:'Bind a controller button or combination to a keyboard combo or another controller button.',
+    terms:'macro macros chord combo button press remap rebind keyboard shortcut hotkey bind' },
+  { tab:'macros', title:'Macros — motion gestures',
+    blurb:'Hold a gate button and flick the controller to fire a macro.',
+    terms:'gesture gestures motion flick wrist gate stroke shake tilt draw' },
+  { tab:'macros', title:'Macros — touchpad swipes',
+    blurb:'Swipe the touchpad to fire a macro. Direction, half of the pad, one or two fingers.',
+    terms:'gesture gestures swipe touchpad pad finger fingers slide' },
+  { tab:'macros', title:'Macros — stick to keys',
+    blurb:'Map a stick to four keys, one per direction. Diagonals press both.',
+    terms:'stick sticks wasd analog direction directions remap keys movement' },
+  { tab:'macros', title:'Macros — hold and replace',
+    blurb:'Hold keeps the output asserted while the input is held; Replace hides the input from the game.',
+    terms:'hold held replace suppress hide remap toggle burst' },
+  { tab:'macros', title:'Macros — import, export and backup',
+    blurb:'Macro definitions are shared by every profile and travel in their own file.',
+    terms:'macro export import backup restore share file json save' },
+  { tab:'slots', title:'Profile slots — backup and restore',
+    blurb:'Save the whole configuration to a slot, and back every slot up to one file.',
+    terms:'slot slots profile profiles backup restore save load game per-game' },
+];
+
+function panelSearchResults(q){
+  const terms = searchTerms(q);
+  if (!terms.length) return [];
+  return PANEL_SEARCH.filter(p =>
+    fieldMatches((p.title + ' ' + p.blurb + ' ' + p.terms).toLowerCase(), terms));
+}
+
+function searchResults(q){
+  const terms = searchTerms(q);
+  if (!terms.length) return [];
+  const out = [];
+  for (const sec of SECTIONS){
+    const hits = sec.fields.filter(f => fieldMatches(fieldHaystack(f, sec.title), terms));
+    if (hits.length) out.push({ sec, hits });
+  }
+  return out;
+}
+
+function searchBarHTML(q, groups){
+  const n = groups.reduce((a,g) => a + g.hits.length, 0);
+  const tabs = new Set(groups.map(g => SECTION_TAB[g.sec.title] || 'device'));
+  const hits = !q ? `${FIELDS.length} settings`
+             : n  ? `${n} match${n===1?'':'es'} in ${tabs.size} tab${tabs.size===1?'':'s'}`
+                  : 'no matches';
+  return `<div class="searchwrap">
+      <input type="search" id="qbox" value="${escAttr(q)}" autocomplete="off" spellcheck="false"
+             placeholder="Find a setting — its name, or a word for what it does"
+             oninput="setSearch(this.value)" onkeydown="searchKey(event)">
+      <span class="hits">${hits}</span>` +
+    (q ? `<button class="btn btn-outline" style="padding:8px 14px" onclick="setSearch('')">Clear</button>` : '') +
+  `</div>`;
+}
+
+function searchResultsHTML(q, groups){
+  const panels = panelSearchResults(q);
+  if (!groups.length && !panels.length){
+    return `<div class="card"><p class="nohits">Nothing matches that.<br>
+      Try a word for what it does — <b>rumble</b>, <b>gyro</b>, <b>wake</b>, <b>dead zone</b>,
+      <b>flick</b>, <b>macro</b>, <b>speaker</b>.</p></div>`;
+  }
+  let html = '';
+  // Panels first: they are whole features, and a settings row is a poor answer
+  // to someone who typed the name of one.
+  for (const p of panels){
+    const tabLabel = (TABS.find(t => t.id === p.tab) || {}).label || p.tab;
+    html += `<div class="card"><div class="card-title">${p.title} <span class="intab">· ${tabLabel} tab</span></div>` +
+            `<p style="margin:6px 0 8px;color:var(--sub);font-size:13px">${p.blurb}</p>` +
+            `<button class="btn btn-outline" style="padding:2px 10px" onclick="setSearch('');setTab('${p.tab}')">Open the ${tabLabel} tab</button>` +
+            `</div>`;
+  }
+  for (const { sec, hits } of groups){
+    const tabId = SECTION_TAB[sec.title] || 'device';
+    const tabLabel = (TABS.find(t => t.id === tabId) || {}).label || tabId;
+    html += `<div class="card"><div class="card-title">${sec.title} <span class="intab">· ${tabLabel} tab</span></div>`;
+    for (const f of hits) html += fieldRowHTML(f);
+    html += `</div>`;
+  }
+  return html;
+}
 
 // Startup self-check. This portal is one large hand-edited file and several
 // regressions were invisible: a field silently not rendered, an event attribute
@@ -3875,7 +4376,13 @@ function triggerPairHTML(){
 function render(){
   const app=document.getElementById('app');
   const on = device && device.opened;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.24.2</span></h1>
+  // Every keystroke in the search box re-renders, which replaces the box itself
+  // and drops the caret. Note where it was before the rebuild and put it back
+  // afterwards; anything else makes the field unusable after one character.
+  const _qEl = (typeof document !== 'undefined') ? document.activeElement : null;
+  const _qFocused = !!(_qEl && _qEl.id === 'qbox');
+  const _qCaret = _qFocused ? _qEl.selectionStart : 0;
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.1</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
@@ -3886,10 +4393,19 @@ function render(){
   }
   html += profileBarHTML();   // loaded-profile line, under the connect box, every tab
   const tab = window._tab || 'triggers';
+  // A search spans every tab, so no single tab is the one being shown while it
+  // is running. Marking one active would be a lie about where the results came
+  // from; clicking any tab clears the search and returns to that page.
+  const q = (window._q || '').trim();
+  const groups = q ? searchResults(q) : [];
   html += `<div class="tabbar">` + TABS.map(t =>
-      `<button class="tab ${t.id===tab?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
+      `<button class="tab ${(!q && t.id===tab)?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`
     ).join('') + `</div>`;
+  html += searchBarHTML(q, groups);
 
+  if (q){
+    html += searchResultsHTML(q, groups);
+  } else {
   for(const section of SECTIONS){
     if ((SECTION_TAB[section.title] || 'device') !== tab) continue;
     if (section.title === L2_TITLE) continue;              // drawn beside R2
@@ -3900,6 +4416,7 @@ function render(){
     if (section.title === 'Auto-Haptics & Speaker Effect Leak')
       html += `<div class="card"><div class="card-title">Auto-haptics — live <span style="font-size:11px;color:var(--sub)">(updates while connected)</span></div><div id="ahbox" style="font-size:13px">Connect to see live auto-haptics activity.</div></div>`;
   }
+  }
   html += `<div class="actions">
     <button class="btn btn-green" onclick="saveAll()">Save to Device</button>
     <button class="btn btn-outline" onclick="readAll().then(render)">Re-read</button>
@@ -3909,11 +4426,11 @@ function render(){
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProfile(event)">
     <button class="btn btn-outline" onclick="rebootBootloader()">Reboot to Bootloader</button>
   </div>
-  ` + (tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
+  ` + (!q && tab==='slots' ? `<div class="card"><div class="card-title">Profile Slots <span style="font-size:11px;color:var(--sub)">(stored on the dongle — fw 1.1.2+)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).</div>
     <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://artzox.github.io/DS5Dongle-Studio/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
     <div id="slotbox" style="font-size:13px">Connect to manage slots.</div></div>` : '') + `
-  ` + (tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
+  ` + (!q && tab==='triggers' ? `<div class="card"><div class="card-title">Trigger Effect Monitor &amp; Custom Effects <span style="font-size:11px;color:var(--sub)">(capture real game effects)</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
     <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">Refresh captured effects</button>
     <span style="font-size:12px;color:var(--sub)"> · Load custom effect file → </span>
@@ -3970,7 +4487,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
     </div></div>` : '') + `
-  ` + (tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
+  ` + (!q && tab==='device' ? `<div class="card"><div class="card-title">Diagnostic</div>
     <div id="diagbox" style="font-size:12px;color:var(--sub)">Reading live stream…</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
       <span style="font-size:12px;color:var(--sub)">Wake troubleshooting — what the dongle observed across sleeps since it was powered up:</span><br>
@@ -3979,6 +4496,10 @@ function render(){
     </div></div>` : '') + `
   `;
   app.innerHTML=html;
+  if (_qFocused){
+    const qi = document.getElementById('qbox');
+    if (qi){ qi.focus(); try { qi.setSelectionRange(_qCaret, _qCaret); } catch(e){} }
+  }
   // Only sweep the slots when their list is actually on screen. render() runs on
   // every tab switch and on some dropdown changes, and the sweep costs one HID
   // round-trip per slot (~60 ms each), so refreshing it from a tab that doesn't
@@ -3989,8 +4510,11 @@ function render(){
   // placeholders while their data still exists in memory. Repopulate them, or the
   // builder shows an empty list yet still rejects a stage as a duplicate zone.
   try { if (typeof macroRender === 'function') macroRender(); } catch(e){}
-  // Only sweep the macro table when its tab is on screen: 32 HID round-trips.
-  if ((window._tab || 'triggers') === 'macros' && device && !window._macroRows
+  // Only sweep the macro table when it is on screen: 32 HID round-trips. Gate on
+  // the box existing rather than on the tab id — identical on the Macros tab,
+  // and it also covers the macro row arriving as a search hit, which would
+  // otherwise sit forever on "Reading macros…".
+  if (document.getElementById('macrobox') && device && !window._macroRows
       && !saving && !slotsBusy) {
     try { refreshMacros(); } catch(e){}
   }
