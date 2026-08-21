@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [1.26.1] — 2026-08-21
+## [1.26.2] — 2026-08-21
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
 Existing macros are migrated in place on first boot — the on-flash record grows
@@ -45,6 +45,10 @@ Supersedes the 1.24.3–1.26.0 development builds, which were not released.
   taps a button once is still a legitimate thing to build.
 
 ### Fixed
+- **Importing a profile could not describe a remap.** The notice that names what
+  each enabled macro would fire read the keyboard combo, which is empty on a
+  controller or mouse output - so exactly the rows that press a button or click
+  for you were listed as "?".
 - **"hide input from game" did nothing for L2 and R2.** Suppression cleared the
   digital click bit but left the analog axis untouched, and games read the
   triggers as axes — so the trigger stayed fully visible while every other button

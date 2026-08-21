@@ -3093,14 +3093,29 @@ function macroTableFromJson(list){
 // THIS dongle holds. The mask and the definitions travel separately, so an
 // imported profile enables the local row N, not the row N its author had - which
 // is a silent wrong action rather than a silent no-op if the two disagree.
+// What a row actually sends, whatever kind of output it has.
+function macroOutputName(m){
+  if (!m) return '';
+  if ((m.gesture|0) & GEST_STICK){
+    return STICK_DIRS.map((d,k) => d + ' ' + (USAGE_NAME[m.keys[k]] || '—')).join(' ');
+  }
+  const ob = m.out_btn|0;
+  if (ob) return MACRO_OUT_BTNS[ob] || ('output ' + ob);
+  return macroComboName(m.keys, m.rel_order);
+}
+
 function macroEnabledSummary(mask){
   const rows = window._macroRows || [];
   const on = [];
   for (let i=0;i<MACRO_COUNT;i++){
     if (((mask>>>0) & (1<<i)) !== 0) continue;   // stored inverted: clear bit = enabled
     const m = rows[i];
+    // Describe by OUTPUT KIND. keys[] is only the answer for a keyboard row -
+    // a controller or mouse remap leaves it empty, so this used to print "?" for
+    // exactly the rows where a surprise matters most: the ones that press a
+    // button or click for you.
     const what = (!m || macroRowEmpty(m)) ? '(empty)'
-               : ((m.label ? m.label + ' — ' : '') + (macroComboName(m.keys, m.rel_order) || '?'));
+               : ((m.label ? m.label + ' — ' : '') + (macroOutputName(m) || '?'));
     on.push('  ' + (i+1) + '. ' + what);
   }
   return on;
@@ -4382,7 +4397,7 @@ function render(){
   const _qEl = (typeof document !== 'undefined') ? document.activeElement : null;
   const _qFocused = !!(_qEl && _qEl.id === 'qbox');
   const _qCaret = _qFocused ? _qEl.selectionStart : 0;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.1</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.2</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
