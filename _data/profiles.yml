@@ -8,6 +8,11 @@
   desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
   wake: true
 
+- game: "Burnout Paradise"
+  file: "/shared/profiles/Burnout_Paradise.json"
+  desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50, Two-stage R2 with Boost."
+  wake: true
+
 - game: "Control"
   file: "/shared/profiles/Control.json"
   desc: "Auto-haptics from game audio, no native passthrough, converted rumble 50."
@@ -25,7 +30,12 @@
 
 - game: "FPS (generic preset)"
   file: "/shared/profiles/FPS.json"
-  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50, Stick-Gyro."
+  wake: true
+
+- game: "FPS (generic preset)"
+  file: "/shared/profiles/FPS_mouse_gyro_no_flick.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50, Mouse-Gyro, no Flick."
   wake: true
 
 - game: "God of War (2018)"

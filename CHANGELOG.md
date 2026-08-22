@@ -2,6 +2,313 @@
 
 All notable changes to this project are documented here.
 
+## [1.28.4] — 2026-08-22
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
+
+Supersedes the 1.27.x and 1.28.0-1.28.3 development builds, which were not
+released.
+
+### Added
+- **Browser audio bridge (test mode).** Feeds PC audio to the dongle from the
+  portal itself, so auto-haptics can be tried without installing Python. Nothing
+  is uploaded — the audio is routed inside the browser and out to the dongle, and
+  the screen share is only how Chrome exposes system audio.
+  - **Not a replacement for `ds5audio.py`.** The share dialog cannot be automated,
+    so it cannot start with a game; the feed is stereo, so `--map rear`, the ch2/3
+    DSP source and native passthrough on ch2/3 stay script-only; and it needs
+    Chrome on Windows.
+  - Requires the **hosted** portal. A locally saved copy has no persistent origin,
+    so the browser forgets the audio permission immediately and never lists any
+    output device.
+  - Share the **entire screen** and tick **Share system audio** — it is off by
+    default, and the capture is silent without it.
+  - A live signal readout polls the dongle's own level, so it shows what actually
+    arrived rather than what the browser sent.
+- **Separate vertical gyro sensitivity.** Leave it at 0 and both axes use the
+  existing Sensitivity setting. A lower value is the usual choice: a game's
+  vertical aiming range is far smaller than its horizontal one.
+
+### Fixed
+- **Profile slots could show as empty after a re-enumeration.** Reacquiring the
+  device took the first handle it found without checking it worked. The browser
+  can hand back the pre-reconnect object, which reports itself as open while every
+  read silently returns nothing — so the slot sweep saw empty slots and drew an
+  empty list. The handle is now proven with a read before it is adopted.
+- **The reconnect used by every profile switch went off the USB bus for only
+  150 ms**, against a host port debounce of about 100 ms. The identity-change path
+  has used 250 ms since v1.18.12 for exactly this reason; both now match. A missed
+  disconnect leaves the host on the old descriptor, so a setting that adds or
+  removes an interface appears not to take effect.
+- **The configuration could not grow past one flash page.** The sector is erased
+  whole, but only the first 256 bytes were ever programmed, so `Config_body` was
+  capped far below what the storage allows. The write length now follows the
+  struct, and the assert sits on the real ceiling — the profile slot stride.
+
+### Known
+- Switching slots while the browser audio bridge is running can produce a feedback
+  howl. Set the profile first, then start the bridge.
+
+## [1.26.3] — 2026-08-21
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
+Existing macros are migrated in place on first boot — the on-flash record grows
+from 33 to 35 bytes.
+
+Supersedes the 1.24.3–1.26.0 development builds, which were not released.
+
+### Added
+- **Remapping.** A macro row can now replace an input rather than only adding a
+  keystroke to it.
+  - **hold while held** keeps the output asserted for as long as the input is
+    held, instead of firing once. Without it a remap taps its target on release.
+  - **hide input from game** removes the original input from the report, so the
+    game sees only the replacement.
+- **Controller buttons as an output** — any face, shoulder, stick or trigger
+  button. More reliable in-game than a keystroke: a game that sees a DualSense is
+  in controller mode, and many ignore the keyboard entirely or flip every
+  on-screen prompt when one arrives.
+- **Mouse as an output** — left, right and middle click, scroll up and scroll
+  down. Clicks are held while the input is held so click-and-drag works; scroll
+  sends one tick per press. Choosing a mouse output makes the dongle present a
+  mouse, so the controller re-enumerates — but only on **save**, never while a
+  macro is being edited.
+- **Sticks as an input.** One row drives four outputs, one per direction.
+  Diagonals press both, and each axis has its own threshold with hysteresis so a
+  stick resting on the edge does not chatter.
+- **Trigger-to-trigger remaps stay analog.** `L2 → R2` carries the travel across
+  rather than collapsing a variable throttle into an on/off switch. Any other
+  input driving a trigger is a full press, since there is no travel to copy.
+- **Search** in the portal, covering both settings and whole panels — searching
+  for *gesture*, *wasd* or *backup* now finds the feature, not just fields.
+
+### Changed
+- **Record and Pick work the same way for every output kind.** Choosing keyboard,
+  controller or mouse decides what they capture; previously the keyboard had
+  Record and Pick while the controller side had a dropdown, so one row asked the
+  same question two different ways.
+- Selecting a controller or mouse output turns **hold while held** on, since that
+  is what a remap almost always means. The checkbox stays editable — a chord that
+  taps a button once is still a legitimate thing to build.
+
+### Fixed
+- **A remap showed a long-press time it does not use.** The threshold only
+  applies to a burst macro; a hold row is driven by a different path that reads
+  neither the flag nor the value, so a recorded "(hold 1.18s)" on a remap
+  claimed a delay that never happened. It is no longer shown there, and turning
+  hold on clears it rather than leaving it to reappear later.
+- **Importing a profile could not describe a remap.** The notice that names what
+  each enabled macro would fire read the keyboard combo, which is empty on a
+  controller or mouse output - so exactly the rows that press a button or click
+  for you were listed as "?".
+- **"hide input from game" did nothing for L2 and R2.** Suppression cleared the
+  digital click bit but left the analog axis untouched, and games read the
+  triggers as axes — so the trigger stayed fully visible while every other button
+  hid correctly.
+- **Upgrading from 1.20.0–1.24.2 would have discarded every macro.** The record
+  grew to 35 bytes and the migration handled the 28-byte layout but not the
+  33-byte one, which is what every device in that range holds; unrecognised
+  lengths are refused rather than guessed at, so the table was dropped.
+- **Switching gyro output straight to Mouse + Flick Stick did not re-enumerate.**
+  The check tested for one specific value rather than the range that needs the
+  mouse interface, so the interface appeared without the host being told.
+
+## [1.24.2] — 2026-08-20
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+the new settings are appended at the tail of the struct, so existing settings and
+every saved slot load untouched.
+
+Supersedes the 1.23.x and 1.24.0–1.24.1 development builds, which were not
+released.
+
+### Added
+- **Gyro output selector.** Motion aiming can now drive a **mouse** instead of the
+  right stick. A mouse takes deltas, which is what a gyro natively produces, so it
+  is finer at low speed and never pegs on a fast turn — where the stick is an
+  absolute input with a dead zone and a limited range. Selecting it adds a HID
+  interface, so the controller re-enumerates once, and most games need the pad
+  hidden before they will read mouse input alongside it.
+  - Sensitivity is matched across polling rates: the same wrist movement turns you
+    the same amount at 250 Hz and at real-time.
+- **Flick Stick**, implemented to Jibb Smart's specification (he invented it).
+  Push the right stick in a direction and the view snaps to face that way; hold it
+  and rotate to keep turning. Fine aim stays with the gyro, which is what the
+  design intends. The stick's own output is removed from the report so the game
+  does not turn from it as well.
+  - Reference constants are the shipped JoyShockMapper defaults: 90% flick
+    threshold, 0.1 s flick time, ease-out with no ease-in, and soft tiered turn
+    smoothing.
+  - Works with **Gyro Mode** off, since it is a stick feature — but the gyro is
+    what makes it worth using.
+  - **Calibration is per game.** Faking a flick with mouse movement means
+    converting an angle into a number of counts, so the dongle needs to know how
+    far a full turn is: `(cm per 360°) × (DPI ÷ 2.54)`. Defaults to 6500. Requires
+    mouse acceleration off and raw input on.
+
+### Changed
+- **The portal and the slot-activation pages now identify the controller by its
+  gamepad usage** rather than by vendor and product ID alone. The gyro mouse is a
+  third HID collection sharing those IDs, so a plain match could open the mouse
+  instead — every configuration read then failed, which showed as "FW: pre-1.0.5"
+  and a device that could not be saved to or have slots activated. Selection falls
+  back to the old behaviour for anything it does not recognise, so it is never
+  stricter than before. Affects `ds5-config-portal.html`,
+  `automation/profiles/slot-activate.html` and the copy embedded in
+  `automation/ds5-setup.ps1` — update all three together.
+
+## [1.22.0] — 2026-08-19
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+the new settings are appended at the tail of the struct, so existing settings and
+every saved slot load untouched.
+
+Supersedes the 1.21.x development builds, which were not released.
+
+### Added
+- **Two-stage triggers.** A second action part-way through the trigger's travel:
+  pull to the boundary and the game sees the trigger as normal, push past it and a
+  button press is added. Pair it with a weapon-break effect and the wall you feel
+  *is* the boundary.
+  - **Add** keeps the trigger held past the boundary; **Swap** releases it so only
+    the button remains.
+  - **Rescale** stretches the travel below the boundary over the full range, so a
+    shortened first stage keeps its full analog resolution.
+  - **Hysteresis** on the boundary: holding at the crossing point gives one press
+    rather than a stream.
+  - The second stage can press **the other trigger** — R2 can drive L2 and vice
+    versa. A trigger is never offered as its own second-stage button.
+  - The portal warns when the chosen button is also what gates that trigger's
+    resistance, since pressing through the detent would open the gate arming the
+    resistance being pressed against.
+- **32 profile slots**, up from 24. Existing slots keep their addresses and
+  survive the upgrade untouched — growth is downward into the sector reservation
+  added in 1.19.0, so the macro table is unaffected. The portal's slot sweep grows
+  from roughly 1.5 s to 2 s; activating a slot is unchanged.
+
+### Fixed
+- **A trigger chosen as the second-stage button did nothing.** Only the digital
+  click bit in byte 8 was set, and games read L2/R2 as analog axes — the digital
+  bits are barely used — so the press was invisible in both Add and Swap. The axis
+  is now driven as well, taking the max so a real pull is never reduced.
+- **A dead zone on the target trigger wiped the press.** Stage-2 presses were
+  applied inside each trigger's own pass, so R2's press landed before L2's pass,
+  whose dead-zone branch clears that same bit. Both triggers now decide their
+  latch from the physical values first and the presses are applied afterwards —
+  which also stops a synthetic full-scale value being read by the other trigger's
+  latch as a real pull.
+- **The automation slot bound was capped in a third place.** Raising the slot
+  count needs four separate bounds updated, and the profile-restore path in
+  `ds5-setup.ps1` was still limited to 1-16 — it had survived both the v1.17.1 and
+  v1.18.18 fixes to the same class of bug. All five sites now agree, including the
+  copy of `slot-activate.html` embedded in the setup script.
+
+### Changed
+- `automation/ds5-setup.ps1` and `automation/profiles/slot-activate.html` accept
+  slots 1-32. Out-of-range values still log the valid range rather than falling
+  through to a filename lookup.
+
+## [1.20.0] — 2026-08-17
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed —
+`Config_body` is unchanged. The macro table's on-flash record grows, and existing
+macros are migrated in place on first boot.
+
+### Added
+- **Motion gestures.** Hold a button as a gate, flick your wrist with the controller,
+  release — and a macro fires. One to four strokes of up / down / left / right.
+  - **Recording calibrates to your own movement.** The portal measures how far you
+    actually moved while flicking and stores a step size per macro, so a small
+    flick and a broad sweep are each recognised as performed. A fixed threshold
+    picked without hardware produced a storm of spurious strokes.
+  - **Gyro aiming is suspended while a gate is held**, since the wrist movement
+    that makes a gesture would otherwise swing the aim. It resumes on release.
+  - Only the **start** of the capture window has to match the template. Holding
+    the gate a beat after finishing turned a clean down-up into six strokes;
+    trailing movement is treated as settling.
+  - Single-stroke gestures match strictly, while longer ones tolerate one stray
+    stroke inside the match. The tolerance is proportional to the template — flat
+    slack made a drooping leftward flick match both *left* and *down*.
+
+### Fixed
+- **Upgrading from 1.19.x corrupted every macro name.** `MacroEntry` grew from 12
+  to 17 bytes for the motion fields, which moved `label` inside `MacroRecord` from
+  offset 12 to 17 — so migrating a record by copying its stored length flat landed
+  the name over the new fields. A macro called `rivatuner` reloaded as `uner` with
+  a `motion_len` of 118, which is the letter `v`. Migration now splits entry and
+  label by the layout each record length actually had, and refuses an unrecognised
+  length rather than guessing at the split.
+- **`motion_len` was unbounded on the write path.** It indexes a two-byte array
+  two bits at a time, so a value above the maximum of 8 read past the record into
+  its neighbour. It arrives straight from the host in command `0x18`; it is now
+  clamped where records enter the table rather than at each point of use.
+- **The macro table loader refused shorter records instead of migrating them.**
+  `macro.h` had always documented `rec_len` as making a record self-describing so
+  that later firmware could read older tables — but the loader required an exact
+  match, so the first time the record grew, every user's macros would have been
+  discarded. The claim was in the comment and not in the code.
+- **Exporting a macro dropped its gesture, and the result was worse than data
+  loss.** The macro file format predates motion, so `motion`, `motion_len` and
+  `motion_step` were not written or read. A motion macro survived a round trip as
+  an ordinary *chord* macro — `macro_is_motion()` needs `GEST_MOTION` and a
+  non-zero `motion_len` — so its gate button would have fired it on its own, with
+  no gesture performed. Files written before 1.20.0 still import correctly, as
+  non-motion macros.
+- **`portal-motion-test.js` was not invoked by `run-portal-tests.sh`.** The file
+  shipped and reported nothing while the suite reported success. Now wired in.
+
+
+## [1.19.1] — 2026-08-14
+
+**Portal only.** The firmware is unchanged from 1.19.0 — same `.uf2` files, same
+config version 19. Replace `ds5-config-portal.html`; no reflashing, and nothing
+to re-save.
+
+### Added
+- **Export macros / Import macros**, on the Macros tab. Macro *definitions* are
+  device-global and shared by every profile, so they get their own file rather
+  than riding along inside a profile.
+  - Importing replaces every macro on the dongle, for all profiles, so it always
+    confirms first. It loads into the editor and waits — nothing reaches the
+    device until you press **Save macros to device**.
+  - Row numbers are preserved through a round trip. The enable mask addresses
+    rows by index, so compacting an export would silently rebind every profile.
+- **Back up all slots / Restore** now ask whether to include macro definitions.
+  Which macros each slot enables was already covered — that is an ordinary config
+  field — but the definitions live outside `Config_body`, so without this a
+  restore produced enable masks pointing at whatever table the target dongle
+  happened to hold. Backup format v2 → v3; v2 files restore exactly as before.
+- **Importing a profile now asks before changing your macro selection**, and lists
+  what that selection would switch on, by name. A profile carries only the mask, so
+  it enables *your* row 3 — which may be something entirely different from what the
+  profile's author had there. Decline and your current macros are left alone while
+  every other setting still imports.
+- **The Playnite auto-apply page no longer carries macro information at all.** It
+  runs unattended on every game launch with nobody to answer that question, and
+  `macro_disable` is enumeration-critical at its all-disabled boundary — the same
+  mid-apply interruption hazard already documented for `enable_wake` on the
+  field-by-field `.html` path. Older exported pages that contain the field are
+  ignored rather than applied. Per-game macro sets work through slot activation,
+  which applies the whole configuration in one command.
+
+- **Yes/No dialogs** for the macro questions, replacing the browser's
+  OK/Cancel. Three of them ask about one *part* of an operation already under way
+  — whether to include definitions in a backup, whether to take a profile's macro
+  selection — where "Cancel" reads as "abort the whole thing". The buttons now say
+  what they do: *Include* / *Slots only*, *Apply selection* / *Keep mine*.
+
+### Fixed
+- **"Enable state changed" stayed on screen after saving.** The save itself
+  worked; the panel was drawn from a stale snapshot. `saveAll()` refreshes the
+  snapshot and deliberately returns without re-rendering when nothing about the
+  USB descriptor changed, so the macro panel now repaints itself after a save.
+  Covered by a regression test in `tools/portal-macro-test.js`.
+
+### Notes
+- The Playnite auto-apply page still carries only the enable mask, never
+  definitions, and this is deliberate: it runs unattended on every game launch,
+  so one stale export could otherwise overwrite macros made since.
+
 ## [1.19.0] — 2026-08-14
 
 Config version 19. **No `flash_nuke` needed.** One new config field is appended at
@@ -13,7 +320,7 @@ the tail of the struct, so existing settings and all 24 slots load untouched.
 > after setting its macros.
 
 ### Added
-- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo — e.g.
+- **Macros.** Bind a controller button press/combo or a touchpad swipe to a keyboard combo —
   `R3 + D-pad Up` sends `Ctrl+J`, a swipe sends whatever you assign. Up to 32,
   edited on a new **Macros** tab. The dongle sends the keystrokes itself over the
   HID keyboard interface the wake feature already provides; nothing runs on the PC.

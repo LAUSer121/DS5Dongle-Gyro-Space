@@ -33,7 +33,13 @@ bool is_dse = false;
 
 // 编译期保护
 // 判断Config结构体是否能放进flash 256bytes
+// The binding limit is NOT the flash page - the sector is erased whole and the
+// write length now follows the struct. It is the SLOT stride: every slot stores a
+// Config_body, eight to a 4 KB sector, so a body larger than the stride minus the
+// record's own header cannot be saved to a slot at all.
 static_assert(sizeof(Config) <= FLASH_SECTOR_SIZE);
+static_assert(sizeof(Config_body) <= SLOT_MAX_BODY_LEN,
+              "Config_body must still fit a profile slot - drop SLOTS_PER_SECTOR to 4 first");
 // 配置区起始地址必须按 flash sector 对齐。
 static_assert(CONFIG_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 
@@ -225,6 +231,29 @@ void config_valid() {
     // Native-haptics smoothing: 0 is invalid so a fresh config defaults to Light (2).
     if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 2;
     if (body->synth_force > 1) body->synth_force = 0;
+    // Two-stage triggers. A slot written before v1.21 reads back 0xFF here, so
+    // the OFF default has to come from the clamp, not from the stored value.
+    if ((body->t2_mode & T2_AXIS_MASK) > T2_AXIS_RESCALE ||
+        (body->t2_mode & ~(T2_AXIS_MASK | T2_RELEASE_STAGE1))) body->t2_mode = 0;
+    if ((body->t2_l2_mode & T2_AXIS_MASK) > T2_AXIS_RESCALE ||
+        (body->t2_l2_mode & ~(T2_AXIS_MASK | T2_RELEASE_STAGE1))) body->t2_l2_mode = 0;
+    if (body->t2_button >= T2BTN_COUNT) body->t2_button = T2BTN_NONE;
+    if (body->gyro_sens_y > 100) body->gyro_sens_y = 0;   // 0 = follow X
+    if (body->gyro_output > 2) body->gyro_output = 0;   // 0xFF fill from an older slot -> stick
+    // Flick calibration. Anything outside a plausible range - including 0, and
+    // including the 0xFFFF an older slot's tail fill produces - becomes a usable
+    // default rather than disabling the flick. A zero here meant selecting
+    // "Mouse + Flick Stick" did nothing at all until a second, separate field was
+    // also set, which reads as the feature being broken. The MODE selector is
+    // what turns the flick on; this only decides how far it turns.
+    if (body->flick_counts_360 < 500 || body->flick_counts_360 > 50000) {
+        body->flick_counts_360 = 6500;   // ~40cm/360 at 400 dpi; mid-range start
+    }
+    if (body->t2_l2_button >= T2BTN_COUNT) body->t2_l2_button = T2BTN_NONE;
+    // pos 0 disables the stage; 0xFF from an old slot would put the boundary at
+    // the very top of travel, which is indistinguishable from unreachable.
+    if (body->t2_pos == 0xFF) body->t2_pos = 0;
+    if (body->t2_l2_pos == 0xFF) body->t2_l2_pos = 0;
     if (body->enable_wake > 1) {
         body->enable_wake = 0;
         printf("[Config] enable_wake is invalid\n");
@@ -302,17 +331,32 @@ void config_load() {
 // Runs with core1 parked (flash_safe_execute) and core0 interrupts disabled, so
 // neither core touches XIP flash while the sector is erased/programmed. Without
 // the core1 park this races the audio core and corrupts audio (buzzing).
+// How much of the erased sector we actually program: sizeof(Config) rounded up to
+// whole pages. It was a hard-coded single page, which is why Config_body could
+// not grow past 246 bytes even though the sector has 4 KB and the slot records
+// have room for far more.
+//
+// THE TRAP, and it is not hypothetical - a downstream fork hit it: relaxing the
+// size assert WITHOUT widening this write leaves the tail of the struct never
+// written. Settings then apply live and silently revert on the next boot, which
+// looks like anything except a flash bug. The assert below and this length must
+// move together.
+constexpr uint32_t CONFIG_WRITE_LEN =
+    ((sizeof(Config) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE;
+static_assert(CONFIG_WRITE_LEN >= sizeof(Config), "config write must cover the struct");
+static_assert(CONFIG_WRITE_LEN <= FLASH_SECTOR_SIZE, "config must fit its sector");
+
 static void config_save_flash_op(void *param) {
     const uint8_t *page = static_cast<const uint8_t *>(param);
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_range_erase(CONFIG_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(CONFIG_FLASH_OFFSET, page, FLASH_PAGE_SIZE);
+    flash_range_program(CONFIG_FLASH_OFFSET, page, CONFIG_WRITE_LEN);
     restore_interrupts(interrupts);
 }
 
 bool config_save() {
     config.crc32 = calc_config_crc(config);
-    alignas(4) uint8_t page[FLASH_SECTOR_SIZE];
+    alignas(4) uint8_t page[CONFIG_WRITE_LEN];
     memset(page, 0xff, sizeof(page));
     memcpy(page, &config, sizeof(Config));
 
@@ -575,7 +619,10 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    // dropped the device on every slot switch that altered the
                    // macro set. enable_wake keeps its own test above because it
                    // also moves bcdUSB, the BOS descriptor and REMOTE_WAKEUP.
-                   (usb_kbd_iface_needed(o) != usb_kbd_iface_needed(n));
+                   (usb_kbd_iface_needed(o)   != usb_kbd_iface_needed(n))   ||
+                   // The mouse is its own interface, and it implies the keyboard -
+                   // so the keyboard test above does not cover losing the mouse.
+                   (usb_mouse_iface_needed(o) != usb_mouse_iface_needed(n));
     config.body = slot_body;
     config_valid(); // clamp anything out of range (e.g. slot saved by older fw)
     active_profile_set(idx); // record the loaded slot (RAM) for the portal readout

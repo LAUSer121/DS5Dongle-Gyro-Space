@@ -31,5 +31,10 @@ const shared=(h.match(/class="tshared"/g)||[]).length;
 console.log('shared full-width block present:', shared===1);
 // no field lost
 const keys=new Set([...h.matchAll(/config\['([a-z0-9_]+)'\]/g)].map(m=>m[1]));
-console.log('distinct fields in the pair card:', keys.size, '(expect 35: 17+17+1 shared)');
-console.log(bad===0 && cells%2===0 && shared===1 && keys.size===35 ? 'ALIGNMENT OK' : 'ALIGNMENT FAILED');
+// DERIVED, not hardcoded. This was `keys.size===35` with a "17+17+1" comment,
+// so every field added to a trigger column failed the test for the wrong reason
+// and invited someone to bump the number without checking the pairing - which
+// is the part that actually matters.
+const want = r2.length + l2.length + M.SHARED_TRIGGER_KEYS.size;
+console.log(`distinct fields in the pair card: ${keys.size} (expect ${want}: ${r2.length}+${l2.length}+${M.SHARED_TRIGGER_KEYS.size} shared)`);
+console.log(bad===0 && cells%2===0 && shared===1 && keys.size===want ? 'ALIGNMENT OK' : 'ALIGNMENT FAILED');

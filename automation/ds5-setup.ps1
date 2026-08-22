@@ -299,14 +299,14 @@ function Apply-Profile($htmlPath, $query = "") {
 # profile .html filename - into the page + query to open. $null if unusable.
 function Resolve-DS5Profile([string]$spec) {
     if (-not $spec) { return $null }
-    if ($spec -match '^(?i)slot[\s:]*([1-9]|1[0-9]|2[0-4])$') {
+    if ($spec -match '^(?i)slot[\s:]*([1-9]|[12][0-9]|3[0-2])$') {
         $p = Join-Path (Join-Path $DS5Dir "profiles") "slot-activate.html"
         if (Test-Path -LiteralPath $p) { return @{ Path = $p; Query = "?slot=$($Matches[1])" } }
         Log "WARN slot-activate.html missing - re-run ds5-setup"
         return $null
     }
     if ($spec -match '^(?i)slot[\s:]*([0-9]+)$') {
-        Log "WARN slot number out of range: '$spec' - valid slots are 1-24 (fw 1.17.0+; older firmware 1-16)"
+        Log "WARN slot number out of range: '$spec' - valid slots are 1-32 (fw 1.22.0+; 1-24 on 1.17.0-1.21.x; 1-16 before that)"
         return $null
     }
     $p = Join-Path (Join-Path $DS5Dir "profiles") $spec
@@ -632,7 +632,7 @@ Close-StaleProfileWindows
 
 if ($wasNative) {
     $restorePath = $null; $restoreQuery = ""
-    if ($AudioProfile -match '^(?i)slot[\s:]*([1-9]|1[0-6])$') {
+    if ($AudioProfile -match '^(?i)slot[\s:]*([1-9]|[12][0-9]|3[0-2])$') {
         $rp = Join-Path (Join-Path $DS5Dir "profiles") "slot-activate.html"
         if (Test-Path -LiteralPath $rp) { $restorePath = $rp; $restoreQuery = "?slot=$($Matches[1])" }
     } else {
@@ -805,7 +805,14 @@ const sleep=ms=>_w?new Promise(r=>{const id=++_q;_m.set(id,r);_w.postMessage({id
 // luck. That was the pile-up/"native not loading" bug. The device is released
 // only in finish() (confirmed success) and by the browser itself on unload.
 function isWakeKeyboardIface(d){const c=(d&&d.collections)||[];return c.length>0&&c.every(x=>x.usagePage===0x01&&x.usage===0x06);}
-function pickDs5(l){const m=(l||[]).filter(x=>x&&x.vendorId===SONY_VID&&(x.productId===DS5_PID||x.productId===DSE_PID));return m.find(x=>!isWakeKeyboardIface(x))||m[0]||null;}
+// From v1.23.0 the gyro mouse is a THIRD HID collection on the same VID/PID, so a
+// plain match can open the MOUSE and every slot command then fails. Prefer a
+// positive match on the gamepad usage; keep exclusion only as a fallback so this
+// is never stricter than the VID/PID match that always worked.
+function isGamepadIface(d){const c=(d&&d.collections)||[];return c.some(x=>x.usagePage===0x01&&(x.usage===0x04||x.usage===0x05));}
+function isMouseIface(d){const c=(d&&d.collections)||[];return c.length>0&&c.every(x=>x.usagePage===0x01&&x.usage===0x02);}
+function pickDs5(l){const m=(l||[]).filter(x=>x&&x.vendorId===SONY_VID&&(x.productId===DS5_PID||x.productId===DSE_PID));
+  return m.find(isGamepadIface)||m.find(x=>!isWakeKeyboardIface(x)&&!isMouseIface(x))||m[0]||null;}
 let device=null;
 async function releaseDevice(){try{if(device&&device.opened)await device.close();}catch(_){}}
 async function finish(){
@@ -832,7 +839,7 @@ function fail(msg){document.title='CONNECT NEEDED - DS5 Bridge Config';const b=d
 async function run(gesture){
   const slot=parseInt(new URLSearchParams(location.search).get('slot')||'0',10);
   const b=document.getElementById('b');
- if(!(slot>=1&&slot<=24)){b.textContent='Bad or missing ?slot=1..24';return;}
+ if(!(slot>=1&&slot<=32)){b.textContent='Bad or missing ?slot=1..32';return;}
   try{
     device=pickDs5(await navigator.hid.getDevices());
     if(!device&&gesture){const p=await navigator.hid.requestDevice({filters:[{vendorId:SONY_VID,productId:DS5_PID},{vendorId:SONY_VID,productId:DSE_PID}]});device=pickDs5(p)||(p&&p[0]);}

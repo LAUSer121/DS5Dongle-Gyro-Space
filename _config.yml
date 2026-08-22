@@ -11,5 +11,5 @@ theme: jekyll-theme-midnight
 title: DS5Dongle — Studio
 description: >-
   Wireless DualSense-to-PC bridge on a Raspberry Pi Pico 2 W: audio-derived
-  haptics for games that have none, adaptive triggers, gyro aiming, right-stick
-  inversion, and a browser-based configuration portal.
+  haptics for games that have none, adaptive and two-stage triggers, keyboard
+  macros, gyro aiming, and a browser-based configuration portal.

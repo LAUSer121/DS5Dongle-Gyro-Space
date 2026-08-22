@@ -53,6 +53,14 @@ enum {
 #endif
 #ifdef ENABLE_WAKE_HID
     ITF_NUM_HID_KBD,
+    // Gyro-to-mouse. ALWAYS LAST among the HID interfaces (before the UPS
+    // battery), and that ordering is load-bearing: TinyUSB numbers HID
+    // instances by their order here, and the keyboard is addressed as a
+    // hardcoded instance 1 in wake.cpp, macro.cpp and ps_shortcut.cpp. Placing
+    // the mouse before the keyboard - or letting it take instance 1 when the
+    // keyboard is absent - would silently point those three senders at the
+    // mouse. That is the v1.18.9 failure exactly.
+    ITF_NUM_HID_MOUSE,
 #endif
     ITF_NUM_UPS, // HID UPS Battery (Windows native battery), runtime-gated by battery_mode
     ITF_NUM_TOTAL,
@@ -72,14 +80,37 @@ enum {
 #else
         0,
 #endif
+    // Mouse interface adds the same 25 bytes as the keyboard:
+    //   9 (interface) + 9 (HID class) + 7 (EP IN) = 25
+    CONFIG_DESC_LEN_MOUSE = 25,
     // UPS battery interface adds the same 25 bytes as the keyboard:
     //   9 (interface) + 9 (HID class) + 7 (EP IN) = 25
     CONFIG_DESC_LEN_UPS = 25,
-    CONFIG_DESC_LEN_TOTAL = CONFIG_DESC_LEN_BASE + CONFIG_DESC_LEN_WAKE_KBD + CONFIG_DESC_LEN_UPS
+    CONFIG_DESC_LEN_TOTAL = CONFIG_DESC_LEN_BASE + CONFIG_DESC_LEN_WAKE_KBD
+        + CONFIG_DESC_LEN_MOUSE + CONFIG_DESC_LEN_UPS
 #if ENABLE_SERIAL
         + TUD_CDC_DESC_LEN
 #endif
 };
+
+// Number of HID interfaces this build can ever present. CFG_TUD_HID in
+// tusb_config.h is a COMPILE-TIME ceiling while the descriptor is assembled at
+// RUNTIME, so the ceiling has to cover the largest configuration, not the
+// current one. Getting this wrong does not degrade gracefully: adding the mouse
+// interface while CFG_TUD_HID was still 2 left TinyUSB with no instance for it
+// and the device stopped enumerating entirely - no gamepad, no portal, nothing
+// on the bus, and no way to switch the setting back off from the portal.
+enum {
+    HID_ITF_COUNT_MAX = 1                 // gamepad
+#ifdef ENABLE_WAKE_HID
+                        + 1               // wake / macro keyboard
+                        + 1               // gyro mouse
+#endif
+                        + 1               // HID UPS battery
+};
+static_assert(CFG_TUD_HID >= HID_ITF_COUNT_MAX,
+              "CFG_TUD_HID in tusb_config.h is lower than the number of HID "
+              "interfaces this build can present - the device will not enumerate");
 
 // String Descriptor Index
 enum {
@@ -484,6 +515,43 @@ uint8_t descriptor_configuration[] = {
     0x08, 0x00, // wMaxPacketSize: 8 (boot keyboard report)
     0x0A, // bInterval: 10ms
 #endif
+#ifdef ENABLE_WAKE_HID
+    // --- INTERFACE DESCRIPTOR (HID Mouse, gyro aim) -------------------------
+    // Sits after the keyboard (hardcoded instance 1 invariant) and before the
+    // UPS battery (always last). EP IN 0x82: EP1/EP2 are free in every build
+    // (gamepad owns EP3 OUT + EP4 IN, CDC 0x85/0x86, keyboard 0x87, UPS 0x83).
+    // DO NOT use 0x88 (upstream's choice): the RP2350 USB controller only has
+    // EP0-EP7, so a descriptor referencing EP8 makes SET_CONFIGURATION fail
+    // and Windows reports the whole device as CM_PROB_FAILED_START with
+    // configuration 0 (no HID devices at all).
+    0x09,             // bLength
+    0x04,             // bDescriptorType (INTERFACE)
+    ITF_NUM_HID_MOUSE,// bInterfaceNumber
+    0x00,             // bAlternateSetting
+    0x01,             // bNumEndpoints: 1 (IN only)
+    0x03,             // bInterfaceClass: HID
+    0x00,             // bInterfaceSubClass: none (NOT boot - 16-bit deltas)
+    0x02,             // bInterfaceProtocol: Mouse
+    0x00,             // iInterface
+
+    // HID Descriptor (mouse)
+    0x09,             // bLength
+    0x21,             // bDescriptorType (HID)
+    0x11, 0x01,       // bcdHID: 1.11
+    0x00,             // bCountryCode
+    0x01,             // bNumDescriptors
+    0x22,             // bDescriptorType: Report
+    0x40, 0x00,       // wDescriptorLength: 64 (sizeof desc_hid_report_mouse)
+
+    // Endpoint Descriptor (HID IN: EP2)
+    0x07,             // bLength
+    0x05,             // bDescriptorType (ENDPOINT)
+    0x82,             // bEndpointAddress: IN EP2
+    0x03,             // bmAttributes: Interrupt
+    0x08, 0x00,       // wMaxPacketSize: 8 (3 buttons + padding + 2x int16)
+    0x01,             // bInterval: 1ms
+#endif
+
     // --- INTERFACE DESCRIPTOR (HID UPS Battery) ---
     // Present only when get_config().battery_mode != 0. Windows binds its
     // built-in hidups.sys / HidBatt stack to this interface and shows a system
@@ -491,10 +559,7 @@ uint8_t descriptor_configuration[] = {
     // available for a USB-connected HID device.
     // EP IN 0x83: EP3 IN is free (the gamepad owns EP3 OUT + EP4 IN) in every
     // build, and it avoids the CDC notification EP 0x85 / CDC data EP 0x86
-    // (when ENABLE_SERIAL is on) and the keyboard EP 0x87. DO NOT use 0x88:
-    // the RP2350 USB controller only has EP0-EP7, so a descriptor referencing
-    // EP8 makes SET_CONFIGURATION fail and Windows reports the whole device as
-    // CM_PROB_FAILED_START with configuration 0 (no HID devices at all).
+    // (when ENABLE_SERIAL is on), the keyboard EP 0x87 and the mouse EP 0x82.
     0x09, // bLength
     0x04, // bDescriptorType (INTERFACE)
     ITF_NUM_UPS, // bInterfaceNumber
@@ -555,18 +620,31 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     }
 
     const bool wake = get_config().enable_wake;
+    // Always-present interface count: audio control + streaming OUT +
+    // streaming IN + gamepad HID = 4, plus the 2 CDC interfaces when
+    // ENABLE_SERIAL is on. Optional keyboard/mouse/UPS blocks are added below.
+    constexpr uint32_t n_base_itfs = 4u
+#if ENABLE_SERIAL
+        + 2u
+#endif
+        ;
     const bool kbd = usb_kbd_iface_needed(get_config());
+    // Gyro mouse interface (upstream: gyro_output >= 1 or mouse macros). The
+    // mouse implies the keyboard (usb_kbd_iface_needed), so the layout stays a
+    // simple suffix in every reachable combination.
+    const bool mouse = usb_mouse_iface_needed(get_config());
     // Windows native battery (UPS) interface: present only when battery_mode is
     // non-zero. Re-enabled: the bNumInterfaces calculation below now counts the
-    // always-present 4 interfaces plus optional blocks, so including the UPS
+    // always-present interfaces plus optional blocks, so including the UPS
     // block no longer makes the descriptor lie (it previously claimed 6
     // interfaces with only 4 present -> CM_PROB_FAILED_START, no HID at all).
     const bool ups = get_config().battery_mode != 0;
 
     // Build the descriptor in RAM instead of mutating the static array: the
-    // keyboard and UPS blocks are independently present/absent at runtime, so
-    // in-place patching would leak stale block bytes across re-enumerations
-    // (e.g. UPS first, then keyboard - the keyboard block was overwritten).
+    // keyboard, mouse and UPS blocks are independently present/absent at
+    // runtime, so in-place patching would leak stale block bytes across
+    // re-enumerations (e.g. UPS first, then keyboard - the keyboard block was
+    // overwritten).
     static CFG_TUSB_MEM_ALIGN uint8_t config_desc[CONFIG_DESC_LEN_TOTAL];
 
     // Always-present prefix: audio + gamepad HID, then CDC when enabled.
@@ -581,21 +659,23 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
         + TUD_CDC_DESC_LEN
 #endif
         ;
-    constexpr uint32_t ups_off = kbd_off + CONFIG_DESC_LEN_WAKE_KBD;
+    constexpr uint32_t mouse_off = kbd_off + CONFIG_DESC_LEN_WAKE_KBD;
+    constexpr uint32_t ups_off = mouse_off + CONFIG_DESC_LEN_MOUSE;
 
     if (kbd) {
         memcpy(config_desc + off, &descriptor_configuration[kbd_off], CONFIG_DESC_LEN_WAKE_KBD);
         off += CONFIG_DESC_LEN_WAKE_KBD;
     }
+    if (mouse) {
+        memcpy(config_desc + off, &descriptor_configuration[mouse_off], CONFIG_DESC_LEN_MOUSE);
+        off += CONFIG_DESC_LEN_MOUSE;
+    }
     if (ups) {
         memcpy(config_desc + off, &descriptor_configuration[ups_off], CONFIG_DESC_LEN_UPS);
-        if (!kbd) {
-            // Keyboard block absent: renumber the UPS interface into its slot so
-            // interface numbers stay contiguous 0..N-1 (its HID instance is
-            // computed dynamically by ups_hid_instance(), so no other site
-            // hardcodes the interface number).
-            config_desc[off + 2] = ITF_NUM_HID_KBD;
-        }
+        // UPS is always LAST. Renumber its interface so numbers stay
+        // contiguous 0..N-1 (its HID instance is computed dynamically by
+        // ups_hid_instance(), so no other site hardcodes the interface number).
+        config_desc[off + 2] = (uint8_t) (n_base_itfs + (kbd ? 1u : 0u) + (mouse ? 1u : 0u));
         off += CONFIG_DESC_LEN_UPS;
     }
 
@@ -603,15 +683,16 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     config_desc[2] = (uint8_t) (off & 0xFF);       // wTotalLength lo
     config_desc[3] = (uint8_t) (off >> 8);         // wTotalLength hi
     // bNumInterfaces: audio control + streaming OUT + streaming IN + gamepad
-    // HID are ALWAYS present (4 interfaces), plus optional keyboard and UPS.
-    // ITF_NUM_TOTAL (== 6) is a compile-time ceiling and CANNOT be used
-    // directly: subtracting the absent blocks from it is only correct when
-    // exactly one optional block is present (e.g. c244011, where ITF_NUM_TOTAL
-    // was 5 and the formula was kbd ? 5 : 4). With UPS added, ITF_NUM_TOTAL
-    // became 6, so "6 - kbd - ups" yields 6 when both are absent (actual: 4)
-    // and 4 when both are present (actual: 6) - either way the descriptor lies
-    // and Windows marks the whole device CM_PROB_FAILED_START (no HID at all).
-    config_desc[4] = (uint8_t) (4u + (kbd ? 1u : 0u) + (ups ? 1u : 0u));
+    // HID are ALWAYS present (4 interfaces, plus 2 CDC interfaces when
+    // ENABLE_SERIAL), plus optional keyboard, mouse and UPS. ITF_NUM_TOTAL is
+    // a compile-time ceiling and CANNOT be used directly: subtracting the
+    // absent blocks from it is only correct when exactly one optional block is
+    // present (e.g. c244011, where ITF_NUM_TOTAL was 5 and the formula was
+    // kbd ? 5 : 4). With UPS added, ITF_NUM_TOTAL became 6, so "6 - kbd - ups"
+    // yields 6 when both are absent (actual: 4) and 4 when both are present
+    // (actual: 6) - either way the descriptor lies and Windows marks the whole
+    // device CM_PROB_FAILED_START (no HID at all).
+    config_desc[4] = (uint8_t) (n_base_itfs + (kbd ? 1u : 0u) + (mouse ? 1u : 0u) + (ups ? 1u : 0u));
     return config_desc;
 }
 
@@ -1006,6 +1087,48 @@ _Static_assert(sizeof(desc_hid_report_kbd) == 45, "keyboard report descriptor le
 // Invoked when received GET HID REPORT DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
+// Relative mouse: 3 buttons + 16-bit X/Y deltas. 16-bit rather than the usual
+// 8-bit because a fast flick at high sensitivity exceeds +/-127 in one report,
+// and a clamped delta is a turn that stops short of where you aimed.
+static uint8_t const desc_hid_report_mouse[] = {
+    0x05, 0x01,       // Usage Page (Generic Desktop)
+    0x09, 0x02,       // Usage (Mouse)
+    0xA1, 0x01,       // Collection (Application)
+    0x09, 0x01,       //   Usage (Pointer)
+    0xA1, 0x00,       //   Collection (Physical)
+    0x05, 0x09,       //     Usage Page (Button)
+    0x19, 0x01,       //     Usage Minimum (1)
+    0x29, 0x03,       //     Usage Maximum (3)
+    0x15, 0x00,       //     Logical Minimum (0)
+    0x25, 0x01,       //     Logical Maximum (1)
+    0x95, 0x03,       //     Report Count (3)
+    0x75, 0x01,       //     Report Size (1)
+    0x81, 0x02,       //     Input (Data,Var,Abs)
+    0x95, 0x01,       //     Report Count (1)
+    0x75, 0x05,       //     Report Size (5)
+    0x81, 0x03,       //     Input (Const,Var,Abs) - padding
+    0x05, 0x01,       //     Usage Page (Generic Desktop)
+    0x09, 0x30,       //     Usage (X)
+    0x09, 0x31,       //     Usage (Y)
+    0x16, 0x01, 0x80, //     Logical Minimum (-32767)
+    0x26, 0xFF, 0x7F, //     Logical Maximum (32767)
+    0x75, 0x10,       //     Report Size (16)
+    0x95, 0x02,       //     Report Count (2)
+    0x81, 0x06,       //     Input (Data,Var,Rel)
+    // Wheel, for macro scroll outputs. 8-bit is the universal shape - every host
+    // understands it, and a scroll tick is +/-1, so the 16-bit treatment the X/Y
+    // axes need for fast flicks buys nothing here.
+    0x09, 0x38,       //     Usage (Wheel)
+    0x15, 0x81,       //     Logical Minimum (-127)
+    0x25, 0x7F,       //     Logical Maximum (127)
+    0x75, 0x08,       //     Report Size (8)
+    0x95, 0x01,       //     Report Count (1)
+    0x81, 0x06,       //     Input (Data,Var,Rel)
+    0xC0,             //   End Collection
+    0xC0,             // End Collection
+};
+static_assert(sizeof(desc_hid_report_mouse) == 64, "wDescriptorLength in the interface block must match");
+
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // UPS battery first: when the keyboard interface is absent at runtime the
     // UPS becomes HID instance 1 (ups_hid_instance() computes the real number),
@@ -1017,6 +1140,10 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // HID instance 1 is the wake-only boot keyboard added by ENABLE_WAKE_HID.
     if (itf == 1) return desc_hid_report_kbd;
 #endif
+    // The mouse is always the LAST HID instance, so its index is 2 when the
+    // keyboard is present and 1 when it is not. usb_mouse_instance() is the one
+    // definition of that; everything else asks it rather than assuming.
+    if (itf != 0 && itf == usb_mouse_instance(get_config())) return desc_hid_report_mouse;
     (void) itf;
     if (ds_mode()) {
         return desc_hid_report_ds;

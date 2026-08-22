@@ -43,7 +43,7 @@ struct __attribute__((packed)) Config_body {
     uint8_t effect_leak_sensitivity; // [0-100] transient detection sensitivity; higher=more eager (more leaks through)
     uint8_t effect_leak_decay; // [0-100] fade-out length after a transient; higher=longer/more gradual tail
     uint8_t effect_leak_attack; // [0-100] gate open speed; higher=more immediate (less delay)
-    uint16_t effect_leak_output_hp_hz; // output high-pass cutoff (Hz) — protects speaker from low-freq popping
+    uint16_t effect_leak_output_hp_hz; // output high-pass cutoff (Hz) 鈥?protects speaker from low-freq popping
     // Rumble-to-trigger: express the game's rumble as trigger Vibration (effect 0x26).
     uint8_t r2t_mode;       // 0=off, 1=left trigger only, 2=right trigger only, 3=both
     uint8_t r2t_on_press;   // bool: 0=vibrate regardless of trigger position, 1=only when trigger pressed
@@ -82,9 +82,9 @@ struct __attribute__((packed)) Config_body {
     // Fully independent per-trigger adaptive triggers (v1.3.1). The at_* fields
     // above (mode/strength/threshold/start/pushback/freq) are R2's; the at_l2_*
     // fields below are L2's own complete set. Only at_pushback_src (the kick
-    // envelope source) is shared — it's one signal. Per-trigger kick strength 0
+    // envelope source) is shared 鈥?it's one signal. Per-trigger kick strength 0
     // simply disables the kick on that trigger.
-    uint8_t  at_kick_style;      // R2 kick delivery: 0=vibration thump (0x26), 1=bow snap (0x22) — the
+    uint8_t  at_kick_style;      // R2 kick delivery: 0=vibration thump (0x26), 1=bow snap (0x22) 鈥?the
                                  // bow's snap force physically presses the trigger back (sharper; feel
                                  // varies with hold depth).
     uint8_t  at_l2_mode;         // L2: 0=off (default), 1=gated (R2 arms), 2=always on
@@ -225,7 +225,7 @@ struct __attribute__((packed)) Config_body {
     // The table itself lives in its own flash sector (MACRO_FLASH_OFFSET) and is
     // NOT per-slot - only this mask is, so a slot selects which subset of the
     // shared macros is live. That is what lets Playnite switch macro sets per
-    // game without duplicating definitions into all 24 slots.
+    // game without duplicating definitions into all 32 slots.
     //
     // STORED INVERTED - a SET bit means macro N is DISABLED - and this is not a
     // style choice. Slots written by older firmware are read back 0xFF-filled
@@ -322,6 +322,83 @@ struct __attribute__((packed)) Config_body {
     // capacity; waiting for wide coverage avoids nonsense like "624 mAh".
     uint8_t battery_cap_min_levels; // [2, 11] sampled levels required, default 3
     uint8_t battery_cap_min_span;   // [1, 10] level gap required, default 5
+
+    // --- Two-stage triggers (v1.21) ------------------------------------------
+    // One physical pull, two signals, with an adaptive-trigger wall marking the
+    // boundary so the stage change is FELT rather than hunted for. Applied only
+    // to the OUTBOUND report in main.cpp; every internal consumer (AT gating,
+    // custom effects, gyro, macros) still reads the raw trigger position.
+    //
+    // t2_mode: bits 0-1 = what happens to the ANALOG axis below the boundary
+    //   0 = off       - feature disabled
+    //   1 = additive  - axis untouched, stage 2 just adds its button
+    //   2 = rescale   - [deadzone..t2_pos] is stretched to the full 0..255, so
+    //                   full throttle authority survives the shortened travel
+    //                   and everything above t2_pos is a dedicated stage-2 zone
+    // bit 2 (0x04)   = RELEASE STAGE 1 above the boundary: clears the trigger's
+    //   DIGITAL button bit so stage 1 stops. Racing wants this OFF (throttle
+    //   must stay held through nitro); FPS alt-fire wants it ON, because
+    //   otherwise the primary fire bit stays set and you keep firing through
+    //   the alt-fire - which is the objection that sank the first design.
+    // Rescale distorts the throttle curve a game sees, which is right for an
+    // arcade racer and wrong for a sim: prefer additive where the analog value
+    // is being modulated deliberately.
+    uint8_t t2_mode;      // R2. 0 = off (default)
+    uint8_t t2_pos;       // R2 boundary, 0-255 raw trigger counts
+    uint8_t t2_button;    // R2 stage-2 button, T2Button enum, 0 = none
+    uint8_t t2_l2_mode;   // L2, same encoding
+    uint8_t t2_l2_pos;
+    uint8_t t2_l2_button;
+    // Gyro output target. 0 = right stick (as before), 1 = mouse,
+    // 2 = mouse + Flick Stick on the right stick.
+    // A mouse is a DELTA device, which is what a gyro natively produces; the
+    // stick is a velocity input with a dead zone and a limited range, so it
+    // clips a fast turn and rounds away a slow one however good the maths is.
+    //
+    // ENUMERATION-CRITICAL: selecting mouse adds a HID interface, so crossing
+    // between the two re-enumerates. Per-profile like everything else, so a slot
+    // can pick mouse for a game where the pad is hidden and stick for a native
+    // DualSense title.
+    uint8_t gyro_output;
+    // Flick Stick calibration: mouse counts for a full 360 turn IN THIS GAME.
+    // Only meaningful when gyro_output == 2. Jibb Smart's spec is explicit that
+    // faking flick stick with mouse movement needs this and an in-game
+    // implementation would not - we are converting an ANGLE to a displacement,
+    // so without the game's own mouse-to-yaw ratio a 90 degree flick lands
+    // wherever it happens to land.
+    uint16_t flick_counts_360;
+    // Vertical gyro sensitivity, 0 = follow gyro_sens (one knob, as before).
+    // Separate axes are worth having because the vertical aiming range in a game
+    // is far smaller than the horizontal one, so the same gain that feels right
+    // for turning is usually too fast for looking up and down.
+    uint8_t  gyro_sens_y;
+};
+
+// Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
+// this list is APPEND ONLY - renumbering silently rebinds saved profiles.
+enum : uint8_t {
+    T2BTN_NONE     = 0,
+    T2BTN_CROSS    = 1,
+    T2BTN_CIRCLE   = 2,
+    T2BTN_SQUARE   = 3,
+    T2BTN_TRIANGLE = 4,
+    T2BTN_L1       = 5,
+    T2BTN_R1       = 6,
+    T2BTN_L3       = 7,
+    T2BTN_R3       = 8,
+    // The trigger CLICK bits. A trigger can drive the other trigger's digital
+    // button - R2's second stage pressing L2 is a normal ask - but never its own,
+    // which the portal filters per trigger rather than by splitting the enum.
+    T2BTN_L2       = 9,
+    T2BTN_R2       = 10,
+    T2BTN_COUNT    = 11,
+};
+enum : uint8_t {
+    T2_AXIS_OFF      = 0,
+    T2_AXIS_ADDITIVE = 1,
+    T2_AXIS_RESCALE  = 2,
+    T2_AXIS_MASK     = 0x03,
+    T2_RELEASE_STAGE1 = 0x04,
 };
 
 struct __attribute__((packed)) Config {
@@ -340,9 +417,19 @@ bool config_save();
 // below the active-config sector). Saving a slot is a rare manual portal
 // action; activating one at game launch is a single atomic command instead of
 // a 30-field write.
-constexpr uint8_t SLOT_COUNT = 24;       // v1.17.0: 24 (was 16) - 8 per flash sector, 3 sectors
+constexpr uint8_t SLOT_COUNT = 32;       // v1.22.0: 32 (was 24) - 8 per flash sector, 4 sectors
 constexpr uint8_t SLOTS_PER_SECTOR = 8;  // 512-byte stride in a 4 KB sector
 constexpr uint8_t SLOT_NAME_LEN = 16;
+
+// The REAL ceiling on Config_body, and the one worth knowing when adding a field.
+// It is not the 256-byte flash page - the config sector is erased whole and the
+// write length follows the struct. It is the profile SLOT: every slot stores a
+// Config_body, eight to a 4 KB sector, so the body must fit the 512-byte stride
+// minus the record's own header (4 magic + 2 body_len + 16 name + 4 crc = 26).
+// Past this, SLOTS_PER_SECTOR has to drop to 4, which doubles the sectors slots
+// need - affordable inside the 16-sector reservation, but a real step.
+constexpr uint32_t SLOT_STRIDE_BYTES = 4096u / SLOTS_PER_SECTOR;          // 512
+constexpr uint32_t SLOT_MAX_BODY_LEN = SLOT_STRIDE_BYTES - (4 + 2 + SLOT_NAME_LEN + 4);
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current config.body -> slot
 // slot -> active config + flash. Returns 0 = failed (out param stage: 1 bad
 // idx, 2 slot unreadable, 3 flash persist failed even after retry), 1 = fully

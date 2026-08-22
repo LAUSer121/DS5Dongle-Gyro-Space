@@ -326,9 +326,11 @@ uint8_t ups_blend_level(uint8_t level10, uint16_t volt_mv, uint8_t weight) {
 
 uint8_t ups_hid_instance() {
     // HID instances follow interface order: gamepad = 0, wake keyboard (when
-    // present) = 1, UPS = 1 or 2. The kbd interface is present exactly when
-    // usb_kbd_iface_needed() says so (see usb_descriptors.cpp).
-    return usb_kbd_iface_needed(get_config()) ? 2u : 1u;
+    // present) = 1, gyro mouse (when present) = 2, UPS = last. The UPS is
+    // always the final HID interface (see usb_descriptors.cpp), so its
+    // instance number is 1 + number of preceding optional HID interfaces.
+    const Config &cfg = get_config();
+    return 1u + (usb_kbd_iface_needed(cfg) ? 1u : 0u) + (usb_mouse_iface_needed(cfg) ? 1u : 0u);
 }
 
 uint8_t const *ups_report_descriptor() {

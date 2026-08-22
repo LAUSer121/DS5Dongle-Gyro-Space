@@ -19,5 +19,7 @@ node tools/portal-dedup-test.js
 node tools/portal-reader-test.js
 node tools/portal-force-test.js
 node tools/portal-macro-test.js
+node tools/portal-search-test.js
+node tools/portal-motion-test.js
 node tools/portal-viz-test.js
 [ -f /mnt/user-data/uploads/R2_3x.json ] && node tools/portal-fileload-test.js || true

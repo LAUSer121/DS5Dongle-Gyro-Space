@@ -1,8 +1,10 @@
 # DS5Dongle — Studio
 
-**Version 1.20.0**
+**Version 1.28.4**
 
 ▶️ **[Configure in your browser](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
+
+💾 **[Downloads, source and releases on GitHub](https://github.com/LAUSer121/DS5Dongle-Gyro-Space)** — the firmware `.uf2` files live under *Releases*.
 
 📥 **[Shared game profiles](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html)** · 🎮 **[Trigger effects](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html)** — ready-to-import per-game configs and adaptive-trigger effects captured from real games; download one and load it in the portal above.
 
@@ -19,7 +21,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.19.0-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.28.4-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -61,9 +63,12 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [General Haptics & Audio](#general-haptics--audio)
   - [Trigger-to-Rumble (R2T)](#trigger-to-rumble-r2t)
   - [Adaptive Triggers (Stage 1: resistance, Stage 2: push-back kick)](#adaptive-triggers-stage-1-resistance-stage-2-push-back-kick)
+  - [Two-stage triggers (new in 1.22.0)](#two-stage-triggers-new-in-1220)
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
+  - [Gyro as a mouse (new in 1.24.0)](#gyro-as-a-mouse-new-in-1240)
+  - [Flick Stick (new in 1.24.0)](#flick-stick-new-in-1240)
   - [Right Stick Inversion](#right-stick-inversion)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
@@ -94,6 +99,16 @@ to RAM so native fine haptics and controller audio work without overclocking.
   mirroring the controller's real Bluetooth battery or a simulated fixed level
   you set in the portal. **Off by default**; the simulated mode keeps the
   charging state synced to the real controller.
+- **Remapping** — send a controller button, a mouse click or a scroll instead of
+  a keystroke, hold it while the input is held, and hide the original from the
+  game. Trigger-to-trigger remaps stay analog.
+- **Motion gestures** — hold a button and flick your controller to fire a macro.
+  Calibrated to your own movement when you record it.
+- **Gyro as a mouse, with Flick Stick** — drive a mouse instead of the right
+  stick for finer aim that never pegs, and flick the stick to snap the view to a
+  bearing.
+- **Two-stage triggers** — a second action past a point in the trigger's travel,
+  so one pull gives you two signals with a detent you can feel between them.
 - **Macros** — bind a controller button press/combo (`R3 + D-pad Up`) or a touchpad swipe to a
   keyboard combo, recorded by pressing the actual buttons and typing the actual
   keys. Up to 32, with tap-vs-hold and captured release order. Definitions are
@@ -149,7 +164,7 @@ to RAM so native fine haptics and controller audio work without overclocking.
   same bytes the firmware's own writers emit — so a hand-built effect is
   byte-identical to one a game would have sent. Built effects live alongside
   captured ones and save to the same JSON files.
-- **Profile slots** — up to 24 complete configurations stored on the dongle
+- **Profile slots** — up to 32 complete configurations stored on the dongle
   itself. Save your setups once in the portal; switching later is a single
   instant command instead of a full profile write — used by the automation for
   per-game profiles (`Game = slot 3` in `profile-overrides.txt`), and applied
@@ -268,14 +283,14 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.19.0.uf2` (Pico 2 W) or `ds5-v1.19.0-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.28.4.uf2` (Pico 2 W) or `ds5-v1.28.4-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
      slots survive an upgrade — new options are appended to the stored layout, so
      old values keep their meaning and anything new lands on its default. Only
      run it if a release note explicitly says to, or if the portal shows settings
-     that are clearly nonsense. **It erases every setting *and* all 24 profile
+     that are clearly nonsense. **It erases every setting *and* all 32 profile
      slots**, so back up your slots first (*Slots* tab → *Back up all slots*).
 2. **Open the portal.** **Download** `ds5-config-portal.html` and open the
    downloaded file in Chrome or Edge. (WebHID needs a secure context — opening it
@@ -579,6 +594,86 @@ Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 | Effect Leak Max Burst (×5 ms) | 0–100 | 0 (off) | MAXIMUM gate-open time: cuts sustained sounds (dialogue, music) at the cap with a no-retrigger refractory — one short accent instead of duplicating the room audio; shots end within the cap naturally. Try 30 (150 ms) and raise leak volume: the leak becomes punctuation, not a second speaker |
 | Effect Leak Detection Band (Hz) | 100–5000 | 800 | Frequency band the transient detector listens to |
 
+#### Browser audio bridge — test mode *(new in 1.28.0)*
+
+> **This is a test mode, not a replacement for `ds5audio.py`.** It exists so
+> someone can try auto-haptics without installing Python. It cannot be automated,
+> and it does not do everything the script does — see the limits below before
+> deciding which to use.
+
+Auto-haptics are derived from your PC's audio, so something has to capture what is
+playing and send it to the dongle. Normally that is `ds5audio.py`. The **Browser
+audio bridge** on the Haptics tab does the same job from the page itself.
+
+**Nothing leaves your machine.** The captured audio is routed inside the browser
+straight back out to the dongle's audio input. There is no server, no upload, and
+nothing is recorded — the screen share is how Chrome exposes system audio, and the
+video is discarded the moment capture starts.
+
+**It only works from the live page.** Open
+[the hosted portal](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html).
+A copy saved to disk has no persistent origin, so the browser grants audio
+permission for a single call, forgets it immediately, and never reveals any output
+devices — the list simply stays empty. Everything *else* in the portal works fine
+from a local file; only this needs a real address.
+
+Setting it up:
+
+1. Open the **Haptics** tab and scroll down to **Browser audio bridge**.
+2. Press **List output devices**, and allow the microphone when asked. That
+   permission is only what makes Chrome willing to *name* audio devices; the
+   microphone itself is released straight away.
+3. Choose the dongle as the output — it appears as **Speakers (DualSense)**,
+   **Speakers (DualSense Edge)** or similar, depending on which controller is
+   paired. It is preselected when the name is recognised, but check it: sending
+   to your PC speakers instead is silent at the dongle and looks like a failure.
+4. **Load the slot you want first**, before starting the bridge — see the warning
+   below.
+5. Press **Start bridging**, and in Chrome's dialog pick **Entire Screen**. System
+   audio is not offered for a single window or tab.
+6. **Tick "Share system audio".** It is *not* on by default, and without it the
+   capture is silent — this is the single most common reason nothing happens.
+
+Watch the line under the buttons: it reads the dongle's own signal level, so a
+non-zero peak means audio is genuinely arriving at the device rather than merely
+leaving the browser.
+
+> **Playing borderless?** Chrome's "you are sharing your screen" bar stays on top
+> of a borderless window. Click **Hide** on it once and it gets out of the way.
+
+> **Set the profile before you start bridging.** Switching slots while the bridge
+> is running can produce a howling feedback effect. A slot change can re-enumerate
+> the USB device, which takes the audio endpoint away and brings it back underneath
+> a capture that is still running — and for the moment the routing is in flux the
+> output can find its way back into the capture. Stop the bridge, switch, and start
+> it again.
+
+What it does **not** do, all of which the script does:
+
+| | Script | Browser bridge |
+|---|---|---|
+| Starts automatically with a game (Playnite) | yes | **no** — the share dialog cannot be automated |
+| Runs unattended, no window | yes | **no** — the tab must stay open |
+| `--map rear` / ch2/3 DSP source | yes | **no** — the browser feed is stereo, ch0/1 only |
+| Native passthrough on ch2/3 | yes | **no** |
+| Works on a locally saved portal | n/a | **no** — hosted page only |
+| Browser and OS | Windows | **Chrome on Windows** — see below |
+
+**Not available on Linux or macOS.** Capturing system audio through the browser is
+a Chrome feature on Windows and ChromeOS only — elsewhere the share dialog offers
+no "Share system audio" option at all, so there is nothing to route. The same is
+true of `ds5audio.py`, which uses WASAPI and is Windows-only for the same reason,
+so on Linux there is currently no route to **derived** auto-haptics from either.
+
+Worth separating, though: **native** haptics do work on Linux. A game or desktop
+that sends the DualSense's own 4-channel haptic stream reaches the dongle
+normally, and the trigger effects, gyro, macros and profile slots are all
+unaffected — they never involved audio capture. It is only the
+audio-derived haptics that need a capture tool neither route provides.
+
+If you want per-game profiles switching themselves as you launch, use the script.
+If you want to feel what auto-haptics does before installing anything, use this.
+
 #### How auto-haptics works (brief)
 
 The DualSense haptic actuator is a voice coil that cannot render a near-DC signal,
@@ -678,6 +773,37 @@ on gunfire via the auto-haptics envelope. The diagnostics box shows the live
 **push-back envelope (0–255)** and a **KICK** flag — the kick fires at envelope
 ≥ 32, so if the number stays 0 while the game rumbles, the selected source isn't
 producing signal.
+
+### Two-stage triggers *(new in 1.22.0)*
+
+A second action part-way through the trigger's travel. Pull to the boundary and
+the game sees the trigger as normal; push past it and a button press is added.
+Pair it with a **weapon-break** effect and the wall you feel *is* the boundary,
+so the second stage lands at a point your finger can find.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Two-stage trigger | Off / Add / Add + rescale / Swap / Swap + rescale | Off | *Add* keeps the trigger held past the boundary; *Swap* releases it so only the button remains |
+| Second-stage boundary | 0–254 | 0 (off) | Trigger position where the second stage engages |
+| Second-stage button | any face, shoulder, stick or trigger button | None | What the second stage presses |
+
+**Add** suits anything where the trigger must stay held — a racing throttle that
+also engages a boost. **Swap** suits a soft-press / hard-press split where the two
+actions are alternatives rather than layers.
+
+**Rescale** stretches the travel below the boundary over the full range, so the
+shortened first stage keeps its full analog resolution instead of being clipped.
+
+The second stage can press **the other trigger** — R2 can drive L2 and vice
+versa. That moves the analog axis, not just the digital bit, since games read the
+triggers as axes. A trigger is never offered as its own second-stage button.
+
+If the button you pick is also what gates that trigger's resistance, the portal
+warns: pressing through the detent would open the gate arming the resistance you
+are pressing against, changing the feel under the finger making the press.
+
+There is hysteresis on the boundary, so holding at exactly the crossing point
+gives one press rather than a stream of them.
 
 ### Custom Captured Effects (new in 1.14.0)
 
@@ -998,14 +1124,17 @@ then Save to a slot.
 | Force Override | on/off | off | on = force R2T/AT even when a game/app is sending its own trigger effects (off = yield to the game) |
 
 ### Gyro Aiming
-Maps controller motion onto the right stick for motion aiming.
+Maps controller motion onto the right stick — or onto a mouse — for motion aiming.
 
 | Setting | Range | Default | Notes |
 |---|---|---|---|
 | Gyro Mode | Off / L2-held / Always / Touch-enables / Ratchet | Off | When motion aiming is active (see below) |
 | Sensitivity | 1–100 | 50 | Motion-to-stick gain (50 ≈ raw) |
+| Vertical sensitivity | 0–100 | 0 (same as above) | Vertical gain on its own — usually lower, since a game's vertical aiming range is much smaller |
 | Horizontal source | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
 | Invert gyro aim | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
+| Gyro output | Right stick / Mouse / Mouse + Flick Stick | Right stick | What the motion drives — see below |
+| Flick Stick — mouse counts per 360° | 500–50000 | 6500 | Calibration, Flick Stick only |
 
 *Gyro modes:*
 - **L2-held** — aim only while L2 is held (flick-stick-style precision on ADS).
@@ -1017,6 +1146,62 @@ Maps controller motion onto the right stick for motion aiming.
 *Guide:* **L2-held + Yaw** is the most natural starting point for shooters — turn
 the controller to fine-tune aim only when aiming down sights. Raise sensitivity if
 the motion feels sluggish; use invert if the direction feels backwards.
+
+#### Gyro as a mouse *(new in 1.24.0)*
+
+**Gyro output** decides what the motion drives.
+
+**Right stick** is the default and works in any game with no setup. Its ceiling is
+the stick itself: an absolute input with a dead zone and a limited range, so a
+fast turn pegs it and a slow one rounds away.
+
+**Mouse** sends pointer movement instead, which is what a gyro naturally produces
+— finer at low speed, and it never pegs. The catch is that many games ignore mouse
+input while a gamepad is present, so this usually needs the pad hidden from that
+game (HidHide). Selecting it adds a HID interface, so the controller re-enumerates
+once.
+
+Mouse sensitivity uses the same **Sensitivity** slider, but expect to run much
+higher numbers than on the stick — roughly 25–75 is the usable band. The feel is
+matched across polling rates, so switching between 250 Hz and real-time does not
+change how far a given movement turns you.
+
+#### Flick Stick *(new in 1.24.0)*
+
+**Mouse + Flick Stick** adds [Flick Stick](http://gyrowiki.jibbsmart.com/blog:good-gyro-controls-part-2:the-flick-stick)
+to the right stick, implemented to Jibb Smart's specification. He invented it, and
+it is designed to pair with gyro aim rather than replace it:
+
+- **Flick** — push the stick in a direction and the view snaps to face that way.
+  Straight back is a 180.
+- **Turn** — keep the stick held and rotate it, and the view follows.
+- **Fine aim is the gyro's job.** The stick stops being an aiming device at all.
+
+The stick's own output is removed from the report while this is on, so the game
+does not also turn from it. Below 90% deflection nothing happens: the dead zone is
+deliberately huge because a flick must be intentional.
+
+Flick Stick works even with **Gyro Mode** off — it is a stick feature — but you
+almost certainly want the gyro on as well, since that is what handles precision.
+**Always** is the simplest choice while you calibrate.
+
+**Calibration is required**, and it is per game. The dongle converts a stick angle
+into a number of mouse counts, so it needs to know how far a full turn is in that
+game:
+
+```
+mouse counts per 360° = (cm per 360°) × (DPI ÷ 2.54)
+```
+
+If you know your cm/360 and DPI, that *is* the number. Otherwise leave the 6500
+default and correct once: flick straight back, see how far you actually turned,
+then multiply by `180 ÷ (degrees you got)`. Two tries is usually enough. Flicking
+back twice is easier to judge than once — you should land exactly where you began.
+
+> Turn **mouse acceleration off and raw input on** in the game. Flick Stick
+> converts an angle into a fixed number of counts and assumes the game turns a
+> fixed amount per count; with acceleration, no single calibration value can be
+> correct. Changing the game's own sensitivity also means recalibrating.
 
 ### Right Stick Inversion
 Inverts the physical right stick in the input report the PC sees — independent of
@@ -1109,6 +1294,108 @@ The panel warns you when the enable state has changed but not yet been saved.
 > is already on the interface is present anyway, so there is no reconnect at all.
 > This is the same constraint as wake: a game with native DualSense support may
 > stop recognising the controller while the keyboard interface is present.
+
+#### Motion gestures *(new in 1.20.0)*
+
+A third way to trigger a macro: hold a button and flick your wrists with the
+controller. Hold **L2**, flick **down then up**, release — and the macro fires.
+
+The held button is a **gate**, not a modifier. It marks when you are "drawing", so
+the dongle is not watching your wrist the whole time you play. Recording starts
+when the gate goes down (button is pressed) and the gesture is matched when you let go.
+
+| | |
+|---|---|
+| Strokes per gesture | 1–4 (up to 8 are stored) |
+| Directions | up, down, left, right |
+| Gate | any button or combination, held while you flick |
+| Fires | on release of the gate |
+
+While a gate is held, **gyro aiming is suspended** — the same wrist movement that
+makes the gesture would otherwise swing your aim. It resumes the moment you let
+go.
+
+**Recording calibrates to you.** Press **Record motion**, hold the gate, flick the controller, release.
+The portal measures how far you actually moved and stores a step
+size with that macro, so a small flick and a broad sweep are both recognised as
+what you performed. A fixed threshold chosen without your hardware in front of it
+does not survive contact with a real wrist.
+
+Two behaviours worth knowing, both learned the hard way:
+
+- **Only the start of the window has to match.** Holding the gate a beat longer
+  after finishing adds strokes — a clean *down-up* becomes *down up down up right
+  down*. Trailing movement is treated as settling and ignored.
+- **A single-stroke gesture is matched strictly.** Longer gestures tolerate one
+  stray stroke inside the match, because a reversal often drifts. Allowing that
+  on a one-stroke gesture would make a leftward flick that sagged match both
+  *left* and *down*.
+
+Gestures are macros like any other, so they carry names, live in the same 32
+rows, and are enabled per profile.
+
+#### Remapping: hold, replace and other outputs *(new in 1.26.0)*
+
+A macro row does not have to send a keystroke. Two settings turn it into a remap:
+
+| Setting | What it does |
+|---|---|
+| **hold while held** | The output is asserted while the input is held, instead of firing once. A remap needs this — without it `X → Circle` taps Circle when you *release* X. |
+| **hide input from game** | The original input is removed from the report, so the game sees only the replacement. |
+
+**Output** chooses where it goes:
+
+- **Keyboard** — a key combination, as before.
+- **Controller button** — any face, shoulder, stick or trigger button. More reliable in-game than a keystroke: a game that sees a DualSense is in controller mode, and many ignore the keyboard entirely or flip every on-screen prompt when one arrives.
+- **Mouse** — left, right or middle click, or scroll up/down. Clicks hold while the input is held, so click-and-drag works; scroll sends one tick per press.
+
+**Record** and **Pick** work the same way for all three. Record captures what you
+actually do — press the controller button, or click the mouse — and Pick lets you
+choose by hand. Selecting a controller or mouse output turns **hold while held**
+on for you, since that is what a remap almost always means.
+
+**Remapping one trigger onto the other stays analog.** `L2 → R2` carries the
+travel across, so a variable throttle stays variable rather than collapsing into
+an on/off switch. Any other input driving a trigger is a full press, since there
+is no travel to copy.
+
+> Choosing a **mouse** output makes the dongle present a mouse to the PC, so the
+> controller re-enumerates once — but only when you **save**, never while you are
+> editing.
+
+#### Sticks as an input *(new in 1.26.0)*
+
+A whole stick can drive four outputs, one per direction — `W A S D` being the
+obvious use. Diagonals press both, and each axis has its own threshold with
+hysteresis so a stick resting on the edge does not chatter.
+
+#### Backing up and sharing macros *(new in 1.19.1)*
+
+Definitions and enablement travel separately, because they are stored separately.
+
+| Action | Carries | Asks |
+|---|---|---|
+| **Export macros** / **Import macros** (Macros tab) | the definitions | import confirms — it replaces all of them |
+| **Export Profile** / **Import Profile** | which macros are enabled | import confirms, and names what would fire |
+| **Export HTML** and the Playnite auto-apply page | **nothing about macros** | n/a |
+| **Back up all slots** / **Restore** | both | asks about definitions, both ways |
+
+**Import macros** replaces every macro on the dongle, for all profiles. It loads
+into the editor rather than writing straight to the device, so nothing is
+committed until you press **Save macros to device**.
+
+**Importing a profile asks before changing your macro selection**, and lists what
+that selection would switch on. It has to: a profile carries only the enable mask,
+so it turns on *your* macros in those rows — which may be nothing like what the
+profile's author had there. Decline and your current selection is left alone while
+every other setting still imports.
+
+**The auto-apply page carries no macro information at all.** Two reasons, either
+sufficient. It runs unattended on every game launch, so there is nobody to answer
+that question — and enabling the first macro re-enumerates the controller, which
+is the same mid-apply interruption hazard that makes wake unsuitable for a
+field-by-field `.html` profile. Per-game macro sets belong on the slot path, where
+the whole configuration is applied in one command.
 
 #### Two limits to be aware of
 
@@ -1370,9 +1657,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.19.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.19.0)
-- `ds5-v1.19.0-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.28.4.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.28.4)
+- `ds5-v1.28.4-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

@@ -3,6 +3,7 @@
 //
 
 #include <cstdio>
+#include <cmath>
 #include "bsp/board_api.h"
 #include "bt.h"
 #include "button_functions.h"
@@ -13,6 +14,7 @@
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
 #include "macro.h"
+#include "input_buttons.h"   // BTN_* logical masks used by macro_apply_buttons()
 #endif
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
@@ -61,16 +63,169 @@ volatile bool report_dirty = false;
 // report copy: every internal consumer (AT gating, kick, shapes, gyro) keeps
 // reading the raw trigger. Report body: [4]=L2 analog, [5]=R2 analog,
 // [8] bit2=L2 pressed, bit3=R2 pressed. Zone N starts at N*25.5 counts.
-static inline void apply_trigger_deadzone(uint8_t *r) {
+// Stage-2 output button -> report bit. Report offsets: 7 = hat + face buttons,
+// 8 = shoulders / sticks / system (same layout input_buttons.h decodes).
+static inline void t2_press(uint8_t *r, uint8_t btn) {
+    switch (btn) {
+        case T2BTN_SQUARE:   r[7] |= 0x10u; break;
+        case T2BTN_CROSS:    r[7] |= 0x20u; break;
+        case T2BTN_CIRCLE:   r[7] |= 0x40u; break;
+        case T2BTN_TRIANGLE: r[7] |= 0x80u; break;
+        case T2BTN_L1:       r[8] |= 0x01u; break;
+        case T2BTN_R1:       r[8] |= 0x02u; break;
+        case T2BTN_L3:       r[8] |= 0x40u; break;
+        case T2BTN_R3:       r[8] |= 0x80u; break;
+        // Trigger targets have to move the ANALOG AXIS as well as the click bit.
+        // Games read L2/R2 as axes - the digital bits in byte 8 are barely used -
+        // so setting the bit alone was invisible, which is why picking L2 or R2
+        // appeared to do nothing at all. Take the max so a real physical pull on
+        // that trigger is never reduced by the synthetic press.
+        case T2BTN_L2:       r[8] |= 0x04u; if (r[4] < 255u) r[4] = 255u; break;
+        case T2BTN_R2:       r[8] |= 0x08u; if (r[5] < 255u) r[5] = 255u; break;
+        default: break;
+    }
+}
+
+// Release hysteresis, in raw trigger counts (~3% of travel). Resting a finger
+// exactly on the boundary makes the raw value dither by a few counts, so a bare
+// threshold pressed and released the stage-2 button at report rate. In a game
+// that reacts to the button - nitro engaging and disengaging over and over -
+// that reads as a buzz right at the wall. Engage at the boundary, release below
+// it, so the two edges cannot chase each other.
+constexpr uint8_t T2_HYST = 8;
+
+// Per-trigger latch state. RAM only, never Config_body: this is transient, not
+// a setting, and it must not travel into a profile or a slot. The boundary and
+// mode are kept alongside so a slot activation that retunes them while the
+// trigger is held cannot strand the latch in its old state.
+struct T2State { bool latched; uint8_t pos; uint8_t mode; };
+
+// Dead zone + two-stage handling for ONE trigger. Everything is computed from
+// the ORIGINAL axis value captured on entry: the dead zone rewrites r[axis_off]
+// and the rescale would otherwise read its own output back.
+// Returns true when this trigger's second stage is latched. The PRESS itself is
+// applied by the caller after BOTH triggers have been processed - see
+// apply_trigger_output.
+static inline bool apply_trigger_out_one(uint8_t *r, uint8_t axis_off, uint8_t dig_mask,
+                                         uint8_t dz, uint8_t mode, uint8_t pos, uint8_t btn,
+                                         T2State &st) {
+    const uint8_t raw = r[axis_off];
+    if (st.pos != pos || st.mode != mode) { st.latched = false; st.pos = pos; st.mode = mode; }
+    const uint8_t dz_thr = dz ? (uint8_t) (((uint16_t) dz * 51u) / 2u) : 0u;
+
+    if (dz && raw < dz_thr) { r[axis_off] = 0; r[8] &= (uint8_t) ~dig_mask; }
+
+    if ((mode & T2_AXIS_MASK) == T2_AXIS_OFF || pos == 0) { st.latched = false; return false; }
+
+    // Rescale stretches [dead zone .. boundary] over the full 0-255, so the
+    // shortened travel keeps full analog authority instead of being clipped.
+    // Position-only: it does not depend on the latch.
+    if ((mode & T2_AXIS_MASK) == T2_AXIS_RESCALE && pos > dz_thr) {
+        const uint32_t v   = raw <= dz_thr ? 0u : (uint32_t) (raw - dz_thr);
+        const uint32_t out = (v * 255u) / (uint32_t) (pos - dz_thr);
+        r[axis_off] = (uint8_t) (out > 255u ? 255u : out);
+    }
+
+    // A boundary at or below the hysteresis would leave the release threshold at
+    // 0 and the latch could never clear, so it falls back to "fully released".
+    const uint8_t rel = (pos > T2_HYST) ? (uint8_t) (pos - T2_HYST) : 1u;
+    if (st.latched) { if (raw < rel) st.latched = false; }
+    else            { if (raw >= pos) st.latched = true;  }
+    if (!st.latched) return false;
+
+    if (mode & T2_RELEASE_STAGE1) r[8] &= (uint8_t) ~dig_mask;
+    return true;   // caller presses, once both triggers have been processed
+}
+
+
+// Logical button mask -> report bits. The INVERSE of button_mask() in
+// input_buttons.h; the two lists must stay in step, so they are cross
+// referenced in both directions. Bytes 7/8/9 are b0/b1/b2 there.
+static inline void macro_apply_buttons(uint8_t *r) {
+    const uint32_t sup = macro_suppress_mask();
+    const uint32_t inj = macro_inject_mask();
+    if (sup) {
+        if (sup & BTN_SQUARE)   r[7] &= (uint8_t) ~0x10u;
+        if (sup & BTN_CROSS)    r[7] &= (uint8_t) ~0x20u;
+        if (sup & BTN_CIRCLE)   r[7] &= (uint8_t) ~0x40u;
+        if (sup & BTN_TRIANGLE) r[7] &= (uint8_t) ~0x80u;
+        if (sup & BTN_L1)       r[8] &= (uint8_t) ~0x01u;
+        if (sup & BTN_R1)       r[8] &= (uint8_t) ~0x02u;
+        // Triggers need the AXIS zeroed as well as the click bit. Games read
+        // L2/R2 as analog axes and barely use the digital bits, so clearing the
+        // bit alone left the full pull visible and "hide input from game" did
+        // nothing for a trigger while working for every other button. Same
+        // lesson as the two-stage trigger's L2/R2 output, in reverse.
+        if (sup & BTN_L2)     { r[8] &= (uint8_t) ~0x04u; r[4] = 0; }
+        if (sup & BTN_R2)     { r[8] &= (uint8_t) ~0x08u; r[5] = 0; }
+        if (sup & BTN_CREATE)   r[8] &= (uint8_t) ~0x10u;
+        if (sup & BTN_OPTIONS)  r[8] &= (uint8_t) ~0x20u;
+        if (sup & BTN_L3)       r[8] &= (uint8_t) ~0x40u;
+        if (sup & BTN_R3)       r[8] &= (uint8_t) ~0x80u;
+        if (sup & BTN_PS)       r[9] &= (uint8_t) ~0x01u;
+        if (sup & BTN_TOUCHPAD) r[9] &= (uint8_t) ~0x02u;
+        if (sup & BTN_MUTE)     r[9] &= (uint8_t) ~0x04u;
+        // A suppressed D-pad direction has to rewrite the HAT NIBBLE, which is
+        // an enum (0-7 plus 8 = centred), not a bitfield. Only the exact
+        // direction is cleared; a diagonal keeps its other half.
+        constexpr uint32_t DPAD_ALL = BTN_DPAD_UP | BTN_DPAD_RIGHT |
+                                      BTN_DPAD_DOWN | BTN_DPAD_LEFT;
+        const uint8_t hat = (uint8_t) (r[7] & 0x0Fu);
+        if (hat <= 7 && (sup & DPAD_ALL)) {
+            // Reuses input_buttons.h's own table rather than restating it, so
+            // there is no second copy of the hat encoding to drift.
+            const uint32_t d = HAT_TO_DPAD[hat] & ~(sup & DPAD_ALL);
+            uint8_t out = 8;                       // centred
+            for (uint8_t i = 0; i < 8; i++) if (HAT_TO_DPAD[i] == d) { out = i; break; }
+            r[7] = (uint8_t) ((r[7] & 0xF0u) | out);
+        }
+    }
+    if (inj) {
+        // inj is indexed by the T2Button enum, shared with the two-stage
+        // trigger so there is exactly one place that knows these bit positions.
+        for (uint8_t b = 1; b < T2BTN_COUNT; b++) {
+            if (!(inj & (1u << (b - 1)))) continue;
+            // A trigger output carries ANALOG travel when a trigger drove it, so
+            // L2 -> R2 stays variable instead of collapsing to an on/off switch.
+            // macro_analog_out() returns 255 for a button-driven trigger, which
+            // is exactly what t2_press would have done anyway.
+            if (b == T2BTN_L2 || b == T2BTN_R2) {
+                const bool right = (b == T2BTN_R2);
+                const uint8_t v  = macro_analog_out(right);
+                const uint8_t ax = right ? 5u : 4u;
+                r[8] |= right ? 0x08u : 0x04u;
+                if (v && r[ax] < v) r[ax] = v;
+                continue;
+            }
+            t2_press(r, b);
+        }
+    }
+    if (macro_suppress_stick(false)) { r[0] = 128; r[1] = 128; }
+    if (macro_suppress_stick(true))  { r[2] = 128; r[3] = 128; }
+}
+
+static inline void apply_trigger_output(uint8_t *r) {
     const auto &c = get_config();
-    if (c.at_deadzone) {        // R2
-        const uint8_t thr = (uint8_t)(((uint16_t)c.at_deadzone * 51u) / 2u);
-        if (r[5] < thr) { r[5] = 0; r[8] &= (uint8_t)~0x08; }
-    }
-    if (c.at_l2_deadzone) {     // L2
-        const uint8_t thr = (uint8_t)(((uint16_t)c.at_l2_deadzone * 51u) / 2u);
-        if (r[4] < thr) { r[4] = 0; r[8] &= (uint8_t)~0x04; }
-    }
+    macro_apply_buttons(r);
+    static T2State r2_st{}, l2_st{};
+    // Both passes read the PHYSICAL trigger values and decide their own latch
+    // first. Only then are the stage-2 presses applied. Doing it inline meant
+    // R2's press landed before L2's pass, which then cleared the very click bit
+    // R2 had just set (its dead-zone branch clears that same mask) - and a
+    // synthetic full-scale value on L2 would have been read by L2's own latch as
+    // a real pull, so a press on one trigger could trip the other's second stage.
+    const bool r2_fire = apply_trigger_out_one(r, 5, 0x08u, c.at_deadzone,    c.t2_mode,    c.t2_pos,    c.t2_button,    r2_st);
+    const bool l2_fire = apply_trigger_out_one(r, 4, 0x04u, c.at_l2_deadzone, c.t2_l2_mode, c.t2_l2_pos, c.t2_l2_button, l2_st);
+    if (r2_fire) t2_press(r, c.t2_button);
+    if (l2_fire) t2_press(r, c.t2_l2_button);
+}
+
+// Cheap gate so the untouched-report fast path survives for everyone not using
+// either feature.
+static inline bool trigger_output_active(const Config_body &c) {
+    return c.at_deadzone || c.at_l2_deadzone ||
+           (c.t2_mode & T2_AXIS_MASK) != T2_AXIS_OFF ||
+           (c.t2_l2_mode & T2_AXIS_MASK) != T2_AXIS_OFF;
 }
 
 void __not_in_flash_func(interrupt_loop)() {
@@ -79,10 +234,10 @@ void __not_in_flash_func(interrupt_loop)() {
     // TODO: Refactor for better code reuse
     if (get_config().polling_rate_mode != 2) {
         const auto &cdz = get_config();
-        if (cdz.at_deadzone || cdz.at_l2_deadzone) {
+        if (trigger_output_active(cdz)) {
             static uint8_t dz_report[63];
             memcpy(dz_report, interrupt_in_data, 63);
-            apply_trigger_deadzone(dz_report);
+            apply_trigger_output(dz_report);
             if (!tud_hid_report(0x01, dz_report, 63)) {
                 printf("[USBHID] tud_hid_report error\n");
             }
@@ -107,7 +262,7 @@ void __not_in_flash_func(interrupt_loop)() {
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
-        apply_trigger_deadzone(safe_report); // no-op when both dead zones are 0
+        apply_trigger_output(safe_report); // no-op when dead zones and stages are off
         if (!tud_hid_report(0x01, safe_report, 63)) {
             printf("[USBHID] tud_hid_report error\n");
 
@@ -141,7 +296,7 @@ volatile uint16_t g_diag_gyro = 0; // |gyro_x rate| diagnostic, field 0x35
 // while gyro aiming is off.
 volatile int16_t g_diag_imu_gx = 0, g_diag_imu_gy = 0, g_diag_imu_gz = 0;
 volatile int16_t g_diag_imu_ax = 0, g_diag_imu_ay = 0, g_diag_imu_az = 0;
-// Final gyro→stick outputs (fields 0x70/0x71) — mapped deg/s * 100, after
+// Final gyro→stick outputs (fields 0x88/0x89) — mapped deg/s * 100, after
 // space conversion and sensitivity but before accumulator truncation.
 volatile int16_t g_diag_stick_x = 0, g_diag_stick_y = 0;
 
@@ -149,6 +304,247 @@ static GyroFusion g_fusion;
 static GyroSpace  g_space;
 static bool       g_gyro_ready = false;
 static uint64_t   g_gyro_last_us = 0;
+
+// --- gyro as a mouse -------------------------------------------------------
+//
+// A mouse takes DELTAS, which is what a gyro produces natively. The stick path
+// clamps into a 0-255 absolute range, so a fast turn pegs and stops.
+//
+// The accumulator is the whole trick. `raw * sens / 200` truncates, and the loss
+// is per REPORT - so the slower you turn, the more reports the same rotation
+// takes and the more of it is thrown away. Simulated over a 90-degree turn at
+// sens 50: fast (30 reports) travels the full 1500 counts, slow (600 reports)
+// only 1200. A 20% shortfall that appears only when aiming carefully, which is
+// exactly when it is least wanted. Keeping the remainder in integer form makes
+// every speed land on the same total. No floats: this runs in the report path.
+struct __attribute__((packed)) GyroMouseReport {
+    uint8_t buttons;   // bit0 left, bit1 right, bit2 middle - from macro rows
+    int16_t x;
+    int16_t y;
+    int8_t  wheel;     // scroll ticks from macro rows
+};
+static_assert(sizeof(GyroMouseReport) == 6, "must match desc_hid_report_mouse");
+
+static int32_t g_gm_acc_x = 0, g_gm_acc_y = 0;   // leftover numerator, not counts
+static volatile int32_t g_gm_pend_x = 0, g_gm_pend_y = 0; // computed in the report
+                                                          // path, sent from the loop
+
+void gyro_mouse_reset() { g_gm_acc_x = 0; g_gm_acc_y = 0; g_gm_pend_x = 0; g_gm_pend_y = 0; }
+
+// A mouse is a DELTA device and the stick is an ABSOLUTE one, so they need
+// completely different scales. A stick deflection of dx is a steady turn RATE
+// for as long as it is held; a mouse delta of dx moves the pointer dx counts on
+// EVERY report and then needs another one. Reusing the stick's /200 meant sens 5
+// produced roughly 40 counts per report - about 40,000 counts per second at
+// 1 kHz, which is why it flew off the screen. /256 then overshot the other way;
+// /64 puts a 90-degree turn at roughly 5,700 counts at sens 50, with the 1-100
+// range spanning very slow to very fast.
+constexpr int32_t GYRO_MOUSE_DIV = 200 * 64;
+
+// Reports arrive at the polling rate, so a delta-per-report scale would make the
+// mouse four times slower at 250 Hz than at 1 kHz for the same wrist movement.
+// Multiply back up so the FEEL is the same at every polling rate.
+//   mode 0 = 250 Hz (bInterval 4), 1 = 500 Hz (2), 2 = 1 kHz (1)
+static inline int32_t gyro_rate_mul(uint8_t polling_rate_mode) {
+    switch (polling_rate_mode) {
+        case 0:  return 4;
+        case 1:  return 2;
+        default: return 1;
+    }
+}
+
+// Computed in the report path, SENT from the main loop.
+//
+// This function runs inside on_bt_data(), which the comment above calls the
+// report critical section. Calling into TinyUSB from here re-enters the USB
+// stack from the BT callback: the first version did exactly that and the portal
+// started failing to read config fields, including the version registers, so it
+// reported "pre-1.0.5". Only arithmetic belongs here.
+static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t pitch,
+                                                        const Config_body &cfg) {
+    const int32_t s   = cfg.gyro_sens;
+    const int32_t sy  = cfg.gyro_sens_y ? cfg.gyro_sens_y : s;
+    const int32_t mul = gyro_rate_mul(cfg.polling_rate_mode);
+    int32_t nx = -horiz * s  * mul + g_gm_acc_x;
+    int32_t ny = -pitch * sy * mul + g_gm_acc_y;
+    int32_t dx = nx / GYRO_MOUSE_DIV;        // truncates toward zero
+    int32_t dy = ny / GYRO_MOUSE_DIV;
+    g_gm_acc_x = nx - dx * GYRO_MOUSE_DIV;   // exact remainder, sign follows nx
+    g_gm_acc_y = ny - dy * GYRO_MOUSE_DIV;
+    if (cfg.gyro_invert & 1) dx = -dx;
+    if (cfg.gyro_invert & 2) dy = -dy;
+    g_gm_pend_x += dx;
+    g_gm_pend_y += dy;
+}
+
+// --- Flick Stick -----------------------------------------------------------
+//
+// Implemented to Jibb Smart's specification (gyrowiki.jibbsmart.com, "Good Gyro
+// Controls Part 2"). He invented it, and the constants below are the shipped
+// JoyShockMapper defaults rather than numbers chosen here.
+//
+// The stick angle maps to the SAME in-game angle. Two behaviours:
+//   flick  - crossing the threshold from centre turns by the stick's angle
+//   turn   - rotating a held stick adds the angle change directly
+//
+// Crucially it adds a RELATIVE yaw change and never an absolute heading, so the
+// gyro can still adjust during and after a flick. That is the whole point of
+// pairing it with gyro aim.
+//
+// Runs in the main loop, not the report path: it needs atan2 and a time delta,
+// and the report path is documented integer-only.
+constexpr float FLICK_THRESHOLD       = 0.9f;   // huge deadzone: a flick is deliberate
+constexpr float FLICK_TIME_S          = 0.10f;  // 0.2s "feels slow enough that I feel
+                                                // like I'm waiting for it"
+constexpr float TURN_SMOOTH_THRESHOLD = 0.1f;   // only SMALL movements get smoothed
+constexpr int   TURN_SMOOTH_SAMPLES   = 8;
+
+static volatile uint8_t g_fs_stick_x = 128, g_fs_stick_y = 128; // captured raw
+static float g_fs_last_x = 0.0f, g_fs_last_y = 0.0f;
+static float g_fs_progress = FLICK_TIME_S;   // finished
+static float g_fs_size = 0.0f;               // radians still to deliver
+static float g_fs_buf[TURN_SMOOTH_SAMPLES];
+static int   g_fs_buf_i = 0;
+static uint32_t g_fs_last_ms = 0;
+static float g_fs_count_rem = 0.0f;   // sub-count remainder, carried between ticks
+
+static void flick_zero_smoothing() {
+    for (int i = 0; i < TURN_SMOOTH_SAMPLES; i++) g_fs_buf[i] = 0.0f;
+}
+void flick_stick_reset() {
+    g_fs_last_x = g_fs_last_y = 0.0f;
+    g_fs_progress = FLICK_TIME_S;
+    g_fs_size = 0.0f;
+    g_fs_last_ms = 0;
+    g_fs_count_rem = 0.0f;
+    flick_zero_smoothing();
+}
+
+// Ease OUT only. Jibb Smart: easing in is deliberately skipped so the flick
+// feels responsive rather than animated.
+static inline float flick_warp(float t) {
+    const float f = 1.0f - t;
+    return 1.0f - f * f;
+}
+static inline float wrap_pi(float a) {
+    while (a >  3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    return a;
+}
+static inline float flick_smoothed(float in) {
+    g_fs_buf_i = (g_fs_buf_i + 1) % TURN_SMOOTH_SAMPLES;
+    g_fs_buf[g_fs_buf_i] = in;
+    float sum = 0.0f;
+    for (int i = 0; i < TURN_SMOOTH_SAMPLES; i++) sum += g_fs_buf[i];
+    return sum / (float) TURN_SMOOTH_SAMPLES;
+}
+// Soft tiered smoothing: no smoothing at all above a small threshold, and the
+// blend is weighted so total displacement is unchanged either way.
+static inline float flick_tiered(float in) {
+    const float t1 = TURN_SMOOTH_THRESHOLD * 0.5f, t2 = TURN_SMOOTH_THRESHOLD;
+    float w = (fabsf(in) - t1) / (t2 - t1);
+    if (w < 0.0f) w = 0.0f; else if (w > 1.0f) w = 1.0f;
+    return in * w + flick_smoothed(in * (1.0f - w));
+}
+
+// Returns the yaw change in radians for this tick.
+static float flick_stick_step(float sx, float sy, float dt) {
+    float result = 0.0f;
+    const float len     = sqrtf(sx * sx + sy * sy);
+    const float lastLen = sqrtf(g_fs_last_x * g_fs_last_x + g_fs_last_y * g_fs_last_y);
+
+    if (len >= FLICK_THRESHOLD) {
+        if (lastLen < FLICK_THRESHOLD) {
+            g_fs_progress = 0.0f;                    // flick start
+            g_fs_size = atan2f(-sx, sy);             // angle from forward
+        } else {
+            const float a  = atan2f(-sx, sy);
+            const float la = atan2f(-g_fs_last_x, g_fs_last_y);
+            result += flick_tiered(wrap_pi(a - la));  // turn
+        }
+    } else if (lastLen >= FLICK_THRESHOLD) {
+        flick_zero_smoothing();                      // released: drop the tail
+    }
+
+    if (g_fs_progress < FLICK_TIME_S) {              // continue an in-flight flick
+        const float last = g_fs_progress;
+        g_fs_progress += dt;
+        if (g_fs_progress > FLICK_TIME_S) g_fs_progress = FLICK_TIME_S;
+        result += (flick_warp(g_fs_progress / FLICK_TIME_S)
+                 - flick_warp(last / FLICK_TIME_S)) * g_fs_size;
+    }
+
+    g_fs_last_x = sx; g_fs_last_y = sy;
+    return result;
+}
+
+// Drained from the main loop, where touching TinyUSB is safe.
+void gyro_mouse_task() {
+    const auto &cfg = get_config();
+    if (!usb_mouse_iface_needed(cfg)) return;
+    // Macro mouse output shares this report. Clicks are a level, scroll a tick.
+    const uint8_t mbtn = macro_mouse_buttons();
+    static uint8_t s_mbtn_sent = 0;
+
+    if (cfg.gyro_output == 2 && cfg.flick_counts_360 > 0) {
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (g_fs_last_ms == 0) g_fs_last_ms = now;
+        const uint32_t dms = now - g_fs_last_ms;
+        if (dms > 0) {
+            g_fs_last_ms = now;
+            // Stick to -1..1, Y up-positive to match atan2f(-x, y) from forward.
+            const float sx =  ((float) g_fs_stick_x - 128.0f) / 127.0f;
+            const float sy = -((float) g_fs_stick_y - 128.0f) / 127.0f;
+            const float yaw = flick_stick_step(sx, sy, (float) dms / 1000.0f);
+            if (yaw != 0.0f) {
+                // radians -> mouse counts using THIS GAME's calibration.
+                //
+                // NEGATED: the spec's atan2(-x, y) measures anticlockwise from
+                // forward, so a flick to the RIGHT is -90 degrees while mouse +X
+                // moves the view right.
+                //
+                // The REMAINDER is carried. A flick is delivered over ~100 ticks
+                // and each one was truncated toward zero, so every flick lost
+                // about half a count per tick - roughly 2.8 degrees on a 180 at
+                // 6500 counts/360, always in the same direction, which showed up
+                // as the view drifting after a few flicks. Ease-out makes it
+                // worse: the tail ticks are fractions of a count and truncated
+                // away entirely. Same fix as the gyro accumulator, which was
+                // built for exactly this and which this conversion bypassed.
+                const float counts = -(yaw / 6.28318531f) * (float) cfg.flick_counts_360
+                                   + g_fs_count_rem;
+                const int32_t whole = (int32_t) counts;
+                g_fs_count_rem = counts - (float) whole;
+                g_gm_pend_x += whole;
+            }
+        }
+    }
+
+    int32_t dx = g_gm_pend_x, dy = g_gm_pend_y;
+    const int8_t pending = macro_mouse_peek_scroll();
+    // Send when anything changed: movement, a scroll tick, or a button going
+    // down OR up. Returning early on "no movement" would strand a release and
+    // leave the click held at the host.
+    if (dx == 0 && dy == 0 && pending == 0 && mbtn == s_mbtn_sent) return;
+    const uint8_t inst = usb_mouse_instance(cfg);
+    if (!tud_hid_n_ready(inst)) return;      // busy: keep it pending, lose nothing
+    // Consume the scroll only now that the report is definitely going out. Taking
+    // it before the readiness check dropped the tick whenever the endpoint was
+    // busy - a scroll that silently does nothing under load.
+    const int8_t wheel = macro_mouse_take_scroll();
+    g_gm_pend_x -= dx;
+    g_gm_pend_y -= dy;
+    if (dx >  32767) dx =  32767; if (dx < -32767) dx = -32767;
+    if (dy >  32767) dy =  32767; if (dy < -32767) dy = -32767;
+    // dy already carries the stick path's sign convention, where aim-up is
+    // NEGATIVE (stick Y: 0 = up, 255 = down). Screen Y also grows downward, so
+    // the two agree and dy passes through unchanged. Negating it here - which the
+    // first version did, reasoning about screen coordinates alone - inverted the
+    // vertical axis relative to stick mode and to the Invert gyro aim setting.
+    GyroMouseReport r{mbtn, (int16_t) dx, (int16_t) dy, wheel};
+    tud_hid_n_report(inst, 0, &r, sizeof(r));
+    s_mbtn_sent = mbtn;
+}
 
 static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     const auto &cfg = get_config();
@@ -159,6 +555,18 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     // with its own gyro_invert, is added on top below - the two stay independent.
     if (cfg.rstick_invert & 1) d[2] = (uint8_t)(255 - d[2]); // RightStickX
     if (cfg.rstick_invert & 2) d[3] = (uint8_t)(255 - d[3]); // RightStickY
+
+    // Flick Stick is a STICK feature, not a gyro one, so it must run before every
+    // gyro-mode early return below - exactly as the inversion above does. Placed
+    // after them it did nothing whenever gyro was off or its activation gate was
+    // shut (mode 1 needs L2 held, 3 needs the touchpad, and so on), which is why
+    // the right stick appeared completely dead.
+    if (cfg.gyro_output == 2) {
+        g_fs_stick_x = d[2];
+        g_fs_stick_y = d[3];
+        d[2] = 128; d[3] = 128;   // the game must not also turn from the stick
+    }
+
     auto rd16 = [&](int off) -> int32_t {
         return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
     };
@@ -195,6 +603,10 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (cfg.gyro_mode == 5 && d[5] < 30) active = false;              // R2
     if (cfg.gyro_mode == 6 && !(d[8] & 0x01)) active = false;         // L1
     if (cfg.gyro_mode == 7 && !(d[8] & 0x02)) active = false;         // R1
+    // A motion macro's gate is held: the same wrist movement that draws the
+    // gesture would otherwise also swing the aim. Same idea as gyro_mode 4
+    // pausing while the touchpad is touched.
+    if (macro_motion_capturing()) active = false;
 
     // Hardware-verified DS5 raw sensor layout (matches SDL, JoyShockLibrary and
     // the Linux hid-playstation driver byte for byte, plus this repo's own
@@ -265,7 +677,7 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
     // sensitivity be calibrated against real numbers (0 = inactive).
-    // Fields 0x70/0x71: final gyro→stick output (deg/s * 100) after space
+    // Fields 0x88/0x89: final gyro→stick output (deg/s * 100) after space
     // conversion but before accumulator truncation — for debugging mapping.
     { extern volatile uint16_t g_diag_gyro;
       extern volatile int16_t g_diag_stick_x, g_diag_stick_y;
@@ -279,6 +691,22 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     // Small deadzone against residual sensor noise at rest.
     if (out.x > -0.5f && out.x < 0.5f) out.x = 0.0f;
     if (out.y > -0.5f && out.y < 0.5f) out.y = 0.0f;
+
+    // Gyro output routing (v1.28.x merge): 0 = right stick only, 1 = mouse
+    // only, 2 = mouse + Flick Stick (the stick was already captured above and
+    // the flick is turned into mouse counts by gyro_mouse_task()). Mouse
+    // output goes through gyro_emit_mouse(), which only does arithmetic and
+    // accumulates into the pending report that gyro_mouse_task() drains from
+    // the main loop - calling TinyUSB from the BT callback is forbidden here.
+    // out.x/out.y are deg/s with +x = aim right, +y = aim up. gyro_emit_mouse
+    // expects raw LSBs whose yaw is positive when turning LEFT (DS5 raw, see
+    // the sensor-layout comment above), so the horizontal axis is negated and
+    // both axes are scaled back by GYRO_DEG_PER_LSB.
+    if (cfg.gyro_output != 0) {
+        gyro_emit_mouse((int32_t)(-out.x / GYRO_DEG_PER_LSB),
+                        (int32_t)( out.y / GYRO_DEG_PER_LSB), cfg);
+        return;   // pure mouse: do not also move the stick
+    }
 
     // Per-report stick offset (no dt multiplier). The stick position directly
     // encodes camera angular velocity for the game — it is NOT a physical
@@ -642,6 +1070,7 @@ int main() {
         // advance to release it - macro_on_input only STARTS a macro.
         #ifdef ENABLE_WAKE_HID
         macro_task();
+        gyro_mouse_task();   // USB send happens HERE, never in the BT callback
         #endif
         audio_loop();
         interrupt_loop();

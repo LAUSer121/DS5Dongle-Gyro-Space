@@ -33,6 +33,8 @@
 constexpr uint8_t RPT_BTN0    = 7;   // hat + face
 constexpr uint8_t RPT_BTN1    = 8;   // shoulders / sticks / system
 constexpr uint8_t RPT_BTN2    = 9;   // PS / touchpad / mute
+constexpr uint8_t RPT_L2_AXIS = 4;   // analog trigger travel, 0-255
+constexpr uint8_t RPT_R2_AXIS = 5;
 constexpr uint8_t RPT_TOUCH0  = 32;  // finger 1, 4 bytes
 constexpr uint8_t RPT_TOUCH1  = 36;  // finger 2, 4 bytes
 constexpr uint8_t RPT_MIN_LEN = 40;  // shortest report we can fully decode

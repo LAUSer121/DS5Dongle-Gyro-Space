@@ -37,8 +37,8 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 20;
-constexpr uint8_t FW_VER_PATCH = 1;
+constexpr uint8_t FW_VER_MINOR = 28;
+constexpr uint8_t FW_VER_PATCH = 4;
 
 // Width of the value the LAST successful write_config_value() emitted. The bulk
 // reader (0x0c) needs a length per field and used to carry its own hand-written
@@ -231,6 +231,17 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         // Macro enable bitmap, stored INVERTED (set bit = disabled) so an old
         // slot's 0xFF tail fill defaults to "no macros". See config.h.
         case 0x6c: { uint32_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.macro_disable=v; break; }
+        // Two-stage triggers. NOT enumeration-critical: nothing here touches the
+        // USB descriptor, only the outbound report main.cpp already rewrites.
+        case 0x6d: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_mode=v; break; }
+        case 0x6e: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_pos=v; break; }
+        case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_button=v; break; }
+        case 0x70: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_l2_mode=v; break; }
+        case 0x71: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_l2_pos=v; break; }
+        case 0x72: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_l2_button=v; break; }
+        case 0x73: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_output=v; break; }
+        case 0x74: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.flick_counts_360=v; break; }
+        case 0x75: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_sens_y=v; break; }
         case 0x56: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.effect_leak_max_burst=v; break; }
         case 0x57: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_enable=v; break; }
         case 0x58: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_condition=v; break; }
@@ -245,17 +256,20 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x61: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_yield=v; break; }
         case 0x62: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_l2_yield=v; break; }
         case 0x44: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.at_kick_style=v; break; }
-        // Gyro aiming space (v1.19.0).
-        case 0x72: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_space=v; break; }
-        case 0x73: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_fusion=v; break; }
-        case 0x74: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_x=v; break; }
-        case 0x75: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_y=v; break; }
-        case 0x76: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_z=v; break; }
-        // Windows native battery (UPS) display (v1.20.0).
-        case 0x6d: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_mode=v; break; }
-        case 0x6e: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_fake=v; break; }
-        // Battery display refinements (v1.20.x).
-        case 0x6f: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
+        // Gyro aiming space (v1.19.0). NOTE: migrated to 0x80-0x84 on the
+        // upstream merge - upstream took 0x72-0x76 for t2_l2_button /
+        // gyro_output / flick_counts_360 / gyro_sens_y, so these moved up.
+        case 0x80: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_space=v; break; }
+        case 0x81: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_fusion=v; break; }
+        case 0x82: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_x=v; break; }
+        case 0x83: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_y=v; break; }
+        case 0x84: { int16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_cal_z=v; break; }
+        // Windows native battery (UPS) display (v1.20.0). NOTE: migrated to
+        // 0x85-0x87 on the upstream merge - upstream took 0x6d-0x6f for
+        // t2_mode / t2_pos / t2_button.
+        case 0x85: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_mode=v; break; }
+        case 0x86: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_fake=v; break; }
+        case 0x87: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_blend=v; break; }
         case 0x90: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_smooth=v; break; }
         case 0x91: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_poll_s=v; break; }
         case 0x93: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.battery_volt_weight=v; break; }
@@ -342,6 +356,15 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x15: return write_config_value(buffer, bufsize, config.auto_mute_replace);
         case 0x16: return write_config_value(buffer, bufsize, config.auto_mute_mix);
         case 0x6c: return write_config_value(buffer, bufsize, config.macro_disable);
+        case 0x6d: return write_config_value(buffer, bufsize, config.t2_mode);
+        case 0x6e: return write_config_value(buffer, bufsize, config.t2_pos);
+        case 0x6f: return write_config_value(buffer, bufsize, config.t2_button);
+        case 0x70: return write_config_value(buffer, bufsize, config.t2_l2_mode);
+        case 0x71: return write_config_value(buffer, bufsize, config.t2_l2_pos);
+        case 0x72: return write_config_value(buffer, bufsize, config.t2_l2_button);
+        case 0x73: return write_config_value(buffer, bufsize, config.gyro_output);
+        case 0x74: return write_config_value(buffer, bufsize, config.flick_counts_360);
+        case 0x75: return write_config_value(buffer, bufsize, config.gyro_sens_y);
         case 0x17: return write_config_value(buffer, bufsize, config.auto_haptics_gate);
         case 0x18: return write_config_value(buffer, bufsize, config.auto_haptics_slope);
         case 0x19: return write_config_value(buffer, bufsize, config.lightbar_off);
@@ -420,15 +443,16 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x61: return write_config_value(buffer, bufsize, config.ce_r2_yield);
         case 0x62: return write_config_value(buffer, bufsize, config.ce_l2_yield);
         case 0x44: return write_config_value(buffer, bufsize, config.at_kick_style);
-        // Gyro aiming space (v1.19.0).
-        case 0x72: return write_config_value(buffer, bufsize, config.gyro_space);
-        case 0x73: return write_config_value(buffer, bufsize, config.gyro_fusion);
-        case 0x74: return write_config_value(buffer, bufsize, config.gyro_cal_x);
-        case 0x75: return write_config_value(buffer, bufsize, config.gyro_cal_y);
-        case 0x76: return write_config_value(buffer, bufsize, config.gyro_cal_z);
-        case 0x6d: return write_config_value(buffer, bufsize, config.battery_mode);
-        case 0x6e: return write_config_value(buffer, bufsize, config.battery_fake);
-        case 0x6f: return write_config_value(buffer, bufsize, config.battery_volt_blend);
+        // Gyro aiming space (v1.19.0). 0x80-0x84 after upstream merge (upstream
+        // took 0x72-0x76 for its t2/gyro_output fields).
+        case 0x80: return write_config_value(buffer, bufsize, config.gyro_space);
+        case 0x81: return write_config_value(buffer, bufsize, config.gyro_fusion);
+        case 0x82: return write_config_value(buffer, bufsize, config.gyro_cal_x);
+        case 0x83: return write_config_value(buffer, bufsize, config.gyro_cal_y);
+        case 0x84: return write_config_value(buffer, bufsize, config.gyro_cal_z);
+        case 0x85: return write_config_value(buffer, bufsize, config.battery_mode);
+        case 0x86: return write_config_value(buffer, bufsize, config.battery_fake);
+        case 0x87: return write_config_value(buffer, bufsize, config.battery_volt_blend);
         case 0x90: return write_config_value(buffer, bufsize, config.battery_smooth);
         case 0x91: return write_config_value(buffer, bufsize, config.battery_volt_poll_s);
         case 0x93: return write_config_value(buffer, bufsize, config.battery_volt_weight);
@@ -479,10 +503,12 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x7a: { extern volatile int16_t g_diag_imu_ax; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ax); }
         case 0x7b: { extern volatile int16_t g_diag_imu_ay; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_ay); }
         case 0x7c: { extern volatile int16_t g_diag_imu_az; return write_config_value(buffer, bufsize, (int16_t)g_diag_imu_az); }
-        // Final gyro→stick output (fields 0x70-0x71): deg/s * 100, after
+        // Final gyro→stick output (fields 0x88-0x89): deg/s * 100, after
         // space conversion and before accumulator truncation. Read-only.
-        case 0x70: { extern volatile int16_t g_diag_stick_x; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_x); }
-        case 0x71: { extern volatile int16_t g_diag_stick_y; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_y); }
+        // (Migrated from 0x70-0x71 on the upstream merge - upstream took those
+        // for t2_l2_mode / t2_l2_pos.)
+        case 0x88: { extern volatile int16_t g_diag_stick_x; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_x); }
+        case 0x89: { extern volatile int16_t g_diag_stick_y; return write_config_value(buffer, bufsize, (int16_t)g_diag_stick_y); }
         case 0x36: { extern volatile uint8_t g_diag_synth; return write_config_value(buffer, bufsize, (uint8_t)g_diag_synth); }
         case 0x37: { extern volatile uint16_t g_diag_ch01_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch01_peak); }
         case 0x38: { extern volatile uint16_t g_diag_ch23_peak; return write_config_value(buffer, bufsize, (uint16_t)g_diag_ch23_peak); }
@@ -552,7 +578,15 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] Enter tud reconnect func\n");
             wake_note_usb_reconnect(); // this disconnect is intentional, not a host sleep
             tud_disconnect();
-            sleep_ms(150);
+            // 250 ms, matching restore_full_usb_identity() in bt.cpp. v1.18.12
+            // found 60 ms sat under the USB 100 ms port debounce and some hosts
+            // never registered the disconnect at all; this path was raised only
+            // to 150 ms, leaving 50 ms of margin on the one re-enumeration every
+            // profile switch uses. When a switch drops an interface - turning
+            // gyro-mouse off, or disabling the last mouse macro - a missed
+            // disconnect means the host keeps the old descriptor and the mouse
+            // lingers until something else forces a real re-enumeration.
+            sleep_ms(250);
             tud_connect();
             break;
         }
@@ -836,7 +870,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
 
         case 0x17: {
             // READ macro entry. Payload: [idx]. Reply: 0x66 0x17 status idx
-            // <12-byte MacroEntry> <16-byte label>.
+            // <MacroEntry> <16-byte label>. Sized from sizeof(MacroRecord), so
+            // the entry growing for motion gestures needed no change here - but
+            // the PORTAL parses by fixed offsets and did.
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x17; buf[2] = 0x01;
             MacroRecord rec{};
             if (bufsize >= 1 && buffer[0] == 0xFF) {
@@ -867,8 +903,8 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
 
         case 0x18: {
             // WRITE macro entry into the RAM image only. Payload:
-            // [idx] <12-byte MacroEntry> <16-byte label>. Nothing reaches flash
-            // until 0x19, so saving a 32-row list costs ONE erase, not 32.
+            // [idx] <MacroEntry> <16-byte label>. Nothing reaches flash until
+            // 0x19, so saving a 32-row list costs ONE erase, not 32.
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x18; buf[2] = 0x01;
             if (bufsize >= 1 + sizeof(MacroRecord)) {
                 MacroRecord rec{};

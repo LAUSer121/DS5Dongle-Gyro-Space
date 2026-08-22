@@ -96,8 +96,18 @@
 
 //------------- CLASS -------------//
 #define CFG_TUD_AUDIO             1
+// HID instances: 0 gamepad, 1 wake/macro keyboard, 2 gyro mouse, 3 UPS battery.
+//
+// This is a COMPILE-TIME ceiling and the descriptor is built at RUNTIME, so it
+// must cover the largest configuration the device can ever present - not the
+// current one. Adding the mouse interface to the descriptor without raising this
+// left TinyUSB with no instance or endpoint for it, and the device stopped
+// enumerating altogether: no gamepad, no portal, nothing on the bus.
+//
+// Instances that are not present in the current descriptor simply go unused, so
+// counting the maximum costs a little RAM and nothing else.
 #ifdef ENABLE_WAKE_HID
-#define CFG_TUD_HID               3 // gamepad + wake keyboard + HID UPS battery
+#define CFG_TUD_HID               4 // gamepad + wake keyboard + gyro mouse + HID UPS battery
 #else
 #define CFG_TUD_HID               2 // gamepad + HID UPS battery
 #endif
