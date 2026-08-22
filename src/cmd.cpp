@@ -36,8 +36,8 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 26;
-constexpr uint8_t FW_VER_PATCH = 3;
+constexpr uint8_t FW_VER_MINOR = 28;
+constexpr uint8_t FW_VER_PATCH = 4;
 
 // Width of the value the LAST successful write_config_value() emitted. The bulk
 // reader (0x0c) needs a length per field and used to carry its own hand-written
@@ -240,6 +240,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x72: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.t2_l2_button=v; break; }
         case 0x73: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_output=v; break; }
         case 0x74: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.flick_counts_360=v; break; }
+        case 0x75: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_sens_y=v; break; }
         case 0x56: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.effect_leak_max_burst=v; break; }
         case 0x57: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_enable=v; break; }
         case 0x58: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.ce_r2_condition=v; break; }
@@ -321,6 +322,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x72: return write_config_value(buffer, bufsize, config.t2_l2_button);
         case 0x73: return write_config_value(buffer, bufsize, config.gyro_output);
         case 0x74: return write_config_value(buffer, bufsize, config.flick_counts_360);
+        case 0x75: return write_config_value(buffer, bufsize, config.gyro_sens_y);
         case 0x17: return write_config_value(buffer, bufsize, config.auto_haptics_gate);
         case 0x18: return write_config_value(buffer, bufsize, config.auto_haptics_slope);
         case 0x19: return write_config_value(buffer, bufsize, config.lightbar_off);
@@ -470,7 +472,15 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] Enter tud reconnect func\n");
             wake_note_usb_reconnect(); // this disconnect is intentional, not a host sleep
             tud_disconnect();
-            sleep_ms(150);
+            // 250 ms, matching restore_full_usb_identity() in bt.cpp. v1.18.12
+            // found 60 ms sat under the USB 100 ms port debounce and some hosts
+            // never registered the disconnect at all; this path was raised only
+            // to 150 ms, leaving 50 ms of margin on the one re-enumeration every
+            // profile switch uses. When a switch drops an interface - turning
+            // gyro-mouse off, or disabling the last mouse macro - a missed
+            // disconnect means the host keeps the old descriptor and the mouse
+            // lingers until something else forces a real re-enumeration.
+            sleep_ms(250);
             tud_connect();
             break;
         }

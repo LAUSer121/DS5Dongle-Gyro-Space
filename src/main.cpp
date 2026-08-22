@@ -338,9 +338,10 @@ static inline int32_t gyro_rate_mul(uint8_t polling_rate_mode) {
 static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t pitch,
                                                         const Config_body &cfg) {
     const int32_t s   = cfg.gyro_sens;
+    const int32_t sy  = cfg.gyro_sens_y ? cfg.gyro_sens_y : s;
     const int32_t mul = gyro_rate_mul(cfg.polling_rate_mode);
-    int32_t nx = -horiz * s * mul + g_gm_acc_x;
-    int32_t ny = -pitch * s * mul + g_gm_acc_y;
+    int32_t nx = -horiz * s  * mul + g_gm_acc_x;
+    int32_t ny = -pitch * sy * mul + g_gm_acc_y;
     int32_t dx = nx / GYRO_MOUSE_DIV;        // truncates toward zero
     int32_t dy = ny / GYRO_MOUSE_DIV;
     g_gm_acc_x = nx - dx * GYRO_MOUSE_DIV;   // exact remainder, sign follows nx
@@ -581,9 +582,12 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     if (horiz == 0 && pitch == 0) return;
     // Scale: sens 1-100, divisor 200 (v1.0.6: 10x more range after "100 felt too
     // low" on hardware — the old maximum now sits around slider value 10).
-    const int32_t s = cfg.gyro_sens;
-    int32_t dx = -horiz * s / 200;    // turn controller right -> aim right
-    int32_t dy = -pitch * s / 200;    // tilt up -> aim up (flip via invert if wrong)
+    const int32_t s  = cfg.gyro_sens;
+    // 0 means "follow X", so a config written before this field existed - where
+    // the tail is 0xFF and clamps to 0 - behaves exactly as it always did.
+    const int32_t sy = cfg.gyro_sens_y ? cfg.gyro_sens_y : s;
+    int32_t dx = -horiz * s  / 200;   // turn controller right -> aim right
+    int32_t dy = -pitch * sy / 200;   // tilt up -> aim up (flip via invert if wrong)
     if (cfg.gyro_invert & 1) dx = -dx;
     if (cfg.gyro_invert & 2) dy = -dy;
     if (usb_mouse_iface_needed(cfg)) {

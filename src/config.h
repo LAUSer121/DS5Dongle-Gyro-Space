@@ -279,6 +279,11 @@ struct __attribute__((packed)) Config_body {
     // so without the game's own mouse-to-yaw ratio a 90 degree flick lands
     // wherever it happens to land.
     uint16_t flick_counts_360;
+    // Vertical gyro sensitivity, 0 = follow gyro_sens (one knob, as before).
+    // Separate axes are worth having because the vertical aiming range in a game
+    // is far smaller than the horizontal one, so the same gain that feels right
+    // for turning is usually too fast for looking up and down.
+    uint8_t  gyro_sens_y;
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
@@ -327,6 +332,16 @@ bool config_save();
 constexpr uint8_t SLOT_COUNT = 32;       // v1.22.0: 32 (was 24) - 8 per flash sector, 4 sectors
 constexpr uint8_t SLOTS_PER_SECTOR = 8;  // 512-byte stride in a 4 KB sector
 constexpr uint8_t SLOT_NAME_LEN = 16;
+
+// The REAL ceiling on Config_body, and the one worth knowing when adding a field.
+// It is not the 256-byte flash page - the config sector is erased whole and the
+// write length follows the struct. It is the profile SLOT: every slot stores a
+// Config_body, eight to a 4 KB sector, so the body must fit the 512-byte stride
+// minus the record's own header (4 magic + 2 body_len + 16 name + 4 crc = 26).
+// Past this, SLOTS_PER_SECTOR has to drop to 4, which doubles the sectors slots
+// need - affordable inside the 16-sector reservation, but a real step.
+constexpr uint32_t SLOT_STRIDE_BYTES = 4096u / SLOTS_PER_SECTOR;          // 512
+constexpr uint32_t SLOT_MAX_BODY_LEN = SLOT_STRIDE_BYTES - (4 + 2 + SLOT_NAME_LEN + 4);
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current config.body -> slot
 // slot -> active config + flash. Returns 0 = failed (out param stage: 1 bad
 // idx, 2 slot unreadable, 3 flash persist failed even after retry), 1 = fully
