@@ -270,6 +270,7 @@ const SECTIONS = [
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
     [0x31,'gyro_axis','u8','Horizontal source','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
     [0x32,'gyro_invert','u8','Invert gyro aim','bits',['X (horizontal)','Y (vertical)']],
+    [0x75,'gyro_sens_y','u8','Vertical sensitivity (0 = same as Sensitivity)','number',[0,100]],
     [0x73,'gyro_output','u8','Gyro output','select',{0:'Right stick (works everywhere)',1:'Mouse (finer aim; needs the pad hidden in most games)',2:'Mouse + Flick Stick (right stick flicks to a bearing)'}],
     [0x74,'flick_counts_360','u16','Flick Stick — mouse counts per 360°','number',[500,50000]],
   ]},
@@ -389,6 +390,7 @@ const DESCRIPTIONS = {
   gyro_sens: "How much aim movement the gyro produces.",
   gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
   flick_counts_360: "How far a flick turns you, in this game. It is the same number a real mouse needs to spin a full 360 degrees: (cm per 360) x (DPI / 2.54). If you know your cm/360 and DPI, just calculate it - no trial needed. Otherwise leave 6500 and correct once: flick fully back (a 180), see how far you actually turned, then multiply this value by 180 / the degrees you got. Two tries is usually enough. Turn mouse acceleration OFF and raw input ON, or no single value can be correct. Changing the game's own sensitivity means recalibrating.",
+  gyro_sens_y: "Vertical gyro sensitivity on its own. Leave at 0 and both axes use the Sensitivity setting above, exactly as before. A lower value here is the usual choice: the vertical aiming range in a game is far smaller than the horizontal one, so the gain that feels right for turning is often too fast for looking up and down.",
   gyro_output: "Right stick works in any game with no setup. Mouse sends pointer movement instead, which is what a gyro naturally produces - finer at low speed and it never pegs on a fast turn - but many games ignore mouse input while a gamepad is present, so it usually needs the pad hidden. Changing this re-enumerates the controller.",
   gyro_invert: "Flips the direction gyro aiming moves - X, Y, or both. Only affects gyro, when it's on.",
   rstick_invert: "Inverts the physical right stick itself - X, Y, or both - in any game, separate from gyro.",
@@ -1963,14 +1965,25 @@ async function reacquire(){
   // silently fail; re-acquiring a fresh handle is the reliable recovery.
   try { if (device && device.opened) await device.close(); } catch(e){}
   device = null;
+  // Settle before the first look. getDevices() called the instant after a
+  // disconnect can still return the PRE-reconnect object, and taking the first
+  // match meant adopting a handle whose connection was already dead.
+  await sleep(300);
   for (let i = 0; i < 10; i++){
     try {
       const devs = await navigator.hid.getDevices();
       const d = pickDs5(devs);
       if (d){
+        if (!d.opened) await d.open();
+        // PROVE the handle works before adopting it. Opening a stale object can
+        // succeed while every read that follows silently fails - which shows up
+        // later as an empty slot list, or settings that will not load, and looks
+        // like the device forgetting its profiles rather than a dead handle.
         device = d;
-        if (!device.opened) await device.open();
-        return true;
+        const probe = await readField(0x7d, 'u8').catch(() => null);
+        if (probe !== null && probe !== undefined) return true;
+        device = null;
+        try { await d.close(); } catch(e){}
       }
     } catch(e){}
     await sleep(250);
@@ -2416,6 +2429,7 @@ setInterval(()=>{
     await readLoadedProfile();                              // every tab: keep the bar current
     if (document.getElementById('ahbox')) await readAhMeter();   // Haptics tab: live auto-haptics meter
     if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
+    if (document.getElementById('abSignal')) await abPoll();     // browser audio bridge
   });
 }, 1000);
 
@@ -2495,6 +2509,252 @@ function askYesNo(title, body, yesLabel, noLabel){
     document.addEventListener('keydown', onKey, true);
     yes.focus();
   });
+}
+
+// ===================== Browser audio bridge (experimental) ==================
+//
+// Auto-haptics are DERIVED FROM PC AUDIO, so something has to capture what the
+// PC is playing and send it to the dongle's USB audio input. That is what
+// automation/ds5audio.py does, and needing Python running is the likeliest
+// reason a newcomer concludes the feature is broken.
+//
+// This does the same job from the page: getDisplayMedia captures system audio,
+// and AudioContext.setSinkId routes it to the dongle. No firmware change is
+// needed - audio.cpp already sizes each packet at runtime
+// (`actual_ch = bytes_read > 250 ? 4 : 2`), so a stereo sender is a case it
+// already handles, and the dongle cannot tell the browser from the script.
+//
+// WHAT IT DOES NOT REPLACE, and this is not a detail: the picker cannot be
+// automated or preselected, so Playnite starting capture on game launch is
+// exactly what this cannot do. It is an on-ramp for trying auto-haptics with no
+// install, not a replacement for the script.
+//
+// Two limits worth knowing before judging the result:
+//   - System audio capture is Chrome on Windows only, and only when sharing the
+//     ENTIRE screen with "Share system audio" ticked.
+//   - The browser graph is stereo, so this feeds ch0/1. The ch2/3 DSP source and
+//     native passthrough on ch2/3 stay script-only.
+let abCtx = null, abStream = null, abSource = null;
+let abSinks = [], abSinkId = '', abStatus = '', abRaw = [], abPerm = '', abSteps = [];
+
+function audioBridgeHTML(){
+  const on = !!abCtx;
+  let h = '<div class="card"><div class="card-title">Browser audio bridge ' +
+          '<span style="font-size:11px;color:var(--sub)">(experimental — no Python needed)</span></div>';
+  h += '<p style="margin:6px 0 8px;color:var(--sub);font-size:13px">' +
+       'Feeds PC audio to the dongle from this page, so auto-haptics work without running ' +
+       'ds5audio.py. Chrome on Windows only. Share the <b>entire screen</b> and tick ' +
+       '<b>Share system audio</b> when asked, or nothing will be captured.</p>';
+
+  if (!abSinks.length){
+    // Browsers only reveal output devices once the page holds a media
+    // permission, and asking for a microphone unprompted - which this used to do
+    // on simply opening the tab - is startling and looks like the page wants to
+    // listen to you. Ask only when the button is pressed, and say why first.
+    h += '<p style="margin:6px 0 8px;color:var(--sub);font-size:12px">' +
+         'Chrome will not name audio devices until the page has been granted a media ' +
+         'permission, so listing them asks for microphone access. Nothing is recorded — ' +
+         'the microphone is released immediately.</p>';
+    h += '<button class="btn btn-outline" style="padding:3px 12px" onclick="abListSinks()">List output devices</button>';
+  } else {
+    h += '<div style="margin-bottom:6px"><label style="font-size:12px;color:var(--sub)">Send to&nbsp;</label>' +
+         '<select id="abSink" onchange="abPickSink(this.value)" style="padding:2px 4px;font-size:12px;min-width:300px">';
+    for (const d of abSinks){
+      h += '<option value="' + escAttr(d.id) + '"' + (d.id === abSinkId ? ' selected' : '') + '>' +
+           escAttr(d.label) + '</option>';
+    }
+    h += '</select> <button class="btn btn-outline" style="padding:2px 8px;font-size:12px" onclick="abListSinks()">Refresh</button></div>';
+    h += on ? '<button class="btn" style="padding:3px 14px" onclick="abStop()">Stop bridging</button>'
+            : '<button class="btn" style="padding:3px 14px" onclick="abStart()">Start bridging</button>';
+  }
+  h += ' <span id="abStatus" style="font-size:12px;color:var(--sub);margin-left:8px">' + escAttr(abStatus) + '</span>';
+  // What the browser ACTUALLY reported. Without this a failure is invisible: the
+  // panel said "1 output found" while the one entry was an unusable placeholder.
+  if (abRaw.length && !abSinks.length){
+    h += '<div style="margin-top:8px;font-size:11px;color:var(--sub)">' +
+         '<b>Microphone permission:</b> ' + escAttr(abPerm || 'not checked') +
+         (abPerm === 'denied'
+            ? ' — Chrome will not reveal audio outputs while this is blocked. Click the icon at the left of the address bar and allow Microphone for this site.'
+            : '') +
+         '<br><b>What happened, in order:</b><br>' +
+         abSteps.map(t => '&nbsp;&nbsp;' + escAttr(t)).join('<br>') +
+         '<br><b>What the browser reported:</b><br>';
+    for (const d of abRaw){
+      h += escAttr(d.kind) + ' — label ' + (d.label ? '"' + escAttr(d.label) + '"' : '(blank)') +
+           ', id ' + (d.id ? escAttr(d.id.slice(0, 10)) + '…' : '(blank)') + '<br>';
+    }
+    if (location.protocol === 'file:'){
+      h += '<b style="color:#e0a030">This page is open from a file on disk.</b> A file:// page ' +
+           'has no persistent origin, so the browser grants the microphone for one call and ' +
+           'then forgets it - which is exactly the "granted, then prompt, no labels" result ' +
+           'above. Open the portal over https instead ' +
+           '(artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html) and try again. ' +
+           'Everything else in the portal works from a file; only the audio bridge needs this.</div>';
+    } else {
+      h += 'A blank id and label means the browser has not granted this page access to ' +
+           'audio outputs. Check the site permissions for Microphone, and note that ' +
+           'output selection needs Chrome 110 or newer.</div>';
+    }
+  }
+  h += '<div id="abSignal" style="font-size:12px;color:var(--sub);margin-top:6px"></div>';
+  h += '</div>';
+  return h;
+}
+
+function abPickSink(id){ abSinkId = id || ''; }
+
+// Populated ONLY from the button. The list is cached because render() runs from
+// nineteen places - filling the <select> from a timeout meant the next render
+// emptied it again, which is why no devices ever appeared.
+async function abListSinks(){
+  abStatus = 'Looking for output devices…';
+  render();
+  try {
+    // Record the permission STATE. When output enumeration comes back blank the
+    // only useful question is whether the page actually holds the microphone
+    // permission, and guessing at that is what made this hard to diagnose.
+    abSteps = [];
+    const step = t => abSteps.push(t);
+    // Where the page is loaded FROM decides whether a media permission can be
+    // remembered at all. A file:// page has an opaque origin: Chrome will grant
+    // the microphone for that one call, then persist nothing and never reveal
+    // device labels - which reads as "granted" followed immediately by "prompt"
+    // and no labelled devices, with nothing obviously wrong.
+    step('page origin: ' + location.protocol + (location.host ? '//' + location.host : '') +
+         (window.isSecureContext ? ' (secure)' : ' (NOT a secure context)'));
+    try {
+      const st = await navigator.permissions.query({ name: 'microphone' });
+      abPerm = st.state;
+      step('permission before: ' + st.state);
+    } catch(e){ abPerm = 'unknown'; step('permission query unsupported'); }
+
+    // Firefox has a dedicated output picker that needs no microphone at all.
+    // Chrome does not implement it, so it is tried first and falls through.
+    if (navigator.mediaDevices.selectAudioOutput){
+      try {
+        const chosen = await navigator.mediaDevices.selectAudioOutput();
+        if (chosen && chosen.deviceId){
+          abSinks = [{ id: chosen.deviceId, label: chosen.label || 'selected output' }];
+          abSinkId = chosen.deviceId;
+          abRaw = [{ kind: 'audiooutput', id: chosen.deviceId, label: chosen.label || '' }];
+          abStatus = 'Output chosen: ' + (chosen.label || 'selected device') + '.';
+          render();
+          return;
+        }
+      } catch(e){ /* dismissed, or not really supported - fall through */ }
+    }
+
+    let devs = await navigator.mediaDevices.enumerateDevices();
+    step('first enumerate: ' + devs.length + ' device(s), ' +
+         devs.filter(d => d.label).length + ' labelled');
+    // Chrome's documented recipe: only prompt while the permission is still
+    // undecided. Asking again when it is already denied just fails silently.
+    if (!devs.some(d => d.kind === 'audiooutput' && d.label) && abPerm !== 'denied'){
+      try {
+        const t = await navigator.mediaDevices.getUserMedia({ audio: true });
+        t.getTracks().forEach(x => x.stop());        // permission is all that was wanted
+        step('microphone granted');
+      } catch(e){
+        // Dismissing the prompt leaves the state at "prompt" and rejects here,
+        // which is indistinguishable from never having asked unless it is logged.
+        step('microphone request failed: ' + (e && e.name ? e.name : e));
+      }
+      devs = await navigator.mediaDevices.enumerateDevices();
+      step('after prompt: ' + devs.length + ' device(s), ' +
+           devs.filter(d => d.label).length + ' labelled');
+    }
+    // Re-read the permission AFTER the attempt. The value captured above is the
+    // state BEFORE prompting, so reporting it made a granted permission look
+    // like it was still waiting to be asked.
+    try {
+      const st2 = await navigator.permissions.query({ name: 'microphone' });
+      abPerm = st2.state;
+      step('permission after: ' + st2.state);
+    } catch(e){}
+    // Keep the RAW list for the diagnostic below. Chrome hands back a single
+    // placeholder entry with an empty deviceId and empty label when output
+    // enumeration is not really permitted - which rendered as one blank row and
+    // read as "1 output found" while being unusable.
+    abRaw = devs.map(d => ({ kind: d.kind, id: d.deviceId || '', label: d.label || '' }));
+    abSinks = devs.filter(d => d.kind === 'audiooutput' && d.deviceId)
+                  .map(d => ({ id: d.deviceId,
+                               label: d.label || ('unnamed output ' + String(d.deviceId).slice(0, 6)) }));
+  } catch(e){
+    abSinks = [];
+    abStatus = 'Could not list devices: ' + (e && e.name ? e.name : e) +
+               '. Microphone access has to be allowed for Chrome to name them.';
+    render();
+    return;
+  }
+  if (!abSinks.length){
+    const outs = abRaw.filter(d => d.kind === 'audiooutput').length;
+    abStatus = outs
+      ? ('Chrome returned ' + outs + ' output slot(s) but no usable device — it has not granted ' +
+         'output access to this page. See the list below.')
+      : 'No audio outputs visible to the page at all. See the list below.';
+  } else {
+    const guess = abSinks.find(d => /wireless controller|dualsense|ds5/i.test(d.label));
+    if (!abSinkId || !abSinks.some(d => d.id === abSinkId)) abSinkId = (guess || abSinks[0]).id;
+    abStatus = abSinks.length + ' output' + (abSinks.length === 1 ? '' : 's') + ' found' +
+               (guess ? ' — the dongle looks preselected.' : '. Pick the dongle.');
+  }
+  render();
+}
+
+async function abStart(){
+  const sink = abSinkId;
+  const say = t => { abStatus = t; render(); };
+  if (!sink){ say('Pick an output device first.'); return; }
+  try {
+    // video:true is required to be offered the system-audio option at all; the
+    // video track is stopped immediately afterwards so nothing is encoded.
+    abStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  } catch(e){
+    say('Capture cancelled or refused.');
+    return;
+  }
+  const atracks = abStream.getAudioTracks();
+  if (!atracks.length){
+    abStream.getTracks().forEach(t => t.stop()); abStream = null;
+    say('No audio in that capture — share the ENTIRE screen and tick "Share system audio".');
+    return;
+  }
+  abStream.getVideoTracks().forEach(t => t.stop());   // audio only from here
+  try {
+    abCtx = new AudioContext({ sinkId: sink, latencyHint: 'interactive' });
+  } catch(e){
+    // Older Chrome: construct then set. If neither works the browser cannot
+    // choose an output and the whole idea is off the table on this machine.
+    try { abCtx = new AudioContext({ latencyHint: 'interactive' }); await abCtx.setSinkId(sink); }
+    catch(e2){ abStop(); say('This browser cannot select an audio output (needs Chrome 110+).'); return; }
+  }
+  abSource = abCtx.createMediaStreamSource(abStream);
+  abSource.connect(abCtx.destination);
+  atracks[0].addEventListener('ended', () => abStop());   // user hit "Stop sharing"
+  say('Bridging — leave this tab open.');
+}
+
+function abStop(){
+  try { if (abSource) abSource.disconnect(); } catch(e){}
+  try { if (abStream) abStream.getTracks().forEach(t => t.stop()); } catch(e){}
+  try { if (abCtx) abCtx.close(); } catch(e){}
+  abSource = null; abStream = null; abCtx = null;
+  render();
+}
+
+// The dongle's OWN view of what arrived. A level here is the only proof that
+// audio is reaching the device rather than merely leaving the browser.
+async function abPoll(){
+  const el = document.getElementById('abSignal'); if (!el) return;
+  if (!abCtx){ el.textContent = ''; return; }
+  if (!device || !device.opened || saving || slotsBusy){ return; }
+  try {
+    const c01 = await readField(0x37, 'u16');
+    const ch  = await readField(0x21, 'u8').catch(() => null);   // g_diag_actual_ch
+    el.textContent = 'Dongle is receiving: ch0/1 peak ' + c01 +
+                     (ch !== null ? ('   channels ' + ch) : '') +
+                     (c01 > 0 ? '' : '   — no signal yet; is something playing?');
+  } catch(e){}
 }
 
 // ===================== Macros =============================================
@@ -4411,7 +4671,7 @@ function render(){
   const _qEl = (typeof document !== 'undefined') ? document.activeElement : null;
   const _qFocused = !!(_qEl && _qEl.id === 'qbox');
   const _qCaret = _qFocused ? _qEl.selectionStart : 0;
-  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.26.3</span></h1>
+  let html = `<h1>DS5 Studio Bridge <span style="font-size:13px;color:var(--sub)">v1.28.4</span></h1>
     <div class="status-bar"><div class="dot ${on?'on':''}"></div>
       <span style="flex:1">${on?`Connected — ${device.productId===DSE_PID?'DualSense Edge':'DualSense'}${fwVer?` · FW v${fwVer.maj}.${fwVer.min}.${fwVer.pat} · config v${fwVer.cfgv}`:` · FW: pre-1.0.5 (no version fields)`}`:'Not connected'}</span>
       <button class="btn ${on?'btn-outline':'btn-primary'}" onclick="${on?'disconnect()':'connect()'}">${on?'Disconnect':'Connect'}</button>
@@ -4442,8 +4702,14 @@ function render(){
     html += `<div class="card"><div class="card-title">${section.title}</div>`;
     for(const f of section.fields) html += fieldRowHTML(f);
     html += `</div>`;
-    if (section.title === 'Auto-Haptics & Speaker Effect Leak')
+    // BRACES MATTER HERE: the single-statement form let the two lines added
+    // below run for EVERY section on EVERY tab, emitting the audio panel over
+    // and over. The duplicate-id check caught it; nothing about the page looked
+    // wrong until then.
+    if (section.title === 'Auto-Haptics & Speaker Effect Leak') {
       html += `<div class="card"><div class="card-title">Auto-haptics — live <span style="font-size:11px;color:var(--sub)">(updates while connected)</span></div><div id="ahbox" style="font-size:13px">Connect to see live auto-haptics activity.</div></div>`;
+      html += audioBridgeHTML();
+    }
   }
   }
   html += `<div class="actions">
