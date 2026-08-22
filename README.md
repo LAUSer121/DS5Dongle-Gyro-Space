@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.26.3**
+**Version 1.28.4**
 
 ▶️ **[Configure in your browser](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -21,7 +21,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.26.3-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.28.4-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -276,7 +276,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.26.3.uf2` (Pico 2 W) or `ds5-v1.26.3-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.28.4.uf2` (Pico 2 W) or `ds5-v1.28.4-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -586,6 +586,74 @@ Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 | Effect Leak Gate Hold (×5 ms) | 0–100 | 20 (100 ms) | Minimum gate-open time per transient + hysteresis; stops the gate chattering (the "choppy/poppy" leak artifact) |
 | Effect Leak Max Burst (×5 ms) | 0–100 | 0 (off) | MAXIMUM gate-open time: cuts sustained sounds (dialogue, music) at the cap with a no-retrigger refractory — one short accent instead of duplicating the room audio; shots end within the cap naturally. Try 30 (150 ms) and raise leak volume: the leak becomes punctuation, not a second speaker |
 | Effect Leak Detection Band (Hz) | 100–5000 | 800 | Frequency band the transient detector listens to |
+
+#### Browser audio bridge — test mode *(new in 1.28.0)*
+
+> **This is a test mode, not a replacement for `ds5audio.py`.** It exists so
+> someone can try auto-haptics without installing Python. It cannot be automated,
+> and it does not do everything the script does — see the limits below before
+> deciding which to use.
+
+Auto-haptics are derived from your PC's audio, so something has to capture what is
+playing and send it to the dongle. Normally that is `ds5audio.py`. The **Browser
+audio bridge** on the Haptics tab does the same job from the page itself.
+
+**Nothing leaves your machine.** The captured audio is routed inside the browser
+straight back out to the dongle's audio input. There is no server, no upload, and
+nothing is recorded — the screen share is how Chrome exposes system audio, and the
+video is discarded the moment capture starts.
+
+**It only works from the live page.** Open
+[the hosted portal](https://artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html).
+A copy saved to disk has no persistent origin, so the browser grants audio
+permission for a single call, forgets it immediately, and never reveals any output
+devices — the list simply stays empty. Everything *else* in the portal works fine
+from a local file; only this needs a real address.
+
+Setting it up:
+
+1. Open the **Haptics** tab and scroll down to **Browser audio bridge**.
+2. Press **List output devices**, and allow the microphone when asked. That
+   permission is only what makes Chrome willing to *name* audio devices; the
+   microphone itself is released straight away.
+3. Choose the dongle as the output — it appears as **Speakers (DualSense)**,
+   **Speakers (DualSense Edge)** or similar, depending on which controller is
+   paired. It is preselected when the name is recognised, but check it: sending
+   to your PC speakers instead is silent at the dongle and looks like a failure.
+4. **Load the slot you want first**, before starting the bridge — see the warning
+   below.
+5. Press **Start bridging**, and in Chrome's dialog pick **Entire Screen**. System
+   audio is not offered for a single window or tab.
+6. **Tick "Share system audio".** It is *not* on by default, and without it the
+   capture is silent — this is the single most common reason nothing happens.
+
+Watch the line under the buttons: it reads the dongle's own signal level, so a
+non-zero peak means audio is genuinely arriving at the device rather than merely
+leaving the browser.
+
+> **Playing borderless?** Chrome's "you are sharing your screen" bar stays on top
+> of a borderless window. Click **Hide** on it once and it gets out of the way.
+
+> **Set the profile before you start bridging.** Switching slots while the bridge
+> is running can produce a howling feedback effect. A slot change can re-enumerate
+> the USB device, which takes the audio endpoint away and brings it back underneath
+> a capture that is still running — and for the moment the routing is in flux the
+> output can find its way back into the capture. Stop the bridge, switch, and start
+> it again.
+
+What it does **not** do, all of which the script does:
+
+| | Script | Browser bridge |
+|---|---|---|
+| Starts automatically with a game (Playnite) | yes | **no** — the share dialog cannot be automated |
+| Runs unattended, no window | yes | **no** — the tab must stay open |
+| `--map rear` / ch2/3 DSP source | yes | **no** — the browser feed is stereo, ch0/1 only |
+| Native passthrough on ch2/3 | yes | **no** |
+| Works on a locally saved portal | n/a | **no** — hosted page only |
+| Browser and OS | any | **Chrome on Windows** |
+
+If you want per-game profiles switching themselves as you launch, use the script.
+If you want to feel what auto-haptics does before installing anything, use this.
 
 #### How auto-haptics works (brief)
 
@@ -1043,6 +1111,7 @@ Maps controller motion onto the right stick — or onto a mouse — for motion a
 |---|---|---|---|
 | Gyro Mode | Off / L2-held / Always / Touch-enables / Ratchet | Off | When motion aiming is active (see below) |
 | Sensitivity | 1–100 | 50 | Motion-to-stick gain (50 ≈ raw) |
+| Vertical sensitivity | 0–100 | 0 (same as above) | Vertical gain on its own — usually lower, since a game's vertical aiming range is much smaller |
 | Horizontal source | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
 | Invert gyro aim | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
 | Gyro output | Right stick / Mouse / Mouse + Flick Stick | Right stick | What the motion drives — see below |
@@ -1541,9 +1610,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.26.3.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.26.3)
-- `ds5-v1.26.3-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.28.4.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.28.4)
+- `ds5-v1.28.4-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

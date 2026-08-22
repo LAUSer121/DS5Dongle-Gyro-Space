@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## [1.28.4] — 2026-08-22
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
+
+Supersedes the 1.27.x and 1.28.0-1.28.3 development builds, which were not
+released.
+
+### Added
+- **Browser audio bridge (test mode).** Feeds PC audio to the dongle from the
+  portal itself, so auto-haptics can be tried without installing Python. Nothing
+  is uploaded — the audio is routed inside the browser and out to the dongle, and
+  the screen share is only how Chrome exposes system audio.
+  - **Not a replacement for `ds5audio.py`.** The share dialog cannot be automated,
+    so it cannot start with a game; the feed is stereo, so `--map rear`, the ch2/3
+    DSP source and native passthrough on ch2/3 stay script-only; and it needs
+    Chrome on Windows.
+  - Requires the **hosted** portal. A locally saved copy has no persistent origin,
+    so the browser forgets the audio permission immediately and never lists any
+    output device.
+  - Share the **entire screen** and tick **Share system audio** — it is off by
+    default, and the capture is silent without it.
+  - A live signal readout polls the dongle's own level, so it shows what actually
+    arrived rather than what the browser sent.
+- **Separate vertical gyro sensitivity.** Leave it at 0 and both axes use the
+  existing Sensitivity setting. A lower value is the usual choice: a game's
+  vertical aiming range is far smaller than its horizontal one.
+
+### Fixed
+- **Profile slots could show as empty after a re-enumeration.** Reacquiring the
+  device took the first handle it found without checking it worked. The browser
+  can hand back the pre-reconnect object, which reports itself as open while every
+  read silently returns nothing — so the slot sweep saw empty slots and drew an
+  empty list. The handle is now proven with a read before it is adopted.
+- **The reconnect used by every profile switch went off the USB bus for only
+  150 ms**, against a host port debounce of about 100 ms. The identity-change path
+  has used 250 ms since v1.18.12 for exactly this reason; both now match. A missed
+  disconnect leaves the host on the old descriptor, so a setting that adds or
+  removes an interface appears not to take effect.
+- **The configuration could not grow past one flash page.** The sector is erased
+  whole, but only the first 256 bytes were ever programmed, so `Config_body` was
+  capped far below what the storage allows. The write length now follows the
+  struct, and the assert sits on the real ceiling — the profile slot stride.
+
+### Known
+- Switching slots while the browser audio bridge is running can produce a feedback
+  howl. Set the profile first, then start the bridge.
+
 ## [1.26.3] — 2026-08-21
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
