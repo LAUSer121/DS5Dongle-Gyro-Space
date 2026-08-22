@@ -650,7 +650,19 @@ What it does **not** do, all of which the script does:
 | `--map rear` / ch2/3 DSP source | yes | **no** — the browser feed is stereo, ch0/1 only |
 | Native passthrough on ch2/3 | yes | **no** |
 | Works on a locally saved portal | n/a | **no** — hosted page only |
-| Browser and OS | any | **Chrome on Windows** |
+| Browser and OS | Windows | **Chrome on Windows** — see below |
+
+**Not available on Linux or macOS.** Capturing system audio through the browser is
+a Chrome feature on Windows and ChromeOS only — elsewhere the share dialog offers
+no "Share system audio" option at all, so there is nothing to route. The same is
+true of `ds5audio.py`, which uses WASAPI and is Windows-only for the same reason,
+so on Linux there is currently no route to **derived** auto-haptics from either.
+
+Worth separating, though: **native** haptics do work on Linux. A game or desktop
+that sends the DualSense's own 4-channel haptic stream reaches the dongle
+normally, and the trigger effects, gyro, macros and profile slots are all
+unaffected — they never involved audio capture. It is only the
+audio-derived haptics that need a capture tool neither route provides.
 
 If you want per-game profiles switching themselves as you launch, use the script.
 If you want to feel what auto-haptics does before installing anything, use this.
