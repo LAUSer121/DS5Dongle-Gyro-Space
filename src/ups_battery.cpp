@@ -329,7 +329,7 @@ uint8_t ups_hid_instance() {
     // present) = 1, gyro mouse (when present) = 2, UPS = last. The UPS is
     // always the final HID interface (see usb_descriptors.cpp), so its
     // instance number is 1 + number of preceding optional HID interfaces.
-    const Config &cfg = get_config();
+    const Config_body &cfg = get_config();
     return 1u + (usb_kbd_iface_needed(cfg) ? 1u : 0u) + (usb_mouse_iface_needed(cfg) ? 1u : 0u);
 }
 
