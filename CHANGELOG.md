@@ -2,6 +2,806 @@
 
 All notable changes to this project are documented here.
 
+## [1.40.0] — 2026-08-30
+
+### Added
+
+- **Flick turn angle.** Flick Stick is absolute by design: push the right stick
+  right and you face right, ninety degrees, because the stick's direction *is*
+  the bearing. That is what makes it precise, and also what makes a smaller
+  correction impossible — there is no setting for "turn a bit", only for where
+  to end up.
+
+  This scales the flick. At 45 a full sideways push turns 45° instead of 90°, so
+  the direction still means something while the amount is yours. 90 is the
+  original behaviour.
+
+  It scales rotating a held stick by the same factor, not just the initial
+  flick. Scaling only the flick would let the turn back happen at a different
+  rate, and the view would not return to where it started.
+
+  On the Gyro tab, beside *Mouse counts per 360°*. Needs Flick Stick enabled;
+  it changes how Flick Stick behaves rather than adding a separate mode.
+
+## [1.39.5] — 2026-08-29
+
+### Fixed
+
+- **Lean snapped between its extremes when the controller was rolled hard over.**
+  Each tilt angle was measured against one other axis rather than against the
+  combined magnitude of both, which let the two contaminate each other. A genuine
+  20° lean read as 27° at 45° of roll and 87° at 89°, and one degree past vertical
+  it inverted outright — so at full steering lock, leaning forward or back jumped
+  straight from one end of the stick to the other with nothing in between.
+
+  Both axes now use the tilt-compensated form. It is identical whenever the other
+  axis is level, so normal use is unchanged; it only stops the collapse at the
+  edges, and removes the inflation that was quietly present at every angle in
+  between.
+
+## [1.39.4] — 2026-08-29
+
+### Added
+
+- **Tilt steering.** Roll the controller like a small wheel and it **adds** to the
+  left stick rather than replacing it. The angle comes from gravity, so it is
+  absolute: it never drifts and always returns to centre when you level the pad,
+  which integrating the gyro for an angle could never do.
+
+  Adding rather than replacing is the point. Tilt-only steering was tried in the
+  SIXAXIS era — MotorStorm, Ridge Racer 7, Burnout Paradise — and the verdict was
+  always the same: not precise enough to steer with, because the whole range lived
+  in a wrist angle you cannot hold steady. As an offset, coarse steering stays on
+  the stick where it is precise and tilt supplies the fine control on top. With
+  the stick centred the offset falls inside the game's own dead zone, so driving
+  straight does not wander, and at full lock there is nothing left to add — what
+  is left is the middle of the range, which is exactly where a stick is hardest
+  to be precise with.
+
+  Settings are **tilt range** (degrees for full effect), **maximum stick added**,
+  a **dead zone** in degrees, and invert. Racing games apply their own steering
+  dead zone, so anything below about 60% does nothing you can feel; 70 gives
+  usable trim and 100 lets tilt steer on its own.
+
+- **Lean, on its own switch.** *Also tilt forward/back* adds leaning the
+  controller to the left stick's Y, for bikes and anything with a weight shift —
+  in MotorStorm it is how you lean a bike in the air. Separate from steering, and
+  with its own amount, because a car wants one and not the other.
+
+- **Tilt diagnostics** in the Device tab: whether the block is running, the roll
+  and lean angles it computed, and what it is adding to each stick axis. The
+  three failure modes — not running, gravity rejected, and running but too small
+  to clear the game's dead zone — all look identical from the outside, and this
+  line separates them. Calibrate with the live test on the Macros tab, which
+  shows the stick value the game actually receives.
+
+## [1.38.2] — 2026-08-29
+
+### Added
+
+- **Player space gyro aiming.** *Horizontal source* on the Gyro tab gains a third
+  option beside Yaw and Roll. Yaw and Roll each assume you hold the controller a
+  particular way: turning the pad drives the aim only while it is roughly flat,
+  and tilting it sideways only while it is roughly upright. Hold it any other way
+  and part of your movement lands on the wrong axis — a level sweep starts
+  dragging the cursor diagonally, and at 90° it barely turns the view at all.
+
+  Player space uses the **accelerometer** to work out which way is down, then
+  asks the question that actually matters: how much did that movement turn you
+  about the world's vertical axis? Flat, tilted, rolled onto its edge — the aim
+  behaves the same, and there is no axis to choose and then hold the controller
+  to suit.
+
+  Both axes are corrected, so vertical aim stays vertical when the pad is tilted
+  rather than picking up part of a horizontal turn. Gravity is low-passed, so a
+  knock does not throw the aim, and it falls back to plain yaw if the reading is
+  not sane gravity — during a hard shake or free fall.
+
+  Yaw and Roll are unchanged and remain the default.
+
+- **Live accelerometer readout** in the Device tab diagnostics: raw X, Y and Z.
+  At rest one axis sits near ±8000, which is gravity. It is what player space
+  reads, and it is the fastest way to confirm the sensor is being decoded
+  correctly on a given controller.
+
+### Fixed
+
+- **A short override entry captured longer game names.** `profile-overrides.txt`
+  matches a fragment anywhere in the title and the first hit won, so `God of War`
+  also matched `God of War Ragnarök` and loaded the 2018 game's audio-mix slot —
+  overriding a correct native classification, and making the result depend on
+  line order in a file that says nothing about ordering. The **longest** matching
+  fragment now wins, so both games can be listed in any order, and the start log
+  names any shorter entry it passed over.
+
+## [1.37.2] — 2026-08-28
+
+### Added
+
+- **Touchpad as Mouse.** Relative, trackpad style: the pointer follows how far
+  your finger *moves*, not where it is, so you can lift and reposition the way
+  you would on a laptop touchpad. Settings are **Touchpad Speed**, a **jitter
+  filter** so a resting finger does not make the pointer drift, invert per axis,
+  and an optional **trackball** mode that keeps the pointer gliding after you
+  lift off, decaying at a **friction** you set — enough to cross a large screen
+  from a single flick.
+
+  **Clicks are deliberately not part of it.** The touchpad-click halves are
+  already macro triggers and can output mouse buttons, so left and right click
+  are one macro row each and you choose which half is which — more flexible than
+  a fixed corner, and it already exists.
+
+  It shares the pointer accumulator with gyro aiming and Stick to Mouse, so the
+  three add rather than fight, and it carries sub-count movement between ticks so
+  slow drags still register. Turning it on adds the mouse HID interface, so the
+  device re-enumerates once.
+
+  There is no on/off chord: enablement is per profile, and profiles load per
+  game, so a desktop profile can have it on while every game profile leaves it
+  off.
+
+  The portal warns if **Touchpad as Mouse** is on while gyro activation is set to
+  one of the two touchpad-based schemes, since both want the same finger: *only
+  while the touchpad is touched* adds wrist movement to every drag, and *ratchet*
+  pauses the gyro exactly when you are moving the pointer. It is a warning rather
+  than a block — taking turns may be what you want on a desktop profile — and the
+  other activation schemes gate on triggers or shoulders and compose cleanly.
+
+### Changed
+
+- `utils.h` names two previously unknown fields in the controller output
+  report — `AllowEdgeProfileSwitchControl` (byte 38 bit 6) and
+  `EdgeProfileSwitchMode` (byte 40), identified by SundayMoments/DS5_Bridge and
+  not verified here. Documentation only; the firmware does not set them. The old
+  note guessing byte 40 was `HapticLowPassFilter` off by one was wrong — that is
+  at 39.0.
+
+## [1.36.0] — 2026-08-27
+
+### Changed
+
+- **Lightbar Off now applies in every haptics mode**, and has moved from the
+  Haptics section to **Device & Connection**. It was gated on Replace mode for a
+  reason: if you are using Replace you are probably not running DS4Windows, which
+  is what would otherwise let you set the lightbar to black. Outside Replace the
+  assumption was that DS4Windows already had it covered.
+
+  That assumption no longer holds for everyone, and which haptics mode is running
+  has nothing to do with whether you want the light on.
+
+  **This turns the lightbar off in previously saved profiles that had the setting
+  ticked**, which for an audio-mix profile is what the setting always said it
+  would do. The case that changes the wrong way is a **native** profile carrying
+  the same ticked setting, where the light should stay on.
+  `native-off.autoapply.html` has been corrected; **check your own saved profiles
+  and slots** — any native profile with *Lightbar Off* ticked needs it unticked
+  and re-saved, or the lightbar will go dark in the games you least want it to.
+
+  A battery notification still overrides the setting for the seconds it runs.
+
+## [1.35.2] — 2026-08-27
+
+### Fixed
+
+- **The colour stayed lit after a notification.** The controller latches
+  whatever colour it was last sent and does not revert on its own, so ceasing to
+  override left the last frame lit indefinitely — including after a Test, and
+  regardless of whether the stage or the whole feature was switched off. The
+  earlier claim that it "restores itself" was wrong: it only restored if
+  something else happened to send a report, and on an idle desktop nothing does.
+  Reports now keep going out for a short tail after the last pulse, *without*
+  the override, which actively writes the real colour back.
+
+### Changed
+
+- **It is a pulse, not a blink.** Brightness fades up and back down over about
+  1.6 seconds rather than switching hard on and off — the same gentle breath
+  DS4Windows uses for its low-battery indicator. A hard flash at this size reads
+  as a fault light rather than a prompt to charge.
+
+## [1.35.1] — 2026-08-27
+
+### Fixed
+
+- **The battery notification never reached the lightbar.** Reports to the
+  controller are only composed once the *host* has sent an output report, so on
+  an idle desktop with no game driving the controller nothing composed one at
+  all — the notification ran in the firmware and was never carried anywhere. It
+  now composes a report of its own while a notification is running. This is why
+  the Test button appeared to do nothing, and why turning *Lightbar Off in
+  Replace Mode* off changed nothing: the fault was upstream of the lightbar
+  override entirely.
+
+- The stage rows are drawn inside the **Battery Notification** card, under the
+  switch they belong to, instead of after every other card at the foot of the
+  page with the Save button in between.
+
+## [1.35.0] — 2026-08-27
+
+### Added
+
+- **Staged battery notification on the controller's lightbar.** Three stages,
+  each with its own battery level, blink count and colour — 5 amber blinks at
+  50%, 10 red at 10%, or whatever suits you. A stage fires **once** when the
+  battery falls past its level and then stops. It is a prompt to go and plug in,
+  not an indicator that flashes until you do.
+
+  Levels are in **10% steps**, because that is the resolution the DualSense
+  reports its own charge at. A blink is one second lit and one second dark, slow
+  enough to read from a sofa; the count is what you set, so 20 blinks runs for
+  about 40 seconds.
+
+  A stage re-arms when the battery climbs back above its level or the controller
+  goes on charge, so a reading hovering on a boundary cannot re-announce itself.
+  Switching a controller on reports its charge straight away: every stage it is
+  already at or below pulses in turn, so you know where you stand before you
+  start rather than when it dies mid-session.
+
+  While a notification runs it takes the lightbar over, then hands it straight
+  back: the colour bytes are simply left alone again, so whatever the game was
+  driving returns on the next report with nothing to restore.
+
+  Each stage is **one line** on the Device tab: a tick to enable it, the level,
+  the blink count, a **colour picker** showing the colour it will use, and a
+  **Test** button that runs that stage immediately — colours and counts are
+  impossible to judge without seeing them, and the alternative is draining a
+  controller to 20% to find out the amber is too dim. A test does not use up the
+  real notification. The dongle blinks its *saved* settings, so save first.
+
+  The per-stage tick is stored separately from the level, so turning a stage off
+  keeps the level and colour you set for when you turn it back on.
+
+  This is **additive to the Pico LED indicator**, which is unchanged and still
+  blinks continuously below 10%. The two suit different distances — the Pico LED
+  when the dongle is on the desk in front of you, the lightbar from across the
+  room — and most people will want one or the other rather than both.
+
+## [1.34.0] — 2026-08-27
+
+### Added
+
+- **Double tap** — a macro row can fire on two presses of its trigger within
+  250 ms, adapted from upstream's button-shortcut work. Tick *double tap* on a
+  button row; it is not offered on hold rows (driven by the held set) or long
+  presses (resolved by duration), and the portal clears the others if you tick
+  it.
+
+  **It costs nothing unless you use it.** A single tap can only be resolved late
+  if a double-tap row exists on the *same* trigger — until the window closes
+  there is no way to know which was meant. So the wait is applied only to a
+  trigger that has both: every other row still fires the instant the button goes
+  down, and a table with no double-tap rows behaves exactly as it did before.
+  A double-tap row on a different trigger does not slow this one down either.
+
+  A double-tap row can output a **controller or mouse button** as well as keys.
+  Those outputs are a state in the report the game reads rather than a keyboard
+  sequence, so a one-shot now presses the button for 80 ms and releases it —
+  long enough for a game polling once a frame to see it, far too short to read
+  as a deliberate hold. It layers over whatever hold rows are injecting at the
+  time, so a pulse and a held remap coexist. Before this, a one-shot row with a
+  controller output sent an empty keyboard burst and did nothing at all while
+  looking correctly configured.
+
+  Selecting a controller output still switches *hold while held* on, since a
+  remap almost always wants it — but no longer when *double tap* is already
+  ticked, which would have cleared the choice just made.
+
+## [1.33.1] — 2026-08-27
+
+### Fixed
+
+- **A held key was dropped for two reports whenever a hold macro was pressed.**
+  A hold row is driven entirely by the hold set, and a guard exists to stop one
+  also firing a one-shot burst — but the guard was applied only on the release
+  path, not when the chord is first pressed. A burst writes *only* its own keys,
+  so it overwrote everything else being held: with a stick row holding A,
+  pressing the button emitted `[dodge]`, then a blank release, then `[A, dodge]`.
+  At the instant the game saw the dodge key go down, the direction was gone, so
+  it used its default direction; the direction was back two reports later, which
+  is why every repeat after the first was correct and why a real keyboard —
+  which never releases the direction — was right every time.
+
+- **Unticking the last macro left the stick centred until a reconnect.** The
+  engine short-circuits when no macro is enabled, and that path skipped the only
+  code that clears the stick suppression, so the flag kept its last value. With
+  *centre stick always* that value is permanently on, and the firmware went on
+  centring the stick for the game until `macro_reset()` ran on reconnect.
+  Unticking *centre stick always* before disabling the macro avoided it, because
+  the flag was already clear by then. Keys held by a row that is disabled while
+  they are down are now released rather than left stuck.
+
+## [1.33.0] — 2026-08-26
+
+### Added
+
+- **Centre stick always** — a new option on a stick macro row, beside *hide
+  input from game*. With *hide* alone the stick is only centred for the game
+  while a direction is past the threshold, so at rest the pad's own jitter still
+  reaches the game as a stream of small, constantly changing axis values. A
+  game's dead zone stops that from moving the character, but prompt detection
+  usually reads raw deltas before the dead zone — so the on-screen button prompts
+  flip back to controller glyphs while the macro's keys say keyboard, over and
+  over. Nothing in the game's settings can fix it; the values have to stop
+  leaving the dongle. Turn this on and the stick is centred for as long as the
+  row is enabled.
+
+  It is **opt-in**, and rows saved before this release are unchanged. The old
+  behaviour is a legitimate hybrid — fine pressure walking the character as
+  analog while a hard push fires a key — and switching it on by default would
+  break those rows silently.
+
+- **Live test panel on the Macros tab.** The portal reads the same interface the
+  game does, so it can show the report *after* the firmware has rewritten it:
+  buttons, sticks, triggers, touchpad and the Edge Fn buttons and paddles, with
+  the observed report rate. Alongside it, the macro engine's own view of what it
+  is hiding and injecting this tick — moved here from the Device tab, where it
+  sat one tab away from the rows it describes. Together they separate "the rule
+  never fired" from "the rewrite never reached the report".
+
+  The stick threshold is drawn as a ring, the two-stage boundary as a line on
+  the trigger bar, and the touchpad's neutral band is shaded with the last
+  press's landing point marked — the position that decides which half fires.
+
+### Fixed
+
+- `tools/t2-tests` had not compiled since 1.32.8, when the rewrite gate began
+  calling `macro_report_active()` that the harness does not stub. It reported
+  nothing from then on. Both missing stubs added; the suite passes again.
+
+### Tools
+
+- `tools/run-portal-tests.sh` now runs `tools/portal-buttons-test.js`, which had
+  shipped since 1.29.1 without ever being invoked by the release gate — the
+  second time a test file has been added without being wired in, after
+  `portal-motion-test.js` in 1.20.0 (and `t2-tests` above makes three ways a
+  suite can go quiet). Every `portal-*.js` in `tools/` is now invoked, and the
+  runner's stale "three regression harnesses" comment is corrected.
+
+## [1.32.11] — 2026-08-02
+
+### Fixed
+- **Apply did nothing in the manual trigger picker.** It called a helper that
+  does not exist, so the handler threw before closing the panel: the panel
+  stayed open and the button looked dead. The pick had already been written to
+  the row, which is why pressing Cancel afterwards appeared to apply it - Cancel
+  closed the panel and the re-render showed the new chord. It now clears its
+  state and re-renders, the same way the keyboard picker always has, so Apply
+  and Cancel both close the panel immediately.
+
+### Changed
+- **The macro output readout now reports keys and mouse buttons too.** The
+  "injecting" figure only ever covered CONTROLLER buttons, because that is what
+  the inject mask holds - keys go out on the keyboard interface and mouse
+  actions on the mouse one. A keyboard remap therefore read as "injecting
+  nothing" while working perfectly. The line now reads "sending" and lists
+  controller buttons, how many keys are held, and mouse buttons.
+
+## [1.32.10] — 2026-08-02
+
+### Fixed
+- **The macro output readout ignored stick remaps.** A stick macro does not
+  touch the button suppress mask - it centres its stick through separate flags -
+  so a stick mapped to keys showed as "nothing hidden" in the diagnostic even
+  while it was hiding the stick correctly. The readout now reports centred
+  sticks alongside hidden buttons, names injected buttons instead of printing a
+  bit pattern, and shows whether the report is being rewritten at all this tick.
+
+## [1.32.9] — 2026-08-02
+
+### Added
+- **Live macro output readout** in the Device tab diagnostics: which buttons the
+  macro engine is hiding and injecting at this instant. Hold the button that
+  refuses to hide and read it - if the button is not listed as hidden, the rule
+  never fired; if it IS listed and the game still sees the press, the report is
+  being rewritten and something downstream is re-adding it. That splits a
+  "hiding does not work" report into two very different faults instead of
+  guessing which one it is.
+
+## [1.32.8] — 2026-08-02
+
+### Fixed
+- **"Hide input from game" was skipped entirely unless a trigger feature was
+  also configured.** Reported as "L3 and R3 will not hide", which is how it
+  presents in practice even though the cause is not specific to those buttons.
+
+  **What was wrong.** Before sending each report the firmware decides whether
+  the report needs rewriting. That decision asked only about TRIGGER settings -
+  dead zones and two-stage modes - but the very same path is what applies macro
+  suppression, macro button injection, analog trigger passthrough and centred
+  sticks. On a profile with no trigger feature enabled, the report took the
+  untouched fast path and every macro rewrite was discarded: the macro's keys
+  were still sent, because those go out on the keyboard interface which is not
+  affected, while the original button went to the game as well. Two inputs, one
+  press.
+
+  **Why it looked specific to L3 and R3.** The defect hides nothing selectively -
+  when it triggers, no button is hidden. What differs is whether you NOTICE:
+  L3 and R3 are usually bound to sprint and melee, so an unhidden press does
+  something obvious on screen, while a stray Square or D-pad press in the same
+  test often does nothing visible at all. Two further things make it look
+  inconsistent between setups: real-time polling always rewrites the report and
+  was never affected, and trigger dead zones are per profile - so the same
+  macro row hides correctly on one profile and not on another, depending on
+  settings that have nothing to do with macros.
+
+  **The fix.** The check now also asks the macro engine whether it has anything
+  to write this tick, so the report is rewritten whenever a macro needs it
+  regardless of trigger settings or polling mode. If a button still reaches the
+  game after this, the live macro readout added in 1.32.9/1.32.10 will show
+  whether the firmware is hiding it, which separates a rule that never fired
+  from something downstream re-adding the press.
+
+## [1.32.7] — 2026-08-02
+
+### Changed
+- **The gyro angle check and counts-per-360 measurement moved to the Gyro tab**,
+  into a *Gyro calibration* card, next to the settings they calibrate. They were
+  on the Device tab with the wake diagnostics, which meant setting up gyro
+  aiming involved hopping between tabs. Wake troubleshooting stays on Device.
+
+## [1.32.6] — 2026-08-02
+
+### Fixed
+- **A second counts-per-360 measurement skipped the linearity check and reused
+  the previous run's readings.** The recorded pair was never cleared, so once
+  both amounts had been measured, every later measurement found them already
+  present: it went straight to Apply and compared the new reading against a
+  stale one. Sending the full amount now starts a fresh run, applying a result
+  ends one, the readings recorded so far are shown, and there is a clear link.
+
+## [1.32.5] — 2026-08-02
+
+### Fixed
+- **The counts-per-360 burst was sent too fast to measure with.** At 40 counts
+  per report it delivered ~10,000 counts/second, and a game that samples the
+  mouse once a frame - or applies any smoothing - drops part of that. Lost
+  counts make the view turn LESS than it should, which quietly inflates the
+  calculated value instead of failing visibly. The sweep now runs at ~2,000
+  counts/second, slow enough for any game to see every count.
+
+### Added
+- **Linearity check** in the calibration panel: a second button sends HALF the
+  counts, which must turn the view exactly half as far. If it does not, counts
+  are being lost or scaled on the way in - by frame-sampled mouse reads, in-game
+  smoothing, or Windows pointer acceleration - and no counts-per-360 measured
+  through that is correct however carefully the angle is judged. This is the
+  only way to tell that apart from a genuinely low in-game sensitivity, since
+  both simply look like the view turning less than expected.
+
+## [1.32.4] — 2026-08-02
+
+### Added
+- **Counts-per-360 measurement.** The dongle can emit an exact number of mouse
+  counts on request; you report how far the view turned and the portal works out
+  the value: counts_360 = sent x 360 / observed. That number belongs to the GAME
+  rather than the controller, so it cannot be derived from the gyro - but it can
+  be measured, which replaces the guess-and-correct loop behind the default of
+  6500. It calibrates Flick Stick at the same time, since both read the field.
+  The burst is metered out over many reports rather than sent as one delta:
+  games clamp large jumps, and a smooth sweep is far easier to judge by eye.
+
+## [1.32.3] — 2026-08-02
+
+### Fixed
+- **Natural sensitivity and the angle check integrated against an assumed
+  report rate.** The gyro reports angular VELOCITY, so converting it to an angle
+  needs the interval each reading covers. That interval was taken to be 1 ms
+  scaled by the USB polling rate — but the samples arrive over BLUETOOTH, at a
+  rate set by the controller and the link, not by how often the host polls USB.
+  Measurements exposed it: a 90-degree turn read about 1.4x HIGH while a
+  360-degree turn read about 2.3x LOW, which no scale error can produce. A fast
+  turn packs its rotation into fewer reports and a slow one into more, so the
+  error tracked the speed of the turn rather than the angle. Both paths now
+  integrate over the real elapsed microseconds between samples, which removes
+  the assumption; verified identical at 250 Hz and 1000 Hz sample rates.
+- Samples separated by more than 100 ms are dropped rather than integrated, so a
+  disconnect or a sleep cannot deliver one enormous jump.
+
+### Added
+- The angle check reports the **gyro sample rate it actually observed**, so the
+  report interval is visible rather than assumed.
+
+## [1.32.2] — 2026-08-02
+
+### Changed
+- **Natural is the default gyro scale on a fresh install**, and Arbitrary is
+  renamed **Manual** — a clearer description of what it is (tune by feel, no
+  calibration) now that the alternative is calibrated rather than nominal.
+  Existing profiles keep whatever they stored.
+- **The angle check measures a full 360 instead of 90 degrees.** Judging a
+  quarter turn by eye is the least accurate part of the measurement, and a few
+  degrees of human error is several percent of the answer. A full turn ends
+  where it started, so the controller can be lined up against a desk edge and
+  returned to it exactly, and the error is spread over four times the angle.
+
+### Added
+- **Gyro scale trim** (50-1000, default 100): corrects the sensor's assumed
+  scale so 1.0x is genuinely 1:1 rather than nominally. The angle check reports
+  the value to enter.
+
+### Fixed
+- **The angle diagnostic reported ten times the true angle** (a divisor of 100
+  where it should have been 1000), and converted each report separately so slow
+  rotation was truncated away. It now sums raw readings and converts once.
+- The check feeds in **every** gyro mode, so the sensor can be calibrated before
+  switching to Natural rather than after.
+
+## [1.32.0] — 2026-08-02
+
+### Added
+- **Gyro natural sensitivity (real-world scale).** Gyro-to-mouse aiming can now
+  be expressed as a ratio rather than an arbitrary slider: at **1.0x**, rotating
+  the controller 10 degrees turns the in-game view 10 degrees. Set it once and
+  it holds in every game sharing the same mouse counts per 360, instead of being
+  re-tuned per game — the behaviour people expect from Steam Input and similar
+  remappers. Typical play is 2.5x to 12x.
+  - Uses the **counts per 360** value Flick Stick already needed, so games
+    calibrated for one are calibrated for the other. That field is no longer
+    labelled as Flick-Stick-only.
+  - Separate vertical multiplier, 0 to follow the horizontal one.
+  - The old arbitrary slider remains the default and is untouched, so existing
+    profiles behave exactly as before.
+  - Applies to gyro-to-MOUSE only. Gyro-to-stick is a rate control — the stick
+    says how fast to turn, not how far — so a 1:1 rotation ratio has nothing to
+    attach to, and the setting is ignored there.
+  - The conversion is exact integer maths with the remainder carried, so slow
+    movement is not truncated away and fast movement does not lose a fraction of
+    a count per report. Verified against ideal values to within 0.06% across
+    10-360 degree turns and 1x-12x, and identical at 250, 500 and 1000 Hz.
+  - A **degrees-rotated diagnostic** is exposed so the 1:1 claim can be checked
+    on hardware rather than trusted: rotate through a known angle and compare.
+
+### Note
+- Config field ids 0x01-0x7F are now fully allocated; new settings continue at
+  0x80. The field-id space is a plain byte and separate from HID report ids.
+
+## [1.31.1] — 2026-08-02
+
+### Fixed
+- **Recording a touchpad click could capture the opposite half.** 1.30.4 moved
+  the firmware to decide the half from where the finger LANDED, but the portal
+  was left deriving it from the position at CLICK time - the rule that was
+  wrong in the first place. A recording made while the pressed-finger centre
+  read on the other side of the middle produced a chord the firmware would
+  never match, so the macro simply never fired. The portal now uses the
+  touch-down position it already tracks for gestures, with the same neutral
+  centre band, so what is recorded is what is matched.
+-  checks the two rules against each other
+  instead of the old click-time behaviour it was still asserting.
+
+## [1.31.0] — 2026-08-02
+
+### Added
+- **Seven more macro output buttons: Create, Options, Touchpad click and the
+  four D-pad directions.** The output list came from the two-stage trigger
+  feature, which only ever needed face buttons, shoulders, sticks and trigger
+  clicks; macros reused it and inherited the gap, so a macro could TRIGGER on
+  Create or a D-pad direction but never SEND one. Mic and PS are deliberately
+  still absent - PS collides with the PS-shortcut feature and Mute is a state
+  toggle rather than a momentary button.
+  - The D-pad needed real work rather than another bit: it is a hat ENUM in the
+    report, so the four directions share one nibble. Injected directions are
+    merged with whatever the player is physically holding and the nibble is
+    re-encoded once. An injected direction WINS over a held one on the same
+    axis - a macro that says "press Up" should press Up even if the player is
+    leaning down - the other axis is preserved, and opposite injected
+    directions cancel, since the hat cannot express both.
+  - The new values are numbered from 16, ABOVE the mouse outputs at 11-15,
+    because those numbers are already persisted in saved macros. Numbering the
+    new buttons from 11 would have turned every saved "left click" into a
+    gamepad button. `MOUT_FIRST` no longer derives from the button count for
+    the same reason.
+
+## [1.30.5] — 2026-08-02
+
+### Added
+- **Separate vertical speed for Stick to Mouse**, mirroring the gyro vertical
+  sensitivity: 0 keeps it as one knob and follows the main Speed, any other
+  value sets the vertical rate independently. Worth having for the same reason
+  it is on the gyro — a game vertical aiming range is far smaller than its
+  horizontal one, so the gain that feels right for turning is usually too fast
+  for looking up and down. Half of Speed is a sensible starting point. The
+  deadzone and response curve still act on the overall stick magnitude, so
+  diagonals keep their direction and simply travel further horizontally than
+  vertically.
+
+## [1.30.4] — 2026-08-02
+
+### Fixed
+- **Touchpad click halves, properly this time.** 1.30.2 and 1.30.3 both took
+  the half from the finger position AT CLICK TIME, which is the worst moment to
+  sample it: the finger is flattened against the pad so its reported centre
+  moves, and the switch chatters on top of that. No amount of latching or
+  debouncing fixes a value that is wrong when it is read. The half now comes
+  from where the finger LANDED - the position the gesture code already records
+  at finger-down, milliseconds before the switch closes - and is frozen for the
+  whole press. This is what DS4Windows does with touchpad zones, which is why it
+  never had this problem.
+
+### Added
+- **Touchpad-click diagnostics** in the Device tab: the X where the finger last
+  landed, how many clicks the firmware has seen, and which half the last one
+  resolved to. Click each side a few times and the count should rise by exactly
+  one per click with the half matching the side used - which turns "it fires
+  both" into a measurement instead of a guess.
+
+## [1.30.3] — 2026-08-02
+
+### Fixed
+- **A single touchpad click still fired both half-bindings, and a long-press
+  fired its short action immediately.** 1.30.2 latched which half a click was on
+  at the press edge, but it did so BEFORE the debounce, so it saw the switch
+  chatter raw: the pad's contacts break and remake within a few milliseconds of
+  a press, and because the finger's contact patch shifts slightly between
+  bounces, the next edge could latch the OTHER half - one press fired both
+  bindings, the second only briefly. The same chatter re-armed the chord on
+  every bounce, resetting the long-press timer, so a macro set to hold fired its
+  short action at once. The debounce now runs first and the latch sees one clean
+  press, which is what DS4Windows does: decide the zone at finger-down, on a
+  debounced press.
+- **A half is latched only when it is unambiguous.** The debounce can briefly
+  hold the previous half alongside the new one; latching that pair would fire
+  whichever binding sorted first. When both or neither are present the click
+  stays unqualified for another report, which costs nothing since a press lasts
+  far longer than one report.
+
+## [1.30.2] — 2026-08-02
+
+### Fixed
+- **Left and right touchpad clicks both fired from one press.** Which half a
+  click was on was re-derived from the finger position on EVERY report, so a
+  finger that drifted across the middle while the pad was held - or a click near
+  the centre, where the reported X jitters - flipped the qualification mid-press
+  and triggered both bindings. With quicksave on one half and quickload on the
+  other, a save was reliably followed by a load. The half is now decided once,
+  on the press edge, and held until release: a click is one gesture, and the
+  half it started on is the half it is, however the finger wanders afterwards.
+- **Clicks near the centre line are no longer a coin toss.** A neutral band of
+  roughly 8% either side of the middle leaves a click unqualified, so a binding
+  on a specific half does not fire and only a generic touchpad-click binding
+  catches it. Doing nothing is the right outcome when the intent is genuinely
+  not readable - especially when the two halves do opposite things.
+
+## [1.30.1] — 2026-08-02
+
+### Fixed
+- **Stick-to-mouse Speed 255 was the SLOWEST setting, not the fastest.**
+  Validation treated 0xFF as the "unset" fill and reset it to 0, which means
+  "use the default" - so the top of the range silently became 600 counts/s. The
+  sentinel was never needed: a slot saved before these fields existed has the
+  feature itself clamped to off, so its speed value is never read.
+- **Typed values above a setting's range wrapped instead of clamping.** The
+  min/max on a number box only style the spinner; a typed value went through
+  and was then masked to the field width, so entering 2000 sent 208. Values are
+  now clamped to the declared range and the box is updated to show what was
+  actually sent.
+
+### Changed
+- **Speed is now mouse counts per second directly, 0-20000** (was a byte
+  holding tenths, capping the feature at 2550/s - short for a fast-turning
+  game). **Existing values will read low after this update: multiply your old
+  number by 10.**
+
+## [1.30.0] — 2026-08-02
+
+### Added
+- **Stick to Mouse.** Drive the mouse pointer from the right or left stick, the
+  way gyro aiming already can. Both feed the same accumulator, so the stick can
+  do the large turns while the gyro does the fine aim - the usual reason to want
+  this. The chosen stick is centred in the report the game sees, so the game
+  does not also turn from it.
+  - **Speed** in counts per second at full tilt (stored /10; 0 = 600/s).
+  - **Deadzone** as a percent of full tilt, applied radially rather than
+    per-axis so a diagonal push just past the threshold does not jump. Without
+    it a resting stick makes the view creep, because a mouse never stops.
+  - **Response curve** as an exponent (10 = linear, 18 = default). A linear
+    stick is twitchy at the centre and slow at the edge; the curve is what makes
+    this feel like a mouse rather than a joystick. It is applied to the
+    magnitude, not per axis, so diagonals are not bent toward the axes.
+  - **Invert** per axis.
+  - Sub-count movement is carried between ticks, so slow stick pressure still
+    moves the pointer instead of being truncated to nothing.
+  - Mutually exclusive with Flick Stick, which claims the right stick for
+    itself; selecting one clears the other rather than leaving two owners
+    writing the same report.
+  - Turning it on or off adds or removes the mouse HID interface, so it
+    re-enumerates - the same as switching gyro output to mouse.
+
+## [1.29.3] — 2026-08-02
+
+### Fixed
+- **Every slot activation re-enumerated the device.** The check for whether a
+  slot changes something enumeration-critical compared the LIVE config, which
+  `config_valid()` has normalised, against the slot's RAW stored bytes. Any byte
+  a slot holds unclamped therefore differed forever - and a slot saved before a
+  field existed carries 0xFF there. `gyro_output` is the clearest case: 0xFF
+  reads as "mouse interface needed" while the live clamped value is 0, so the
+  activation looked like an interface change every time, including
+  re-activating the slot that was already loaded. Both sides are now clamped
+  before the comparison, so the device only reconnects when something really
+  changed.
+- **Macros and slots came back blank after a reconnect.** When an activation
+  did legitimately re-enumerate, the portal kept the macro table it had read
+  from the handle that just disappeared, so the panels rendered stale state
+  until the portal was reopened. The caches are dropped before reacquiring and
+  the macro table is re-read on the new handle.
+
+### Note
+- Saving the FIRST macro (or removing the last one) changes which HID
+  interfaces the device exposes, so it re-enumerates by design. Windows and
+  Sony's app briefly see the controller disappear and return with a different
+  shape; the app in particular may need to be restarted, or another profile
+  loaded, before it lists the controller again. Adding further macros after the
+  first does not re-enumerate.
+
+## [1.29.2] — 2026-08-02
+
+### Fixed
+- **"Hide input from game" now works for the Edge buttons and pad-click halves.**
+  The suppression table in `main.cpp` stopped at Mute, so a Replace macro bound
+  to an Fn button, a paddle or a qualified touchpad click fired correctly but
+  could not hide the press - the game still saw it. All bits the decoder
+  produces can now be suppressed. A suppressed pad-click half clears the click
+  bit only (never the other half, since suppression is only engaged while that
+  half is held) and leaves the touch coordinates alone.
+
+## [1.29.1] — 2026-08-02
+
+Macro input fixes on top of 1.29.0.
+
+### Fixed
+- **Edge Fn buttons and paddles were never captured when recording a macro.**
+  The firmware decoder and the portal's button table both listed them, but the
+  portal's live capture decoder still stopped at bit 18 - so the firmware could
+  match an Fn or paddle chord that recording could never produce.
+- **The touchpad click could not be recorded as a trigger at all.** The click
+  bit was stripped from every committed chord, not just from the test that
+  decides swipe-versus-chord, so clicking the pad with no movement recorded
+  nothing: no gesture, and an empty chord. The bit is now kept in the chord and
+  only the swipe decision ignores it, so the click works alone, in a chord, and
+  with hold.
+- **A half-specific click records as the half alone.** Recording a left click
+  produced the chord "Touchpad click + Touchpad click (left)" - two buttons for
+  one press - because the controller reports the generic bit alongside the
+  qualified one. Recording now drops the generic bit whenever a half is
+  present, and the manual picker treats the generic click and the two halves as
+  mutually exclusive. Matching is unaffected: the controller still reports all
+  the bits, so a chord naming only the half matches, and firmware ranking now
+  counts a named half as extra specificity so a one-button half chord still
+  beats a one-button generic chord instead of tying with it.
+- **The touchpad click can now distinguish left from right.** The pad is one
+  physical switch, but the finger position is in the same report, so a click is
+  qualified as left or right by which half the finger was on (new logical bits
+  23/24, appended). The generic click bit is still set on every click, so chords
+  recorded before this keep matching either half, and a half-specific chord wins
+  over a generic one. A click with no finger reported - knuckle, pad edge -
+  stays unqualified rather than guessing. Firmware-side, so it arrives with the
+  1.29.1 build.
+- **Added a manual trigger picker** (*Pick* beside *Record input*): tick the
+  trigger buttons by hand instead of holding them. Needed for anything the
+  controller consumes before transmitting - an Edge paddle that still has an
+  assignment in Sony's app is sent as whatever it was mapped to, so no amount of
+  recording will see the paddle itself.
+- **Added `tools/portal-buttons-test.js`**, the cross-check `input_buttons.h`
+  has always referenced: it verifies the portal's bit table and live decoder
+  against the header, and that every bit the firmware decodes is reachable from
+  the portal. It fails on the pre-fix code with 9 errors.
+
+Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.
+
+### Added
+- **DualSense Edge Fn buttons and paddles as macro inputs.** All four sit in
+  report byte 9 and were never decoded; they now join the logical button mask as
+  appended bits, so existing macros keep their meaning.
+  - **Fn + D-pad** is the combination worth using. Sony's app claims Fn + a face
+    button for switching the controller's on-board profiles, so chords built there
+    compete with it, while Fn + a D-pad direction is unclaimed.
+  - A paddle with an assignment in the Sony app still sends that assignment: the
+    controller applies its own mapping before the report reaches the dongle.
+  - A standard DualSense never sets these bits, so decoding them costs nothing.
+
+## [1.29.0] — 2026-08-22
+
 ## [1.28.4] — 2026-08-22
 
 Reflash both boards. Config version stays at 19 and no `flash_nuke` is needed.

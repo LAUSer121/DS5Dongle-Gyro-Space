@@ -139,6 +139,34 @@ void config_valid() {
     if (body->auto_haptics_slope != 6 && body->auto_haptics_slope != 12 && body->auto_haptics_slope != 24) body->auto_haptics_slope = 12;
     if (body->lightbar_off > 1) body->lightbar_off = 0;
     if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 40;
+    // Staged battery notification. An upgraded config arrives with this tail
+    // 0xFF-filled, so every value has to be clamped into range rather than
+    // trusted - 0xFF blinks would flash for eight minutes.
+    if (body->batt_notify_enable > 1) body->batt_notify_enable = 0;
+    if (body->touch_mouse > 1) body->touch_mouse = 0;
+    if (body->tilt_steer > 1) body->tilt_steer = 0;
+    if (body->tilt_steer_range == 0 || body->tilt_steer_range > 90) body->tilt_steer_range = 45;
+    // 70, not 25. At 25 the offset never clears a racing game's own steering
+    // dead zone, so the feature looked broken while working exactly as written.
+    // Below roughly 60 nothing of consequence happens.
+    if (body->tilt_steer_amount > 100) body->tilt_steer_amount = 70;
+    if (body->tilt_steer_deadzone > 30) body->tilt_steer_deadzone = 3;
+    if (body->tilt_steer_invert > 1) body->tilt_steer_invert = 0;
+    if (body->tilt_steer_y > 1) body->tilt_steer_y = 0;
+    if (body->tilt_steer_y_amount > 100) body->tilt_steer_y_amount = 70;
+    if (body->tilt_steer_y_invert > 1) body->tilt_steer_y_invert = 0;
+    if (body->flick_angle == 0 || body->flick_angle > 180) body->flick_angle = 90;
+    if (body->touch_mouse_sens == 0 || body->touch_mouse_sens > 250) body->touch_mouse_sens = 100;
+    if (body->touch_mouse_min > 20) body->touch_mouse_min = 1;
+    if (body->touch_mouse_invert > 3) body->touch_mouse_invert = 0;
+    if (body->touch_mouse_trackball > 1) body->touch_mouse_trackball = 0;
+    if (body->touch_mouse_friction == 0 || body->touch_mouse_friction > 100) body->touch_mouse_friction = 10;
+    for (int i = 0; i < 3; i++) {
+        if (body->batt_stage_level[i] > 10)  body->batt_stage_level[i] = 0;   // 0 = stage off
+        if (body->batt_stage_blinks[i] > 20) body->batt_stage_blinks[i] = 5;
+        if (body->batt_stage_blinks[i] == 0) body->batt_stage_blinks[i] = 5;
+        if (body->batt_stage_on[i] > 1) body->batt_stage_on[i] = 0;
+    }
     if (body->bt_flush_timeout > 0x07FF) body->bt_flush_timeout = 0; // 0=off, max per BT spec
     if (body->bt_qos_latency_us > 50000) body->bt_qos_latency_us = 0; // 0=off
     if (body->rumble_haptic_strength > 200) body->rumble_haptic_strength = 50; // >100 = deliberate overdrive
@@ -214,7 +242,12 @@ void config_valid() {
     // Gyro aiming defaults (OFF by default).
     if (body->gyro_mode > 7) body->gyro_mode = 0; // 5=R2, 6=L1, 7=R1 gates (v1.11.0)
     if (body->gyro_sens < 1 || body->gyro_sens > 100) body->gyro_sens = 50;
-    if (body->gyro_axis > 1) body->gyro_axis = 0;
+    // 2 = player space (accelerometer-derived). The clamp was still 1 when that
+    // option was added, so selecting it was silently rewritten to yaw and the
+    // new mode could never be tested - it behaved identically to the old one,
+    // which is precisely what it looked like. Any new enum value has to move
+    // this line with it.
+    if (body->gyro_axis > 2) body->gyro_axis = 0;
     if (body->gyro_invert > 3) body->gyro_invert = 0;
     // Gyro aiming space (v1.19.0): 3=LOCAL_SPACE is the default. It maps yaw
     // to horizontal and pitch to vertical in the controller frame - the same
@@ -240,6 +273,32 @@ void config_valid() {
     if (body->t2_button >= T2BTN_COUNT) body->t2_button = T2BTN_NONE;
     if (body->gyro_sens_y > 100) body->gyro_sens_y = 0;   // 0 = follow X
     if (body->gyro_output > 2) body->gyro_output = 0;   // 0xFF fill from an older slot -> stick
+    // Stick-to-mouse. Every one of these must be clamped here: a slot saved
+    // before the fields existed carries 0xFF, and slot_activate() compares
+    // CLAMPED values on both sides, so an unclamped byte would make every
+    // activation of that slot look like a mouse-interface change.
+    if (body->stick_mouse > 2) body->stick_mouse = 0;
+    // NO 0xFF sentinel here: it made 255 - the fastest setting - silently mean
+    // 0, i.e. the SLOWEST. The fill from an older slot is harmless anyway,
+    // because stick_mouse itself clamps to 0 (off) in that slot, so the speed
+    // is never used. 0 still means "use the default"; 1..255 are real speeds.
+    if (body->stick_mouse_sens > 20000) body->stick_mouse_sens = 0;   // 0xFFFF fill -> default
+    if (body->stick_mouse_sens_y > 20000) body->stick_mouse_sens_y = 0; // 0 = follow X
+    // 0xFF is the fresh-flash fill, so this also picks the DEFAULT for a new
+    // install: Natural, now that it is calibrated rather than nominal. An
+    // existing profile stores its own 0 or 1 and is untouched.
+    if (body->gyro_sens_mode > 1) body->gyro_sens_mode = 1;
+    if (body->gyro_natural_x10 == 0 || body->gyro_natural_x10 == 0xFF) body->gyro_natural_x10 = 10; // 1.0x
+    if (body->gyro_natural_y_x10 == 0xFF) body->gyro_natural_y_x10 = 0;  // 0 = follow X
+    if (body->gyro_scale_trim_x100 == 0 || body->gyro_scale_trim_x100 > 1000) body->gyro_scale_trim_x100 = 100;
+    if (body->stick_mouse_deadzone > 50) body->stick_mouse_deadzone = 8;
+    if (body->stick_mouse_curve == 0xFF || body->stick_mouse_curve < 10 ||
+        body->stick_mouse_curve > 40) body->stick_mouse_curve = 18;
+    if (body->stick_mouse_invert > 3) body->stick_mouse_invert = 0;
+    // Flick Stick also owns the right stick. Two owners would both write the
+    // report and both centre it; the explicit stick mode yields, since it is
+    // the one the user just chose from a list that names the conflict.
+    if (body->gyro_output == 2 && body->stick_mouse == 1) body->stick_mouse = 0;
     // Flick calibration. Anything outside a plausible range - including 0, and
     // including the 0xFFFF an older slot's tail fill produces - becomes a usable
     // default rather than disabling the flick. A zero here meant selecting
@@ -601,8 +660,22 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
     if (!slot_read(idx, nm, slot_body)) { fail_stage = 2; return 0; }
     // Fields that change USB descriptors / enumeration-time behavior; if any
     // differ, the caller should issue the reconnect command (0x03) afterwards.
-    const Config_body &o = config.body;
-    const Config_body &n = slot_body;
+    //
+    // COMPARE CLAMPED VALUES ON BOTH SIDES. config_valid() normalises the LIVE
+    // config only, so comparing it against the RAW stored body made any byte a
+    // slot holds unclamped differ forever - and a slot saved before a field
+    // existed carries 0xFF there. gyro_output is the clearest case: 0xFF reads
+    // as ">= 1", i.e. "mouse interface needed", while the live clamped value is
+    // 0, so every activation of that slot looked like an interface change and
+    // reconnected the device. Re-activating the SAME slot did it too, because
+    // the stored bytes never change. Normalise first, then compare: apply the
+    // slot, clamp it, and diff against a copy of what was live before.
+    static Config_body prev_body;   // static: keep it off the USB task stack
+    prev_body = config.body;
+    config.body = slot_body;
+    config_valid();                 // clamp 0xFF fills from older slots
+    const Config_body &o = prev_body;
+    const Config_body &n = config.body;
     needs_reenum = (o.controller_mode      != n.controller_mode)      ||
                    (o.polling_rate_mode    != n.polling_rate_mode)    ||
                    (o.audio_buffer_length  != n.audio_buffer_length)  ||
@@ -623,8 +696,6 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    // The mouse is its own interface, and it implies the keyboard -
                    // so the keyboard test above does not cover losing the mouse.
                    (usb_mouse_iface_needed(o) != usb_mouse_iface_needed(n));
-    config.body = slot_body;
-    config_valid(); // clamp anything out of range (e.g. slot saved by older fw)
     active_profile_set(idx); // record the loaded slot (RAM) for the portal readout
     // Persist. flash_safe_execute parks core1 with a 1 s timeout; at game
     // launch core1 is at its busiest (BT stream + haptics), which is exactly

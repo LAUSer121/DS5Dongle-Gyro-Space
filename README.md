@@ -1,6 +1,6 @@
 # DS5Dongle — Studio
 
-**Version 1.28.4**
+**Version 1.40.0**
 
 ▶️ **[Configure in your browser](https://LAUSer121.github.io/DS5Dongle-Gyro-Space/ds5-config-portal.html)** — the config portal can run as a web page, no download required. Needs Chrome or Edge, with the dongle plugged in.
 
@@ -21,7 +21,7 @@ don't — all configurable from a web-based portal.
 > - **Raspberry Pi Pico 2 W** — the released `.uf2` is built for this board. Flash
 >   it and you're done.
 > - **Waveshare RP2350B-Plus-W** (USB-C, 16 MB flash, RM2 wireless) — a prebuilt
->   `ds5-v1.28.4-waveshare.uf2` now ships with each release; flash that and you're
+>   `ds5-v1.40.0-waveshare.uf2` now ships with each release; flash that and you're
 >   done. It is built against pico-sdk 2.2.0, as this board requires.
 >   *It has not yet been confirmed on hardware by anyone — if you have this board,
 >   a report either way is very welcome.* To build it yourself instead, one command:
@@ -67,12 +67,15 @@ to RAM so native fine haptics and controller audio work without overclocking.
   - [Custom Captured Effects (new in 1.14.0)](#custom-captured-effects-new-in-1140)
   - [Trigger effects — shared](#trigger-effects--shared)
   - [Gyro Aiming](#gyro-aiming)
-  - [Gyro as a mouse (new in 1.24.0)](#gyro-as-a-mouse-new-in-1240)
-  - [Flick Stick (new in 1.24.0)](#flick-stick-new-in-1240)
   - [Right Stick Inversion](#right-stick-inversion)
+  - [Gyro sensitivity: Natural or Manual (new in 1.32.0)](#gyro-sensitivity-natural-or-manual-new-in-1320)
+  - [Stick to Mouse (new in 1.30.0)](#stick-to-mouse-new-in-1300)
+  - [Touchpad as Mouse (new in 1.37.0)](#touchpad-as-mouse-new-in-1370)
+  - [Tilt steering (new in 1.39.4)](#tilt-steering-new-in-1394)
   - [Macros (new in 1.19.0)](#macros-new-in-1190)
   - [Device & Connection](#device--connection)
   - [Windows Native Battery (UPS) (new in 1.20.0)](#windows-native-battery-ups-new-in-1200)
+  - [Battery notification (new in 1.35.0)](#battery-notification-new-in-1350)
   - [Advanced — BT Latency (experimental)](#advanced--bt-latency-experimental)
 - [Modes explained](#modes-explained)
 - [Notes & known behavior](#notes--known-behavior)
@@ -283,7 +286,7 @@ below.
    each have their own prebuilt firmware, or build it yourself; this will not run
    on the original Pico W.)* Hold the BOOTSEL button while plugging in the board
    (or triple-click BOOTSEL on an already-running unit), then copy
-   `ds5-v1.28.4.uf2` (Pico 2 W) or `ds5-v1.28.4-waveshare.uf2` (Waveshare) to the
+   `ds5-v1.40.0.uf2` (Pico 2 W) or `ds5-v1.40.0-waveshare.uf2` (Waveshare) to the
    `RPI-RP2` drive that appears.
    - **You do not normally need `flash_nuke.uf2`** (the one supplied is built for
      the Pico 2 W). Settings and saved profile
@@ -399,7 +402,6 @@ surprise; apply them in the portal and save.)
 | Filter Slope | 12 dB/oct |
 | Auto-mute Speaker (Replace) | Yes |
 | Auto-mute Speaker (Mix) | Yes |
-| Lightbar Off in Replace Mode | Yes |
 | Converted Rumble Strength (Mix) | 50 (range goes to 200; left/heavy renders at 60 Hz, right/light at 160 Hz) |
 | Effect Leak Volume (0=off) | 0 (raise to enable) |
 | Effect Leak Sensitivity | 50 |
@@ -582,7 +584,6 @@ Continuing the **Auto-Haptics & Speaker Effect Leak** settings:
 |---|---|---|---|
 | Auto-mute Speaker (Replace) | on/off | on | Mute controller speaker in Replace mode |
 | Auto-mute Speaker (Mix) | on/off | off | Mute controller speaker in Mix mode |
-| Lightbar Off in Replace Mode | on/off | off | Kills the lightbar glow in Replace (e.g. blue in Xbox360 mode) |
 | Converted Rumble Strength (Mix) | 0–200 | 50 | Strength of a game's rumble re-created on the actuators in Mix mode. Left/heavy renders at 60 Hz, right/light at 160 Hz. Above 100 deliberately overdrives into the limiter for games whose motor values sit low |
 | Effect Leak Volume | 0–100 | 0 (off) | Volume of the transient effect leak through the speaker when auto-muted |
 | Effect Leak Sensitivity | 0–100 | 50 | How sudden a level jump counts as an effect (higher = more leaks through) |
@@ -1131,7 +1132,7 @@ Maps controller motion onto the right stick — or onto a mouse — for motion a
 | Gyro Mode | Off / L2-held / Always / Touch-enables / Ratchet | Off | When motion aiming is active (see below) |
 | Sensitivity | 1–100 | 50 | Motion-to-stick gain (50 ≈ raw) |
 | Vertical sensitivity | 0–100 | 0 (same as above) | Vertical gain on its own — usually lower, since a game's vertical aiming range is much smaller |
-| Horizontal source | Yaw / Roll | Yaw | Yaw = turn the controller; Roll = tilt it sideways |
+| Horizontal source | Yaw / Roll / Player space | Yaw | Yaw = turn the controller; Roll = tilt it sideways; **Player space** works out which way is down from the accelerometer and follows how you actually hold it — see below |
 | Invert gyro aim | X / Y / both | off | Per-axis inversion (bit0 = X, bit1 = Y) |
 | Gyro output | Right stick / Mouse / Mouse + Flick Stick | Right stick | What the motion drives — see below |
 | Flick Stick — mouse counts per 360° | 500–50000 | 6500 | Calibration, Flick Stick only |
@@ -1203,6 +1204,31 @@ back twice is easier to judge than once — you should land exactly where you be
 > fixed amount per count; with acceleration, no single calibration value can be
 > correct. Changing the game's own sensitivity also means recalibrating.
 
+#### Player space *(new in 1.38.2)*
+
+Yaw and Roll each assume a particular grip. Turning the controller drives the aim
+only while the pad is roughly flat; tilting it sideways only while it is roughly
+upright. Hold it any other way and part of the movement lands on the wrong axis —
+a level left-right sweep starts dragging the cursor diagonally, and with the pad
+on its edge it barely turns the view at all. That is why picking an axis also
+means committing to a grip.
+
+**Player space** reads gravity from the accelerometer to work out which way is
+down, then measures how much your movement turned you about the world's vertical
+axis. Flat, tilted up, rolled onto its edge — the aim behaves the same. Vertical
+aim is corrected the same way, so it stays vertical instead of picking up part of
+a horizontal turn.
+
+Gravity is low-passed, so a knock does not throw the aim, and it falls back to
+plain yaw if the reading is not sane gravity (a hard shake, or free fall).
+
+To see the difference: aim with the pad flat, then roll it 45° sideways and make
+the same movement. On Yaw the cursor goes diagonal; on Player space it does not
+change. Roll it a full 90° and Yaw stops turning the view horizontally almost
+entirely, while Player space is unaffected.
+
+Yaw and Roll are unchanged and Yaw remains the default.
+
 ### Right Stick Inversion
 Inverts the physical right stick in the input report the PC sees — independent of
 gyro aiming, and active in any game with no PC-side software.
@@ -1215,6 +1241,156 @@ Useful for inverted-look setups, or games that only offer inversion on one axis.
 Because it rewrites the stick values in the report itself it works everywhere, and
 it composes with gyro aiming — the stick is inverted first, then the gyro delta is
 added on top with its own invert. *(New in 1.18.21.)*
+
+### Gyro sensitivity: Natural or Manual *(new in 1.32.0)*
+
+Two ways to set gyro aiming. **Natural** (the default on a fresh install)
+expresses it as a real-world ratio: at 1.0x, rotating the controller 10 degrees
+turns the view 10 degrees, and the same setting is correct in every game that
+shares the same mouse counts per 360. **Manual** is the original slider — a
+number with no real-world meaning that you tune by feel, per game.
+
+Natural applies to gyro-to-**mouse** only. Gyro-to-stick tells the game how fast
+to turn rather than how far, so a rotation ratio has nothing to attach to there,
+and the setting is ignored.
+
+#### Setting up Natural — step by step
+
+1. **Set gyro output to Mouse** in the Gyro tab.
+2. **Calibrate the sensor once.** Gyro tab → *Gyro calibration* → *Gyro angle check* → **Measure**,
+   then make one full 360-degree turn during the countdown, ending exactly where
+   you started. Line the controller up with a desk edge or door frame so you can
+   return to it precisely. Repeat two or three times.
+   - Reads within 5% of 360? Leave **Gyro scale trim** at 100.
+   - Reads high or low? The panel gives you the trim value to enter — set it,
+     then measure again to confirm it now reads ~360.
+3. **Measure the game's mouse counts per 360.** This belongs to the *game*, not
+   the controller — it is the same number Flick Stick needs. Gyro tab →
+   *Gyro calibration* → *Counts per 360* → press **Send 6500 counts** (you get a few seconds to
+   switch to the game), read how far the view turned, type that in and press
+   **Work it out**. Sight a landmark before sending and judge against it. Turn
+   off in-game mouse acceleration and smoothing first, or no single value can
+   be correct. You can also calculate it as `(cm per 360) x (DPI / 2.54)` if
+   you know your mouse settings.
+4. **Pick a multiplier.** 10 (=1.0x) is literal 1:1 — the camera tracks your
+   hands exactly, which is precise but only turns as far as your wrists do. Most
+   people run 25-120 (2.5x-12x): lower if the stick does the big turns and the
+   gyro only fine-aims, higher for gyro-led play.
+5. **Set a vertical multiplier** if wanted. A game's vertical aiming range is
+   much smaller than its horizontal one, so a lower value than the horizontal is
+   common; 0 follows the horizontal one.
+
+Change games and only step 3 changes. Steps 2 and 4 stay.
+
+#### Setting up Manual
+
+Set the scale to Manual and adjust **Gyro Sensitivity** until it feels right.
+Nothing to calibrate, nothing to look up — but the number means nothing outside
+that game, so expect to redo it for the next one. Manual is also the right
+choice when a game's mouse handling makes counts-per-360 meaningless (forced
+acceleration or smoothing that cannot be disabled).
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Gyro sensitivity scale | Manual / Natural | Natural | Natural needs counts per 360; Manual is the original slider |
+| Natural multiplier x10 | 5-200 | 10 (= 1.0x) | 10 is true 1:1; most play at 25-120 |
+| Natural vertical x10 | 0-200 | 0 (= same) | Separate vertical ratio |
+| Gyro scale trim | 50-1000 | 100 | Corrects the sensor's scale; set from the angle check |
+| Mouse counts per 360 | 500-50000 | 6500 | Shared with Flick Stick — calibrate once, both use it |
+
+### Stick to Mouse *(new in 1.30.0)*
+Drives the mouse from a stick, for games that aim better with a mouse than with a
+stick — or alongside gyro aiming, with the stick doing the large turns and the
+gyro the fine aim. Both paths feed the same mouse, so they add rather than fight.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Drive the mouse from a stick | Off / Right / Left | Off | The chosen stick is centred in what the game receives, so the game does not also turn from it |
+| Speed | 0–20000 | 0 (= 600/s) | Mouse counts per second at full tilt. Raise until a full push turns as fast as you want |
+| Vertical speed | 0–20000 | 0 (= same as Speed) | Separate vertical rate. Games use a much smaller vertical aiming range, so the gain that feels right for turning is usually too fast for looking up and down — try half of Speed |
+| Deadzone | 0–50 % | 8 | Sticks rest slightly off centre and a mouse never stops, so without a deadzone the view creeps. Applied radially, so diagonals behave |
+| Response curve | 10–40 | 18 | Exponent ×10. 10 is linear — twitchy at the centre, slow at the edge. 18 gives fine control near centre and full speed at the edge |
+| Invert stick-to-mouse | X / Y / both | off | Per axis, independent of the physical stick inversion above |
+
+Sub-count movement is carried between ticks, so slow stick pressure still moves
+the pointer instead of being truncated away.
+
+Three things worth knowing. It needs the mouse HID interface, so switching it on
+or off **re-enumerates the device**, exactly like setting gyro output to Mouse.
+It is **mutually exclusive with Flick Stick**, which also claims the right stick
+— choosing one clears the other rather than leaving both writing the same
+report. And as with gyro-to-mouse, a game that reads the pad *and* the mouse may
+need the controller hidden with HidHide, or it receives the movement twice.
+
+### Touchpad as Mouse *(new in 1.37.0)*
+
+Uses the touchpad as a trackpad. It is **relative**: the pointer follows how far
+your finger *moves*, so you can lift and reposition exactly as you would on a
+laptop. Useful from the sofa, where reaching for a mouse is the whole problem.
+
+Settings are on the **Device** tab, in their own *Touchpad as Mouse* section.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Touchpad as Mouse | on/off | off | Adds the mouse HID interface, so the device re-enumerates once when you turn it on or off |
+| Touchpad Speed | 1–250 | 100 | Pointer speed. 100 crosses most of a screen in one swipe |
+| Touchpad Jitter Filter | 0–20 | 1 | Ignores finger movement smaller than this many pad counts, so a resting finger does not make the pointer drift |
+| Touchpad Invert | None / X / Y / Both | None | Flips the pointer direction per axis |
+| Touchpad Trackball | on/off | off | Keeps the pointer gliding after you lift off, so one flick can cross a large screen |
+| Trackball Friction | 1–100 | 10 | Fraction of speed shed every 100 ms. Higher stops sooner; 10 glides for roughly two seconds |
+
+**Clicks are not part of this setting, on purpose.** The touchpad-click halves
+are already macro triggers and can output mouse buttons, so left and right click
+are one macro row each — and you choose which half is which, rather than being
+given a fixed corner. See the Macros section.
+
+It shares the pointer accumulator with gyro aiming and Stick to Mouse, so the
+three **add** rather than fight, and sub-count movement is carried between ticks
+so slow drags still register.
+
+> Two gyro activation schemes use the touchpad themselves and do not combine
+> well with this: *only while the touchpad is touched* runs the gyro during
+> exactly the drag that is moving the pointer, so both add together and the
+> pointer overshoots, and *ratchet* pauses the gyro whenever you touch the pad,
+> so you get pointer or gyro but never both. The portal warns when either is
+> selected. Gate the gyro on a trigger or a shoulder instead.
+
+There is no on/off chord. Enablement is per profile and profiles load per game,
+so a desktop profile can have it on while every game profile leaves it off.
+
+### Tilt steering *(new in 1.39.4)*
+
+Roll the controller like a small steering wheel and it **adds** to the left
+stick. It does not replace it: coarse steering stays on the stick, where it is
+precise, and tilt supplies the fine control on top. The angle comes from gravity,
+so it never drifts and always returns to centre when you level the pad.
+
+Settings are on the **Device** tab, in the *Tilt Steering* section.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Tilt Steering | on/off | off | Roll left and right adds to the left stick's X |
+| Tilt range | 1–90° | 45 | How far you roll the pad for the full effect |
+| Maximum stick added | 0–100% | 70 | Racing games apply their own steering dead zone, so below about 60 nothing happens you can feel. 70 is usable trim; 100 lets tilt steer on its own |
+| Tilt dead zone | 0–30° | 3 | Degrees around level that do nothing, so your natural grip does not steer for you |
+| Invert tilt direction | on/off | off | Flip which way a roll steers |
+| Also tilt forward/back | on/off | off | Leaning adds to the left stick's Y — for bikes and weight shift, not cars |
+| Maximum stick added, lean | 0–100% | 70 | Separate from steering: how much lean a game wants is not how much steering it wants |
+| Invert lean direction | on/off | off | Flip which way a lean pushes |
+
+**Calibrate with the live test** on the Macros tab. Roll the pad and watch the
+**L stick** figure — that is the value the game receives, so you can size the
+offset against the game's own dead zone. A setting that looks active in the
+portal can still be swallowed before it reaches the car.
+
+The **Device tab diagnostics** show the angles and the offsets being applied,
+which distinguishes "not running" from "running but too small to matter".
+
+> Tilt-only steering was tried across the SIXAXIS era and consistently judged too
+> imprecise to replace a stick, because the entire steering range lived in a wrist
+> angle you cannot hold steady while being thrown around a track. Adding to the
+> stick avoids that: the stick keeps the coarse work, and tilt only has to supply
+> the last few percent.
 
 ### Macros (new in 1.19.0)
 
@@ -1231,6 +1407,7 @@ Everything is edited on the **Macros** tab.
 | Checkbox | Enables this macro **for the current profile**. Per-slot — see below. |
 | Name | Up to 15 characters, stored on the dongle so your names survive a different PC or a cleared browser. |
 | Record input | Press it, then hold the buttons you want or swipe the touchpad, then press **Stop**. |
+| Pick (input) | Tick the trigger buttons by hand instead of holding them. Same result as recording — useful for anything the controller consumes before it transmits, such as an assigned Edge paddle. |
 | Record output | Press it, then type the key combo on your real keyboard, then press **Stop**. |
 | **+** / **−** | Adds or removes a macro row. (The checkbox enables; the minus deletes.) |
 
@@ -1273,6 +1450,40 @@ a single pulse — tap-versus-hold does not apply.
 Matching is exact: a macro recorded as *swipe right, left half* only fires on a
 swipe that starts on the left half.
 
+The touchpad **click** is a separate thing: it is an ordinary button, so it can be
+recorded on its own or as part of a chord, and it can hold. A swipe is only stored
+as a swipe when nothing was held during it — press the pad while swiping and you
+get the chord, not the gesture.
+
+**Left and right clicks are distinguishable.** The pad has one physical switch, so
+the click itself cannot tell you where you pressed — but the finger position is in
+the same report, so a click is recorded as *Touchpad click (left)* or *(right)*
+depending on which half your finger was on. Three ways to use that:
+
+| Recorded as | Fires on |
+|---|---|
+| Touchpad click (left) | left half only |
+| Touchpad click (right) | right half only |
+| Touchpad click | either half — the generic click |
+
+The half is decided when the press starts and held until release, so a finger
+that moves during the click cannot switch it, and a band of about 8% either side
+of the centre line is treated as neither half — a click there fires only a
+generic touchpad-click binding, rather than guessing. Aim for the outer thirds
+of the pad and the halves are unambiguous.
+
+Clicking a half records as that half alone, so the row reads *Touchpad click
+(left)* rather than naming two buttons for one press. The generic binding is still
+available from **Pick** when you want either half to fire the same macro, and the
+three are mutually exclusive there — one press cannot be both "either half" and
+"this half".
+
+Macros recorded before this existed are generic clicks and keep firing on both
+halves. Bind both a generic and a half-specific macro and the specific one wins,
+the same way a longer chord beats a shorter one. If the switch fires with no
+finger reported — a knuckle, or the very edge of the pad — the click stays
+unqualified, so only a generic binding catches it.
+
 #### The two halves are stored differently, and this is the useful part
 
 | | Where it lives | Scope |
@@ -1294,6 +1505,52 @@ The panel warns you when the enable state has changed but not yet been saved.
 > is already on the interface is present anyway, so there is no reconnect at all.
 > This is the same constraint as wake: a game with native DualSense support may
 > stop recognising the controller while the keyboard interface is present.
+
+#### DualSense Edge buttons *(new in 1.29.0)*
+
+The Edge's two **Fn** buttons and two **paddles** are available as macro inputs.
+They were always in the controller's report and simply never read.
+
+> **Read this first: a paddle only reaches the dongle if it is UNASSIGNED.**
+> The Edge maps paddles *inside the controller*, before anything is transmitted.
+> A paddle assigned in Sony's app — or in the on-board profile you are currently
+> using — is sent as **whatever it was mapped to**: assign it to Cross and the
+> report says Cross, with the paddle bit never set. It does not arrive as "a
+> paddle" and then also as Cross, so there is nothing here that can intercept or
+> override it. To use a paddle as a macro input, clear its assignment in the
+> Sony app (or select an on-board profile that leaves it empty) — then the
+> paddle bit is set and the dongle can see it. This is also why a paddle can
+> appear to work in one on-board profile and be invisible in another.
+
+**Fn + D-pad is the combination to build on.** Sony's own app uses **Fn + a face
+button** to switch the controller's on-board profiles, so chords there fight it —
+but nothing claims Fn + a D-pad direction, so those cannot collide with normal
+play or with the app.
+
+**The Fn buttons themselves are only partly yours.** Fn is reported to the dongle
+like any other button, but the controller keeps acting on its own combinations at
+the same time — pressing Fn with a face button still switches on-board profiles
+whatever you bind here. Build on Fn + D-pad and that does not arise; build on
+Fn + face and you get your macro *and* a profile switch.
+
+They behave like any other button otherwise: chords, hold, replace, keyboard,
+controller and mouse outputs all work, and a standard DualSense simply never sets
+them.
+
+Macro outputs cover the face buttons, L1/R1, L3/R3, L2/R2, **Create, Options,
+Touchpad click and the four D-pad directions**, plus keyboard keys and mouse
+actions. A D-pad output merges with whatever the player is holding: the injected
+direction wins on its own axis and the other axis is left alone, so "press Up"
+presses Up even mid-lean. PS and Mute are not offered — PS collides with the
+PS-shortcut feature, and Mute toggles a state rather than acting as a button.
+
+*Hide input from game* works on these too, so an Fn button or paddle bound to a
+macro can be kept from reaching the game like any other button.
+
+**If recording will not capture one**, use **Pick** next to *Record input* and
+tick the buttons by hand — it writes exactly the same chord. That is the reliable
+route for a paddle you have not cleared yet, or for any combination the
+controller consumes before it is transmitted.
 
 #### Motion gestures *(new in 1.20.0)*
 
@@ -1341,7 +1598,8 @@ A macro row does not have to send a keystroke. Two settings turn it into a remap
 | Setting | What it does |
 |---|---|
 | **hold while held** | The output is asserted while the input is held, instead of firing once. A remap needs this — without it `X → Circle` taps Circle when you *release* X. |
-| **hide input from game** | The original input is removed from the report, so the game sees only the replacement. |
+| **hide input from game** | The original input is removed from the report, so the game sees only the replacement. Only available alongside **hold while held**, and it hides the trigger for *every* row bound to it, not just its own. |
+| **double tap** *(new in 1.34.0)* | The row fires on two presses of its trigger within 250 ms. Not available on a hold row or a long press. A controller or mouse output is pressed briefly and released, since a one-shot has to hold the button down long enough for the game to sample it. |
 
 **Output** chooses where it goes:
 
@@ -1354,6 +1612,12 @@ actually do — press the controller button, or click the mouse — and Pick let
 choose by hand. Selecting a controller or mouse output turns **hold while held**
 on for you, since that is what a remap almost always means.
 
+A **double tap** costs nothing unless you use it. A single tap can only be
+resolved late if a double-tap row exists on the *same* trigger — until the window
+closes there is no way to know which was meant — so only that trigger waits.
+Every other row still fires the instant the button goes down, and a table with no
+double-tap rows behaves exactly as it did before.
+
 **Remapping one trigger onto the other stays analog.** `L2 → R2` carries the
 travel across, so a variable throttle stays variable rather than collapsing into
 an on/off switch. Any other input driving a trigger is a full press, since there
@@ -1362,6 +1626,35 @@ is no travel to copy.
 > Choosing a **mouse** output makes the dongle present a mouse to the PC, so the
 > controller re-enumerates once — but only when you **save**, never while you are
 > editing.
+
+#### One button, a single tap and a double tap, with the button hidden
+
+**hide input from game** is only offered on a row with **hold while held**,
+because suppression is a property of a held row. **double tap** is the opposite:
+it cannot be a hold row, since a held key has to go down the moment the button
+does and cannot wait to see whether a second press arrives. So the two settings
+are never available on the same row, and it looks as though a double tap cannot
+hide its trigger.
+
+It can — the hiding just does not have to come from the same row. Suppression
+applies to the **trigger**, not to one row, so any held row that names it hides
+it for every row bound to it. Give the job to a row of its own:
+
+| Row | Input | Output | hold while held | hide input from game | double tap |
+|---|---|---|---|---|---|
+| 1 | X | *(leave empty)* | ✔ | ✔ | — |
+| 2 | X | your single-tap output | — | — | — |
+| 3 | X | your double-tap output | — | — | ✔ |
+
+Row 1 has no output at all. Its only purpose is to remove X from the report
+while it is held, which covers both of the other rows. Rows 2 and 3 are one-shots,
+so the single tap is held back for the double-tap window and fires only if no
+second press arrives.
+
+Keeping rows 2 and 3 the same *kind* matters. A one-shot writes the whole
+keyboard report while it plays, so any key another row is holding is released
+for the moment it takes — a held key would blink each time the double tap fires.
+With both as one-shots there is nothing being held to interrupt.
 
 #### Sticks as an input *(new in 1.26.0)*
 
@@ -1415,6 +1708,7 @@ the whole configuration is applied in one command.
 | Audio Buffer Length | 16–128 | 64 | Lower = snappier haptics/lower latency; higher = more audio stability |
 | Inactive Time (min) | 5–60 | 30 | Idle timeout before disconnect |
 | Disable Inactive Disconnect | on/off | off | Never auto-disconnect when idle |
+| Lightbar Off | on/off | off | Keeps the controller's lightbar dark in every haptics mode. Since the haptics mode is per profile, "dark in this game, lit in that one" is a matter of using two profiles. A battery notification still overrides this for the seconds it runs. |
 | Disable Pico LED | on/off | off | Turn off the Pico's onboard LED |
 | Wake PC on PS Button | on/off | off | Assert USB remote wakeup on PS press to wake the host |
 
@@ -1445,6 +1739,63 @@ previous firmware unless you enable it.
   dongle itself. The tray icon therefore shows the DualSense's charge.
 - On macOS/Linux the same interface appears as a UPS/power device, not a
   system battery.
+
+### Battery notification *(new in 1.35.0)*
+
+Pulses the **controller's lightbar** when the battery drops, as a prompt to go
+and charge — and again whenever you switch the controller on, so you always know
+what you are starting with. Three independent stages, each with its own level,
+colour and number of pulses — 3 amber at 50% and 10 red at 10%, say. A stage fires **once** and
+then stops. Nothing keeps flashing until you plug in.
+
+Each stage is a line on the **Device** tab: a tick to enable it, the level, the
+number of pulses, a colour picker, and a **Test** button that runs that stage
+straight away so a colour can be judged without draining a controller.
+
+> **Test uses the settings already saved to the dongle.** Save before testing,
+> or you will be looking at the previous colour and count.
+
+> To see the real thing rather than the Test button, set a stage to **100%** and
+> reconnect the controller. Any charge below that qualifies, so it fires through
+> the genuine path — the battery reading, the discharging check and the level
+> comparison — instead of the shortcut Test takes.
+
+| Setting | Range | Default | Notes |
+|---|---|---|---|
+| Battery notification on the controller lightbar | on/off | off | Master switch for all three stages |
+| Stage enabled | on/off | off | Kept separate from the level, so turning a stage off does not lose the level and colour set for it |
+| Notify at battery level | 10%–100% | — | **10% steps only.** That is the resolution the DualSense reports its own charge at; a value in between is not something the controller can tell us |
+| Number of pulses | 1–20 | 5 | One pulse fades up and back down over about 1.6 s, so 10 pulses runs for roughly 16 s |
+| Colour | any | — | Chosen with a colour picker |
+
+**How it behaves**
+
+- Only while **discharging**. Charging or complete says you are already doing the
+  thing the notification would ask for.
+- A stage cannot re-announce itself while the charge sits on a boundary: it
+  stays fired until the level genuinely rises again.
+- **It reports on connect.** Switch a controller on and any stage its charge is
+  already at or below fires straight away, so you know where you stand before
+  you start playing rather than finding out when it dies mid-session. This is
+  deliberate, and it is the most useful thing the feature does: the alternative
+  is silence until the battery happens to cross a line while you are holding it.
+- When more than one stage qualifies — on connect, or if the charge drops past
+  two at once — **each one pulses in turn**, so a controller connected at 20%
+  with stages at 100%, 50% and 30% plays all three. Set fewer stages, or set
+  them closer to the levels you actually care about, if that is more than you
+  want to watch.
+- Each stage fires **once**. It re-arms only when the charge climbs back above
+  it or the controller goes on charge, so nothing repeats while you keep
+  playing.
+- It **overrides everything else on the lightbar** for the few seconds it runs,
+  including *Lightbar Off in Replace Mode* and whatever a game is driving in
+  native mode. Being seen is the entire point. The lightbar is written back
+  afterwards.
+
+**This is separate from the Pico LED**, which is unchanged and blinks
+continuously below 10%. The two suit different distances — the Pico LED when the
+dongle is on the desk in front of you, the lightbar from across the room — and
+most people will want one or the other rather than both.
 
 ### Advanced — BT Latency (experimental)
 
@@ -1657,9 +2008,9 @@ don't affect you.
 
 ## Files in this release
 
-- `ds5-v1.28.4.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
-  reports version 1.28.4)
-- `ds5-v1.28.4-waveshare.uf2` — the same firmware for the **Waveshare
+- `ds5-v1.40.0.uf2` — the firmware for the **Raspberry Pi Pico 2 W** (flash this;
+  reports version 1.40.0)
+- `ds5-v1.40.0-waveshare.uf2` — the same firmware for the **Waveshare
   RP2350B-Plus-W** (built against pico-sdk 2.2.0)
 - `ds5-config-portal.html` — the web configuration portal (download and open)
 - `flash_nuke.uf2` — config-reset utility. **Not needed for a normal upgrade** —

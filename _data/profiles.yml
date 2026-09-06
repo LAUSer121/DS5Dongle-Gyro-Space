@@ -28,6 +28,11 @@
   desc: "Auto-haptics from game audio, native passthrough 65%, converted rumble 50."
   wake: true
 
+- game: "Dishonored 2"
+  file: "/shared/profiles/Dishonored2_mouse_gyro_r_stick_macros.json"
+  desc: "Auto-haptics from game audio, native passthrough 65%, converted rumble 50, mouse-gyro, mouse R-stick, QuickSave/Quickload macros."
+  wake: true
+
 - game: "FPS (generic preset)"
   file: "/shared/profiles/FPS.json"
   desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50, Stick-Gyro."
@@ -66,6 +71,16 @@
 - game: "Racing (generic preset)"
   file: "/shared/profiles/Racing.json"
   desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50."
+  wake: true
+
+- game: "Racing (generic preset)"
+  file: "/shared/profiles/Racing+Gyro_driving.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50, Gyro driving."
+  wake: true
+
+- game: "Racing (generic preset)"
+  file: "/shared/profiles/Racing+Gyro_driving_two_stage_trigger.json"
+  desc: "Auto-haptics from game audio, full native passthrough, converted rumble 50, Gyro driving, Two-Stage Trigger."
   wake: true
 
 - game: "Resident Evil 4 (2023)"

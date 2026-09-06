@@ -59,7 +59,8 @@ struct __attribute__((packed)) Config_body {
     // stick in the input report, so ANY game gets gyro aim with no PC software.
     uint8_t gyro_mode;      // 0=off, 1=L2-held, 2=always, 3=touchpad-touch enables, 4=always but touch pauses (ratchet)
     uint8_t gyro_sens;      // [1-100] sensitivity (50 = raw/40 per report)
-    uint8_t gyro_axis;      // horizontal source: 0=yaw (turn), 1=roll (tilt sideways)
+    uint8_t gyro_axis;      // horizontal source: 0=yaw (turn), 1=roll (tilt sideways),
+                            // 2=player space (uses gravity; see config_valid clamp)
     uint8_t gyro_invert;    // bit0 = invert X, bit1 = invert Y
     uint8_t haptics_aa;     // native-haptics smoothing: 1=off (raw/gritty), 2=light 1-pole ~2.4kHz (default), 3=strong 2-pole ~1.3kHz
     uint8_t synth_force;    // 0=yield to game trigger effects (default), 1=force r2t/at even if a game/app sends effects
@@ -372,6 +373,109 @@ struct __attribute__((packed)) Config_body {
     // is far smaller than the horizontal one, so the same gain that feels right
     // for turning is usually too fast for looking up and down.
     uint8_t  gyro_sens_y;
+
+    // --- Stick to mouse (v1.30.0) ---------------------------------------------
+    // Drive the mouse from a STICK, the way gyro_output drives it from motion.
+    // Both feed the same accumulator in gyro_mouse_task(), so a game can be
+    // played with the stick doing the large turns and the gyro the fine aim -
+    // which is the usual reason to want this at all.
+    //   0 = off (default), 1 = right stick, 2 = left stick
+    // The chosen stick is CENTRED in the report the game sees, exactly as Flick
+    // Stick does, so the game does not also turn from it. Mutually exclusive
+    // with Flick Stick (gyro_output 2), which claims the right stick for itself;
+    // config_valid() enforces that rather than leaving two owners fighting.
+    uint8_t  stick_mouse;
+    // Counts per second at full deflection, stored DIRECTLY (not /10) so the
+    // ceiling is a real limit rather than an artifact of byte width: a byte
+    // capped this at 2550/s, which is short for a fast-turning game. 0 uses
+    // STICK_MOUSE_SENS_DEFAULT.
+    uint16_t stick_mouse_sens;
+    // Radial deadzone, percent of full deflection. Sticks rest a little off
+    // centre and a mouse never stops moving, so without this the view creeps.
+    uint8_t  stick_mouse_deadzone;
+    // Response curve exponent x10 (10 = linear, 20 = squared). A linear stick
+    // is twitchy at the centre and slow at the edge; the curve is what makes
+    // this feel like a mouse rather than a joystick.
+    uint8_t  stick_mouse_curve;
+    // Invert: bit0 = X, bit1 = Y.
+    uint8_t  stick_mouse_invert;
+    // Vertical speed, 0 = follow stick_mouse_sens (one knob, as before). Same
+    // convention and the same reason as gyro_sens_y: the vertical aiming range
+    // in a game is far smaller than the horizontal one, so a gain that feels
+    // right for turning is usually too fast for looking up and down.
+    uint16_t stick_mouse_sens_y;
+
+    // --- Gyro natural sensitivity (v1.32.0) -----------------------------------
+    // Express gyro-to-mouse aiming as a REAL-WORLD RATIO instead of an
+    // arbitrary slider: 1.0x means rotating the controller 10 degrees turns the
+    // in-game view 10 degrees. Set it once and it holds in every game that
+    // shares the same mouse counts per 360, instead of being re-tuned per game.
+    //   0 = arbitrary slider (default, gyro_sens as before)
+    //   1 = natural, using gyro_natural_x10 and flick_counts_360
+    // Only meaningful for gyro-to-MOUSE. Gyro-to-stick is a rate control - the
+    // stick says "how fast to turn", not "how far" - so a 1:1 rotation ratio
+    // has nothing to attach to there, and this is ignored in that mode.
+    uint8_t  gyro_sens_mode;
+    // Multiplier x10: 10 = 1.0x (true 1:1), 25 = 2.5x. Typical play is 2.5x-12x.
+    uint8_t  gyro_natural_x10;
+    // Vertical multiplier x10, 0 = follow the horizontal one.
+    uint8_t  gyro_natural_y_x10;
+    // Gyro scale trim, x100 (0 or 100 = nominal). The natural conversion assumes
+    // the gyro is rated +/-2000 deg/s; if a controller reads high or low, the
+    // angle check in the portal measures the error and this corrects it, so
+    // 1.0x is genuinely 1:1 rather than nominally.
+    uint16_t gyro_scale_trim_x100;
+    // ---- Staged battery notification (appended 1.35.0) ----
+    // Three independent stages. Each fires ONCE when the battery falls past its
+    // level while discharging, blinks the controller's lightbar in its colour,
+    // and then hands the lightbar back. It is a prompt to go and plug in, not a
+    // running indicator - nothing keeps flashing until you do.
+    //
+    // The level is the DualSense's own PowerPercent nibble, 0-10, i.e. 10%
+    // steps. It cannot be finer: that is the resolution the controller reports.
+    // 0 disables the stage.
+    uint8_t  batt_notify_enable;      // master on/off
+    uint8_t  batt_stage_level[3];     // 1-10 = 10%-100%, 0 = stage off
+    uint8_t  batt_stage_blinks[3];    // 1-20 blinks
+    uint8_t  batt_stage_r[3];
+    uint8_t  batt_stage_g[3];
+    uint8_t  batt_stage_b[3];
+    // Per-stage on/off, kept SEPARATE from the level so unticking a stage does
+    // not throw away the level and colour it was set to.
+    uint8_t  batt_stage_on[3];
+    // ---- Touchpad to mouse (appended 1.37.0) ----
+    // Relative, trackpad style: the pointer follows how far the finger MOVED,
+    // not where it is. Clicks are deliberately absent - the touchpad-click
+    // halves are already macro triggers and can output mouse buttons, so
+    // binding left/right click there costs nothing and stays configurable.
+    uint8_t  touch_mouse;            // 0 off, 1 on
+    uint8_t  touch_mouse_sens;       // "slide" speed, 100 = 1:1-ish, 0 -> default
+    uint8_t  touch_mouse_min;        // ignore movement smaller than this, in pad counts
+    uint8_t  touch_mouse_invert;     // bit0 X, bit1 Y
+    uint8_t  touch_mouse_trackball;  // 0 off, 1 = keep gliding after release
+    uint8_t  touch_mouse_friction;   // how fast the glide decays, higher = stops sooner
+    // ---- Tilt steering (appended 1.39.0) ----
+    // ADDS to the left stick rather than replacing it: coarse steering stays on
+    // the stick, where it is precise, and tilt supplies fine trim on top. Tilt
+    // alone was tried in the SIXAXIS era and the consistent verdict was that it
+    // is not precise enough to steer with; as an offset it does not have to be.
+    uint8_t  tilt_steer;             // 0 off, 1 on
+    uint8_t  tilt_steer_range;       // degrees of roll that reach full contribution
+    uint8_t  tilt_steer_amount;      // max stick percentage tilt may add
+    uint8_t  tilt_steer_deadzone;    // degrees around neutral that do nothing
+    uint8_t  tilt_steer_invert;      // 0/1
+    // Vertical tilt, separately switchable. Leaning the pad forward and back
+    // adds to the left stick's Y - what a bike wants and a car does not, so it
+    // must not ride along with the horizontal axis.
+    uint8_t  tilt_steer_y;           // 0 off, 1 on
+    uint8_t  tilt_steer_y_amount;    // max stick percentage, own value
+    uint8_t  tilt_steer_y_invert;    // 0/1
+    // Degrees a full sideways flick turns. Flick Stick is absolute by design -
+    // push right and you face right, 90 degrees - which is exactly what makes
+    // smaller checks impossible. This scales the flick so a full sideways push
+    // turns by this much instead, keeping the direction meaningful while making
+    // the amount yours. 90 is the unscaled original.
+    uint8_t  flick_angle;            // degrees for a 90-degree stick push, 1-180
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
@@ -391,7 +495,25 @@ enum : uint8_t {
     // which the portal filters per trigger rather than by splitting the enum.
     T2BTN_L2       = 9,
     T2BTN_R2       = 10,
-    T2BTN_COUNT    = 11,
+    // Appended for macro outputs (v1.31.0). The list above was scoped for
+    // two-stage triggers; macros reused it and inherited the gap, so a macro
+    // could TRIGGER on Create, Options or a D-pad direction but never OUTPUT
+    // one. Appending keeps every saved profile's values meaning what they did.
+    // Values 11-15 are RESERVED: they are the mouse outputs (MOUT_* in
+    // macro.h), which were carved out of this same numbering. Saved macros
+    // already store 11-15 meaning "left click" and so on, so the controller
+    // buttons appended below must start ABOVE them - numbering these from 11
+    // would silently turn every saved mouse output into a gamepad button.
+    T2BTN_CREATE   = 16,
+    T2BTN_OPTIONS  = 17,
+    T2BTN_TOUCHPAD = 18,   // touchpad CLICK
+    // The D-pad is a hat ENUM in the report, not four bits, so these cannot be
+    // OR-ed in like the rest; see the merge in macro_apply_buttons().
+    T2BTN_DPAD_UP    = 19,
+    T2BTN_DPAD_DOWN  = 20,
+    T2BTN_DPAD_LEFT  = 21,
+    T2BTN_DPAD_RIGHT = 22,
+    T2BTN_COUNT      = 23,
 };
 enum : uint8_t {
     T2_AXIS_OFF      = 0,

@@ -25,6 +25,7 @@
 #include "pico/stdio_usb.h"
 #endif
 #include "config.h"
+#include "battery_notify.h"
 #include "cmd.h"
 #include "dse.h"
 #include "gyro_fusion.h"
@@ -82,6 +83,10 @@ static inline void t2_press(uint8_t *r, uint8_t btn) {
         // that trigger is never reduced by the synthetic press.
         case T2BTN_L2:       r[8] |= 0x04u; if (r[4] < 255u) r[4] = 255u; break;
         case T2BTN_R2:       r[8] |= 0x08u; if (r[5] < 255u) r[5] = 255u; break;
+        case T2BTN_CREATE:   r[8] |= 0x10u; break;
+        case T2BTN_OPTIONS:  r[8] |= 0x20u; break;
+        case T2BTN_TOUCHPAD: r[9] |= 0x02u; break;
+        // D-pad handled by the hat merge in macro_apply_buttons(), not here.
         default: break;
     }
 }
@@ -165,6 +170,20 @@ static inline void macro_apply_buttons(uint8_t *r) {
         if (sup & BTN_PS)       r[9] &= (uint8_t) ~0x01u;
         if (sup & BTN_TOUCHPAD) r[9] &= (uint8_t) ~0x02u;
         if (sup & BTN_MUTE)     r[9] &= (uint8_t) ~0x04u;
+        // DualSense Edge Fn buttons and paddles. Without these a REPLACE macro
+        // bound to one of them fired but could not hide the press, so the game
+        // still saw whatever the paddle was mapped to.
+        if (sup & BTN_LEFT_FN)   r[9] &= (uint8_t) ~0x10u;
+        if (sup & BTN_RIGHT_FN)  r[9] &= (uint8_t) ~0x20u;
+        if (sup & BTN_LEFT_PAD)  r[9] &= (uint8_t) ~0x40u;
+        if (sup & BTN_RIGHT_PAD) r[9] &= (uint8_t) ~0x80u;
+        // A qualified touchpad click has no report bit of its own - it IS the
+        // click bit plus a finger position - so suppressing one clears the
+        // click. Only ever engaged while that half is actually being pressed,
+        // so this cannot hide a click on the other half. The touch coordinates
+        // are left alone: a finger resting on the pad without a click is a
+        // normal thing for a game to see.
+        if (sup & (BTN_PAD_CLICK_LEFT | BTN_PAD_CLICK_RIGHT)) r[9] &= (uint8_t) ~0x02u;
         // A suppressed D-pad direction has to rewrite the HAT NIBBLE, which is
         // an enum (0-7 plus 8 = centred), not a bitfield. Only the exact
         // direction is cleared; a diagonal keeps its other half.
@@ -181,10 +200,42 @@ static inline void macro_apply_buttons(uint8_t *r) {
         }
     }
     if (inj) {
+        // D-pad outputs FIRST, because the hat is an enum: the four directions
+        // share one nibble, so they cannot be OR-ed in the way every other
+        // button can. Collect the injected directions, merge them with whatever
+        // the player is physically holding, and re-encode once. An injected
+        // direction WINS over a held one on the same axis - a macro that says
+        // "press Up" should press Up even if the player is leaning down, rather
+        // than cancelling to neutral. Opposite injected directions cancel,
+        // since the hat has no way to express both.
+        constexpr uint32_t DP_UP    = 1u << (T2BTN_DPAD_UP    - 1);
+        constexpr uint32_t DP_DOWN  = 1u << (T2BTN_DPAD_DOWN  - 1);
+        constexpr uint32_t DP_LEFT  = 1u << (T2BTN_DPAD_LEFT  - 1);
+        constexpr uint32_t DP_RIGHT = 1u << (T2BTN_DPAD_RIGHT - 1);
+        if (inj & (DP_UP | DP_DOWN | DP_LEFT | DP_RIGHT)) {
+            const uint8_t hat = (uint8_t) (r[7] & 0x0Fu);
+            uint32_t dirs = HAT_TO_DPAD[hat > 8 ? 8 : hat];   // what is held now
+            if (inj & (DP_UP | DP_DOWN)) {                    // injected axis wins
+                dirs &= ~(BTN_DPAD_UP | BTN_DPAD_DOWN);
+                if (inj & DP_UP)   dirs |= BTN_DPAD_UP;
+                if (inj & DP_DOWN) dirs |= BTN_DPAD_DOWN;
+                if ((inj & DP_UP) && (inj & DP_DOWN)) dirs &= ~(BTN_DPAD_UP | BTN_DPAD_DOWN);
+            }
+            if (inj & (DP_LEFT | DP_RIGHT)) {
+                dirs &= ~(BTN_DPAD_LEFT | BTN_DPAD_RIGHT);
+                if (inj & DP_LEFT)  dirs |= BTN_DPAD_LEFT;
+                if (inj & DP_RIGHT) dirs |= BTN_DPAD_RIGHT;
+                if ((inj & DP_LEFT) && (inj & DP_RIGHT)) dirs &= ~(BTN_DPAD_LEFT | BTN_DPAD_RIGHT);
+            }
+            uint8_t out = 8;                                   // centred
+            for (uint8_t i = 0; i < 8; i++) if (HAT_TO_DPAD[i] == dirs) { out = i; break; }
+            r[7] = (uint8_t) ((r[7] & 0xF0u) | out);
+        }
         // inj is indexed by the T2Button enum, shared with the two-stage
         // trigger so there is exactly one place that knows these bit positions.
         for (uint8_t b = 1; b < T2BTN_COUNT; b++) {
             if (!(inj & (1u << (b - 1)))) continue;
+            if (macro_is_mouse_out(b)) continue;   // 11-15 are mouse, not buttons
             // A trigger output carries ANALOG travel when a trigger drove it, so
             // L2 -> R2 stays variable instead of collapsing to an on/off switch.
             // macro_analog_out() returns 255 for a button-driven trigger, which
@@ -228,13 +279,28 @@ static inline bool trigger_output_active(const Config_body &c) {
            (c.t2_l2_mode & T2_AXIS_MASK) != T2_AXIS_OFF;
 }
 
+// Does the report need rewriting at all? This decides whether the input report
+// is passed through untouched or copied and edited first.
+//
+// It used to ask only about TRIGGER settings, but apply_trigger_output() also
+// runs macro_apply_buttons(), which is what "hide input from game" and macro
+// button injection depend on. At any polling rate other than real-time, a
+// controller with no trigger features configured therefore took the untouched
+// path and every macro suppression and injection was silently dropped - so a
+// Replace macro on L3 or R3 fired its keys AND still sent the stick click, and
+// the same for every other button. Real-time mode was unaffected, which is why
+// this looked like it worked for some people and not others.
+static inline bool report_needs_rewrite(const Config_body &c) {
+    return trigger_output_active(c) || macro_report_active();
+}
+
 void __not_in_flash_func(interrupt_loop)() {
     if (!tud_hid_ready()) return;
 
     // TODO: Refactor for better code reuse
     if (get_config().polling_rate_mode != 2) {
         const auto &cdz = get_config();
-        if (trigger_output_active(cdz)) {
+        if (report_needs_rewrite(cdz)) {
             static uint8_t dz_report[63];
             memcpy(dz_report, interrupt_in_data, 63);
             apply_trigger_output(dz_report);
@@ -275,8 +341,9 @@ void __not_in_flash_func(interrupt_loop)() {
     }
 }
 
-// --- Gyro aiming space (v1.19.0) -------------------------------------------
-// Steam-Input-style pipeline. The old fixed-horizon mapping is gone:
+// --- Gyro aiming space + upstream v1.40 gyro features ----------------------
+// Steam-Input-style pipeline (Gyro-Space fork). The upstream fixed-horizon
+// mapping is replaced by:
 //
 //   gyro + accelerometer
 //        -> sensor fusion (Mahony complementary AHRS)
@@ -290,13 +357,16 @@ void __not_in_flash_func(interrupt_loop)() {
 // orientation to the world in ANY grip. Quaternion normalization, gyro drift
 // compensation and static calibration offsets live in the fusion module.
 // All state is RAM/static; runs inside the report critical section.
+// On the v1.40 merge upstream's independent STICK features (stick_mouse,
+// touch_mouse, tilt_steer, flick stick) were kept in front of the fusion
+// pipeline - they are stick/accel features that must work with gyro off.
 volatile uint16_t g_diag_gyro = 0; // |gyro_x rate| diagnostic, field 0x35
-// Live IMU diagnostics for the portal curves (fields 0x6a-0x6f), raw int16 LSB.
+// Live IMU diagnostics for the portal curves (fields 0xe9-0xee), raw int16 LSB.
 // Updated on every BT input report so the curves show real sensor data even
 // while gyro aiming is off.
 volatile int16_t g_diag_imu_gx = 0, g_diag_imu_gy = 0, g_diag_imu_gz = 0;
 volatile int16_t g_diag_imu_ax = 0, g_diag_imu_ay = 0, g_diag_imu_az = 0;
-// Final gyro→stick outputs (fields 0x88/0x89) — mapped deg/s * 100, after
+// Final gyro→stick outputs (fields 0xe7/0xe8) — mapped deg/s * 100, after
 // space conversion and sensitivity but before accumulator truncation.
 volatile int16_t g_diag_stick_x = 0, g_diag_stick_y = 0;
 
@@ -304,6 +374,20 @@ static GyroFusion g_fusion;
 static GyroSpace  g_space;
 static bool       g_gyro_ready = false;
 static uint64_t   g_gyro_last_us = 0;
+
+// Raw accelerometer diagnostic (upstream v1.40, fields 0xa8-0xaa). Same
+// sensors as the fusion pipeline's accel, exposed separately because the
+// portal's upstream tilt/axis page reads these ids.
+volatile int16_t g_diag_ax = 0, g_diag_ay = 0, g_diag_az = 0;
+// Tilt steering, instrumented (upstream v1.40). Three numbers answer the whole
+// chain: is the block running at all (ran), what roll did it compute (deg),
+// and what did it actually add to the stick (add). Shipping another guess
+// without these was the wrong call twice over.
+volatile int16_t g_diag_tilt_deg = 0;
+volatile int16_t g_diag_tilt_add = 0;
+volatile int16_t g_diag_tilt_ydeg = 0;
+volatile int16_t g_diag_tilt_yadd = 0;
+volatile uint8_t g_diag_tilt_ran = 0;   // 0 off, 1 running, 2 gravity rejected
 
 // --- gyro as a mouse -------------------------------------------------------
 //
@@ -329,7 +413,23 @@ static int32_t g_gm_acc_x = 0, g_gm_acc_y = 0;   // leftover numerator, not coun
 static volatile int32_t g_gm_pend_x = 0, g_gm_pend_y = 0; // computed in the report
                                                           // path, sent from the loop
 
-void gyro_mouse_reset() { g_gm_acc_x = 0; g_gm_acc_y = 0; g_gm_pend_x = 0; g_gm_pend_y = 0; }
+// Latest position of whichever stick drives the mouse, 0-255 per axis, 128 at
+// rest. Written by the report path, consumed by gyro_mouse_task().
+static volatile uint8_t g_sm_stick_x = 128, g_sm_stick_y = 128;
+// Touchpad to mouse. The report path publishes the finger; gyro_mouse_task()
+// turns it into movement. Written as a position plus a down flag rather than a
+// delta so a dropped report cannot lose motion - the next tick simply sees a
+// larger gap.
+static volatile uint16_t g_tm_x = 0, g_tm_y = 0;
+static volatile bool     g_tm_down = false;
+// Sub-count remainder, so slow stick movement still moves the pointer: the same
+// reason the gyro path carries one.
+static float g_sm_rem_x = 0.0f, g_sm_rem_y = 0.0f;
+static uint32_t g_sm_last_ms = 0;
+constexpr float STICK_MOUSE_SENS_DEFAULT = 600.0f;   // counts/second at full tilt
+
+void gyro_mouse_reset() { g_gm_acc_x = 0; g_gm_acc_y = 0; g_gm_pend_x = 0; g_gm_pend_y = 0;
+                          g_sm_rem_x = 0.0f; g_sm_rem_y = 0.0f; g_sm_last_ms = 0; }
 
 // A mouse is a DELTA device and the stick is an ABSOLUTE one, so they need
 // completely different scales. A stick deflection of dx is a steady turn RATE
@@ -360,8 +460,122 @@ static inline int32_t gyro_rate_mul(uint8_t polling_rate_mode) {
 // stack from the BT callback: the first version did exactly that and the portal
 // started failing to read config fields, including the version registers, so it
 // reported "pre-1.0.5". Only arithmetic belongs here.
+// --- Natural (real-world) sensitivity ---------------------------------------
+// counts = degrees_rotated * (counts_per_360 / 360) * multiplier
+//
+// The gyro reports ANGULAR VELOCITY in raw LSB. The DualSense runs its gyro at
+// +/-2000 degrees/s over a full int16, so one LSB is 2000/32768 deg/s, and one
+// report covers 1 ms of that at 1 kHz - which is exactly what gyro_rate_mul()
+// already normalises for lower polling rates. Putting those together:
+//
+//   counts = raw * rate_mul * (2000/32768) / 1000 * (counts_360/360) * (x10/10)
+//          = raw * rate_mul * counts_360 * x10 / 58982400
+//
+// The divisor is exact (32768 * 3600000 / 2000), so this is integer maths with
+// no drift, and the remainder is carried the same way the arbitrary path does -
+// without that, slow movement is truncated to nothing and fast movement loses
+// a fraction of a count per report, always in the same direction.
+//
+// int64 is deliberate: counts_360 reaches 50000 and raw reaches 32767, so the
+// numerator overflows int32 easily. It runs once per report, not per sample.
+// Nominal scale: +/-2000 deg/s over a full int16, x100 for the trim.
+//   counts = raw * rate_mul * counts_360 * x10 * trim / (58982400 * 100)
+// The trim is what absorbs any error in that rating, per controller. Do not
+// bake a correction in here on the strength of hand-turned measurements: an
+// error factor that is not a clean ratio is as likely to be the human judging
+// the angle as the sensor reporting it.
+// counts = raw * dt_us * (2000/32768) deg/s / 1e6 * (counts_360/360) * (x10/10) * (trim/100)
+//        = raw * dt_us * counts_360 * x10 * trim / (32768 * 1e6 * 360 * 10 * 100 / 2000)
+constexpr int64_t GYRO_NATURAL_DIV = 32768LL * 1000000LL * 360LL * 10LL * 100LL / 2000LL;
+static int64_t g_nat_acc_x = 0, g_nat_acc_y = 0;
+
+// Degrees rotated since the last diagnostics read, x10, so the constant above
+// can be CHECKED rather than trusted: rotate the controller through a known
+// angle and compare. Wrong by a fixed ratio would mean 1.0x is not truly 1:1.
+// Accumulate RAW readings and convert only when read. Converting per report
+// truncated each one toward zero, so a slow turn lost most of its travel and a
+// fast one lost a fraction every millisecond - the measurement has to be more
+// trustworthy than the thing it is checking.
+static volatile int64_t g_nat_raw_sum = 0;
+static volatile uint32_t g_nat_samples = 0;   // gyro reports since the last read
+static volatile uint64_t g_nat_span_us = 0;   // time they covered
+// Samples per second observed over the last measurement window - exposes the
+// report rate instead of assuming it.
+uint16_t gyro_natural_rate_hz_read(void) {
+    const uint64_t span = g_nat_span_us;
+    const uint32_t n    = g_nat_samples;
+    g_nat_samples = 0; g_nat_span_us = 0;
+    if (span == 0) return 0;
+    const uint64_t hz = (uint64_t) n * 1000000ULL / span;
+    return (uint16_t) (hz > 65535 ? 65535 : hz);
+}
+
+uint32_t gyro_natural_degrees_x10_read(void) {
+    const int64_t s = g_nat_raw_sum;
+    g_nat_raw_sum = 0;
+    // degrees x10 = raw_sum * (2000/32768) deg/s / 1000 reports/s * 10
+    // degrees x10 = sum(raw * dt_us) * (2000/32768) / 1e6 * 10
+    const int64_t d = s * 20000LL / 32768LL / 1000000LL;
+    return (uint32_t) (d < 0 ? 0 : (d > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : d));
+}
+
 static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t pitch,
                                                         const Config_body &cfg) {
+    // Feed the angle check in EVERY mode: you need to calibrate before switching
+    // to natural, not after.
+    // Diagnostic integrates over real time too, and also counts how many gyro
+    // samples arrive per second - if that is not what anyone expects, it is the
+    // answer to why an angle looked wrong.
+    {
+        static uint64_t d_last_us = 0;
+        const uint64_t now_us = time_us_64();
+        const uint64_t dt_us  = (d_last_us == 0) ? 0 : (now_us - d_last_us);
+        d_last_us = now_us;
+        if (dt_us > 0 && dt_us <= 100000) {
+            g_nat_raw_sum += (int64_t) (horiz < 0 ? -horiz : horiz) * (int64_t) dt_us;
+            g_nat_samples++;
+            g_nat_span_us += dt_us;
+        }
+    }
+    if (cfg.gyro_sens_mode == 1 && cfg.flick_counts_360 > 0) {
+        // INTEGRATE OVER REAL TIME. The gyro reports angular velocity, so
+        // turning it into an angle needs the interval each reading covers. That
+        // interval was assumed to be 1 ms scaled by the USB polling rate - but
+        // these samples arrive over BLUETOOTH, whose rate is set by the
+        // controller and its link, not by how often the host polls USB. The
+        // assumption made a measured 90-degree turn read 1.4x high and a
+        // 360-degree turn 2.3x LOW, which no scale error can do: a fast turn
+        // packs its rotation into fewer reports, a slow one into more, so the
+        // error moved with how fast the turn was. Using the actual elapsed
+        // microseconds removes the guess entirely.
+        static uint64_t s_last_us = 0;
+        const uint64_t now_us = time_us_64();
+        const uint64_t dt_us  = (s_last_us == 0) ? 0 : (now_us - s_last_us);
+        s_last_us = now_us;
+        // A gap this large means the stream stopped (disconnect, sleep); one
+        // sample cannot represent it, so drop it rather than lurch the view.
+        if (dt_us == 0 || dt_us > 100000) { return; }
+        const int64_t c360 = cfg.flick_counts_360;
+        // Scale trim, x100 (100 = the nominal +/-2000 deg/s rating). Measuring a
+        // known rotation is the only way to confirm that rating on real
+        // hardware; if it is off, this corrects it once and every multiplier
+        // stays honest afterwards.
+        const int64_t trim = cfg.gyro_scale_trim_x100 ? cfg.gyro_scale_trim_x100 : 100;
+        const int64_t mx   = (cfg.gyro_natural_x10 ? cfg.gyro_natural_x10 : 10) * trim;
+        const int64_t my   = (cfg.gyro_natural_y_x10 ? cfg.gyro_natural_y_x10 : (cfg.gyro_natural_x10 ? cfg.gyro_natural_x10 : 10)) * trim;
+        const int64_t nx = (int64_t) -horiz * (int64_t) dt_us * c360 * mx + g_nat_acc_x;
+        const int64_t ny = (int64_t) -pitch * (int64_t) dt_us * c360 * my + g_nat_acc_y;
+        int32_t dx = (int32_t) (nx / GYRO_NATURAL_DIV);
+        int32_t dy = (int32_t) (ny / GYRO_NATURAL_DIV);
+        g_nat_acc_x = nx - (int64_t) dx * GYRO_NATURAL_DIV;
+        g_nat_acc_y = ny - (int64_t) dy * GYRO_NATURAL_DIV;
+
+        if (cfg.gyro_invert & 1) dx = -dx;
+        if (cfg.gyro_invert & 2) dy = -dy;
+        g_gm_pend_x += dx;
+        g_gm_pend_y += dy;
+        return;
+    }
     const int32_t s   = cfg.gyro_sens;
     const int32_t sy  = cfg.gyro_sens_y ? cfg.gyro_sens_y : s;
     const int32_t mul = gyro_rate_mul(cfg.polling_rate_mode);
@@ -453,14 +667,22 @@ static float flick_stick_step(float sx, float sy, float dt) {
     const float len     = sqrtf(sx * sx + sy * sy);
     const float lastLen = sqrtf(g_fs_last_x * g_fs_last_x + g_fs_last_y * g_fs_last_y);
 
+    // Scale a full sideways push to the configured angle. Unscaled, Flick Stick
+    // is absolute: push right and you turn 90 degrees, which is the whole reason
+    // a smaller check is impossible. Applied to the TURN as well as the flick -
+    // scaling only the flick would let a rotation of the held stick undo it at a
+    // different rate, so the view would not come back to where it started.
+    const Config_body &fcfg = get_config();
+    const float fscale = (float) (fcfg.flick_angle ? fcfg.flick_angle : 90) / 90.0f;
+
     if (len >= FLICK_THRESHOLD) {
         if (lastLen < FLICK_THRESHOLD) {
             g_fs_progress = 0.0f;                    // flick start
-            g_fs_size = atan2f(-sx, sy);             // angle from forward
+            g_fs_size = atan2f(-sx, sy) * fscale;    // angle from forward, scaled
         } else {
             const float a  = atan2f(-sx, sy);
             const float la = atan2f(-g_fs_last_x, g_fs_last_y);
-            result += flick_tiered(wrap_pi(a - la));  // turn
+            result += flick_tiered(wrap_pi(a - la)) * fscale;  // turn
         }
     } else if (lastLen >= FLICK_THRESHOLD) {
         flick_zero_smoothing();                      // released: drop the tail
@@ -477,6 +699,30 @@ static float flick_stick_step(float sx, float sy, float dt) {
     g_fs_last_x = sx; g_fs_last_y = sy;
     return result;
 }
+
+// --- Counts-per-360 calibration burst ---------------------------------------
+// Emits an EXACT number of mouse counts on request. Point: counts-per-360 is a
+// property of the GAME's mouse sensitivity, so it cannot be derived from the
+// controller - but it CAN be measured. Send a known number of counts, see how
+// far the game turned, and the true value follows:
+//   counts_360 = counts_sent * 360 / degrees_observed
+// That replaces the guess-and-correct loop behind the default of 6500, and
+// calibrates Flick Stick at the same time since both read the same field.
+//
+// Metered out over many reports rather than in one: a single huge delta gets
+// clamped by some games, and a smooth sweep is far easier to judge by eye than
+// an instant snap.
+static volatile int32_t g_cal_remaining = 0;
+// Counts per report. This was 40, which delivers ~10,000 counts/second - fast
+// enough that a game sampling the mouse once a frame, or applying any
+// smoothing, drops part of the sweep. Lost counts make the view turn LESS than
+// it should, which inflates the calculated counts-per-360 rather than showing
+// up as an obvious failure. 8 per report is ~2,000/second: slow enough for any
+// game to see every count, and still only a few seconds for a full sweep.
+constexpr int32_t CAL_STEP = 8;
+
+void gyro_cal_emit(int32_t counts) { g_cal_remaining = counts; }
+bool gyro_cal_busy(void)           { return g_cal_remaining != 0; }
 
 // Drained from the main loop, where touching TinyUSB is safe.
 void gyro_mouse_task() {
@@ -518,6 +764,158 @@ void gyro_mouse_task() {
                 g_gm_pend_x += whole;
             }
         }
+    }
+
+    // --- Touchpad to mouse --------------------------------------------------
+    // Relative, trackpad style: the pointer follows how far the finger MOVED
+    // since the last tick. Deltas are computed from the finger POSITION rather
+    // than accumulated in the report path, so a dropped report costs nothing -
+    // the next tick just sees a bigger gap.
+    if (cfg.touch_mouse >= 1) {
+        static uint16_t s_px = 0, s_py = 0;
+        static bool     s_had = false;
+        static float    s_rx = 0.0f, s_ry = 0.0f;   // sub-count carry
+        static float    s_vx = 0.0f, s_vy = 0.0f;   // trackball glide
+        const bool down = g_tm_down;
+        const uint16_t cx = g_tm_x, cy = g_tm_y;
+
+        float dx = 0.0f, dy = 0.0f;
+        if (down) {
+            if (s_had) {
+                dx = (float) ((int32_t) cx - (int32_t) s_px);
+                dy = (float) ((int32_t) cy - (int32_t) s_py);
+            }
+            // A FRESH TOUCH must not move the pointer. Without this the first
+            // tick of every touch jumps by the distance between where the last
+            // finger left and where this one landed - which is the width of the
+            // pad if you lift and reposition, exactly what a trackpad user does
+            // constantly.
+            s_px = cx; s_py = cy; s_had = true;
+        } else {
+            s_had = false;
+        }
+
+        // Jitter floor. A resting finger still wobbles a count or two, and
+        // without this the pointer drifts while you are not touching anything.
+        const float minmove = (float) cfg.touch_mouse_min;
+        if (dx * dx + dy * dy < minmove * minmove) { dx = 0.0f; dy = 0.0f; }
+
+        if (cfg.touch_mouse_invert & 1) dx = -dx;
+        if (cfg.touch_mouse_invert & 2) dy = -dy;
+
+        const float sens = (float) cfg.touch_mouse_sens / 100.0f;
+        float mx = dx * sens, my = dy * sens;
+
+        if (cfg.touch_mouse_trackball) {
+            // TIME-BASED, not per-tick. This task runs every main-loop pass -
+            // far more often than reports arrive - so decaying by the friction
+            // once per tick killed the glide within milliseconds and the
+            // pointer stopped dead on release. Speed is now counts per SECOND
+            // and both the glide and its decay are scaled by real elapsed time.
+            static uint32_t s_tick_ms = 0, s_move_ms = 0;
+            const uint32_t now = to_ms_since_boot(get_absolute_time());
+            if (s_tick_ms == 0) s_tick_ms = now;
+            if (s_move_ms == 0) s_move_ms = now;
+            uint32_t dms = now - s_tick_ms;
+            if (dms > 100) dms = 100;              // a stall must not launch the pointer
+            s_tick_ms = now;
+
+            if (down) {
+                if (dx != 0.0f || dy != 0.0f) {
+                    // Speed of the last real movement, from the time between
+                    // MOVEMENTS rather than between ticks - most ticks carry no
+                    // new report and would read as infinite speed.
+                    const uint32_t mdt = (now > s_move_ms) ? (now - s_move_ms) : 1;
+                    s_vx = mx * 1000.0f / (float) mdt;
+                    s_vy = my * 1000.0f / (float) mdt;
+                    s_move_ms = now;
+                }
+            } else if (s_vx != 0.0f || s_vy != 0.0f) {
+                // Coast, so a flick can cross a large screen in one gesture.
+                mx = s_vx * (float) dms / 1000.0f;
+                my = s_vy * (float) dms / 1000.0f;
+                // Friction is the fraction of speed shed every 100 ms, so the
+                // feel does not change with the loop rate.
+                float keep = 1.0f - ((float) cfg.touch_mouse_friction / 100.0f)
+                                    * ((float) dms / 100.0f);
+                if (keep < 0.0f) keep = 0.0f;
+                s_vx *= keep; s_vy *= keep;
+                if (s_vx * s_vx + s_vy * s_vy < 4.0f) { s_vx = 0.0f; s_vy = 0.0f; }
+                s_move_ms = now;
+            }
+        } else if (!down) {
+            s_vx = 0.0f; s_vy = 0.0f;
+        }
+
+        // Same sub-count carry as the stick and gyro paths: slow movement is
+        // fractions of a count per tick and truncating it away loses it.
+        const float fx = mx + s_rx, fy = my + s_ry;
+        const int32_t ix = (int32_t) fx, iy = (int32_t) fy;
+        s_rx = fx - (float) ix; s_ry = fy - (float) iy;
+        g_gm_pend_x += ix;
+        g_gm_pend_y += iy;
+    }
+
+    // --- Stick to mouse -----------------------------------------------------
+    // Runs every tick so movement is smooth and time-based rather than tied to
+    // however often reports happen to arrive.
+    if (cfg.stick_mouse >= 1) {
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (g_sm_last_ms == 0) g_sm_last_ms = now;
+        const uint32_t dms = now - g_sm_last_ms;
+        if (dms > 0) {
+            g_sm_last_ms = now;
+            float sx = ((float) g_sm_stick_x - 128.0f) / 127.0f;
+            float sy = ((float) g_sm_stick_y - 128.0f) / 127.0f;
+            if (cfg.stick_mouse_invert & 1) sx = -sx;
+            if (cfg.stick_mouse_invert & 2) sy = -sy;
+            // RADIAL deadzone, not per-axis: a per-axis one squares off the
+            // centre, so a diagonal push just past the threshold jumps.
+            const float mag = sqrtf(sx * sx + sy * sy);
+            const float dz = (float) cfg.stick_mouse_deadzone / 100.0f;
+            if (mag > dz && mag > 0.0001f) {
+                // Rescale past the deadzone so travel starts from zero rather
+                // than jumping to the deadzone value, then apply the curve to
+                // the MAGNITUDE and put the direction back. Curving each axis
+                // separately would bend diagonals toward the axes.
+                float t = (mag - dz) / (1.0f - dz);
+                if (t > 1.0f) t = 1.0f;
+                const float curve = (float) cfg.stick_mouse_curve / 10.0f;
+                const float scaled = powf(t, curve);
+                const float sens_x = (cfg.stick_mouse_sens ? (float) cfg.stick_mouse_sens
+                                                           : STICK_MOUSE_SENS_DEFAULT);
+                // 0 means "follow X", so one knob still works. The curve and the
+                // deadzone stay on the MAGNITUDE - only the final speed is per
+                // axis, so a diagonal keeps its direction and simply travels
+                // further horizontally than vertically, which is the point.
+                const float sens_y = (cfg.stick_mouse_sens_y ? (float) cfg.stick_mouse_sens_y
+                                                             : sens_x);
+                const float step = scaled * ((float) dms / 1000.0f);
+                const float ux = sx / mag, uy = sy / mag;
+                const float fx = ux * step * sens_x + g_sm_rem_x;
+                const float fy = uy * step * sens_y + g_sm_rem_y;
+                const int32_t ix = (int32_t) fx, iy = (int32_t) fy;
+                g_sm_rem_x = fx - (float) ix;
+                g_sm_rem_y = fy - (float) iy;
+                // Y passes through unnegated: stick Y is 0 = up and screen Y
+                // grows downward, so the two already agree - the same
+                // convention the gyro path documents below.
+                g_gm_pend_x += ix;
+                g_gm_pend_y += iy;
+            } else {
+                g_sm_rem_x = 0.0f; g_sm_rem_y = 0.0f;   // inside the deadzone: no creep
+            }
+        }
+    }
+
+    // Feed the calibration burst into the same pending counters the gyro uses,
+    // so it goes out through exactly the path being calibrated.
+    if (g_cal_remaining != 0) {
+        const int32_t step = (g_cal_remaining > 0)
+                           ? (g_cal_remaining <  CAL_STEP ? g_cal_remaining :  CAL_STEP)
+                           : (g_cal_remaining > -CAL_STEP ? g_cal_remaining : -CAL_STEP);
+        g_gm_pend_x    += step;
+        g_cal_remaining -= step;
     }
 
     int32_t dx = g_gm_pend_x, dy = g_gm_pend_y;
@@ -567,11 +965,143 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
         d[2] = 128; d[3] = 128;   // the game must not also turn from the stick
     }
 
+    // Upstream v1.40 STICK features follow (stick_mouse, touch_mouse, tilt
+    // steering). They are kept here - before every gyro-mode early return -
+    // because they are stick/accel features that must work with gyro off. The
+    // Gyro-Space fusion pipeline (this fork) continues after them.
+    // Stick to mouse. Same placement and reasoning as Flick Stick above: it runs
+    // before every gyro-mode early return, because this is a STICK feature and
+    // must work with gyro off. The chosen stick is centred in the report so the
+    // game does not also turn from it, and the conversion happens in
+    // gyro_mouse_task() where the mouse report and its remainder carry live.
+    if (cfg.stick_mouse == 1) {
+        g_sm_stick_x = d[2]; g_sm_stick_y = d[3];   // right
+        d[2] = 128; d[3] = 128;
+    } else if (cfg.stick_mouse == 2) {
+        g_sm_stick_x = d[0]; g_sm_stick_y = d[1];   // left
+        d[0] = 128; d[1] = 128;
+    }
+
+    // Touchpad to mouse. Finger 1 only: byte 33 bit 7 clear means down, and the
+    // 12-bit X / 12-bit Y are packed across bytes 34-36. The touch data is NOT
+    // stripped from the report - the pad-click halves are macro triggers and a
+    // game may use the pad itself, so this only reads.
+    if (cfg.touch_mouse >= 1) {
+        // Use the SHARED decoder rather than unpacking the bytes again here.
+        // touch_point() is what macro.cpp's gestures and pad-click halves
+        // already read, so there is one definition of "where the finger is" and
+        // a second hand-copied one cannot drift from it.
+        const TouchPoint f = touch_point(d, 63, 0);
+        g_tm_x    = f.x;
+        g_tm_y    = f.y;
+        g_tm_down = f.down;
+    }
+
+    // Accelerometer work runs BEFORE the gyro early-return below. Tilt steering
+    // has nothing to do with gyro aiming and a racing profile is exactly where
+    // gyro is switched off - leaving it down there meant the feature could never
+    // run in the only situation it exists for.
+    auto rd_i16 = [&](int off) -> int32_t {
+        return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
+    };
+    // ACCELEROMETER: bytes 21/23/25, immediately after the three gyro axes.
+    // At rest it reads gravity, which is what makes it useful - it tells us
+    // which way is DOWN, something the gyro alone can never know.
+    const int32_t ax = rd_i16(21), ay = rd_i16(23), az = rd_i16(25);
+    { extern volatile int16_t g_diag_ax, g_diag_ay, g_diag_az;
+      g_diag_ax = (int16_t) ax; g_diag_ay = (int16_t) ay; g_diag_az = (int16_t) az; }
+
+    // Gravity, low-passed out of the accelerometer. Shared by player-space aim
+    // and tilt steering - both need to know which way is down, and filtering it
+    // twice would be two filters drifting apart.
+    static float gvx = 0.0f, gvy = 0.0f, gvz = 0.0f;
+    if (cfg.gyro_axis == 2 || cfg.tilt_steer) {
+        constexpr float A = 0.02f;                 // ~1s settle at report rate
+        gvx += A * ((float) ax - gvx);
+        gvy += A * ((float) ay - gvy);
+        gvz += A * ((float) az - gvz);
+    }
+
+    // --- Tilt steering ------------------------------------------------------
+    // Roll the pad like a small wheel and it ADDS to the left stick's X. It does
+    // not replace it: at full lock there is nothing left to add, and with the
+    // stick centred the offset falls inside the game's own dead zone, so driving
+    // straight does not wander. What is left is the middle of the range, which
+    // is exactly where a stick is hardest to be precise with.
+    if (cfg.tilt_steer) {
+        extern volatile int16_t g_diag_tilt_deg, g_diag_tilt_add;
+        extern volatile uint8_t g_diag_tilt_ran;
+        const float mag = sqrtf(gvx * gvx + gvy * gvy + gvz * gvz);
+        g_diag_tilt_ran = (mag > 1000.0f) ? 1 : 2;
+        if (mag <= 1000.0f) { g_diag_tilt_deg = 0; g_diag_tilt_add = 0; }
+        if (mag > 1000.0f) {
+            // Roll from gravity. Flat reads 0; rolling sideways swings gravity
+            // from the down axis into the lateral one. Absolute, from gravity,
+            // so it never drifts and always returns to centre when levelled -
+            // which integrating the gyro for an angle could not do.
+            // Negated: hardware testing showed the raw sign steers the wrong
+            // way, so the DEFAULT has to be the correct one and "Invert" has to
+            // mean inverted. Shipping it the other way round makes every new
+            // user tick a box to get the obvious behaviour.
+            // TILT-COMPENSATED. Measured against the magnitude of the other two
+            // axes, not against Y alone: at Y alone, leaning the pad far forward
+            // empties both Y and the axis it is compared with, and atan2 of two
+            // near-zero noisy numbers snaps between extremes. Identical to the
+            // simple form while the other axis is level, so the feel does not
+            // change - it only stops collapsing at the edges.
+            float deg = -atan2f(gvx, sqrtf(gvy * gvy + gvz * gvz)) * 57.2957795f;
+            if (cfg.tilt_steer_invert) deg = -deg;
+            const float dz = (float) cfg.tilt_steer_deadzone;
+            if (deg > dz)       deg -= dz;
+            else if (deg < -dz) deg += dz;
+            else                deg = 0.0f;
+            const float range = (float) cfg.tilt_steer_range;
+            float f = deg / (range > 1.0f ? range : 1.0f);
+            if (f > 1.0f) f = 1.0f; else if (f < -1.0f) f = -1.0f;
+            const int32_t add = (int32_t) (f * 127.0f * ((float) cfg.tilt_steer_amount / 100.0f));
+            g_diag_tilt_deg = (int16_t) deg;
+            g_diag_tilt_add = (int16_t) add;
+            int32_t v = (int32_t) d[0] + add;
+            if (v < 0) v = 0; else if (v > 255) v = 255;
+            d[0] = (uint8_t) v;
+
+            // VERTICAL tilt, its own switch. Leaning the pad forward and back
+            // is what a bike wants for weight shift; a car does not, so this
+            // cannot ride along with the horizontal axis. Range and dead zone
+            // are shared - the wrist movement is the same size either way - but
+            // the amount is separate, because how much lean a game wants is not
+            // how much steering it wants.
+            if (cfg.tilt_steer_y) {
+                extern volatile int16_t g_diag_tilt_ydeg, g_diag_tilt_yadd;
+                // Same treatment, and this is the one that actually broke: at
+                // full roll, gravity has moved into X, so gz and gy are both
+                // near zero and lean jumped between -128 and +128 with nothing
+                // in between. Comparing against the magnitude of the other two
+                // axes keeps it stable however far the pad is rolled.
+                float ydeg = -atan2f(gvz, sqrtf(gvx * gvx + gvy * gvy)) * 57.2957795f;
+                if (cfg.tilt_steer_y_invert) ydeg = -ydeg;
+                if (ydeg > dz)       ydeg -= dz;
+                else if (ydeg < -dz) ydeg += dz;
+                else                 ydeg = 0.0f;
+                float yf = ydeg / (range > 1.0f ? range : 1.0f);
+                if (yf > 1.0f) yf = 1.0f; else if (yf < -1.0f) yf = -1.0f;
+                const int32_t yadd = (int32_t) (yf * 127.0f * ((float) cfg.tilt_steer_y_amount / 100.0f));
+                g_diag_tilt_ydeg = (int16_t) ydeg;
+                g_diag_tilt_yadd = (int16_t) yadd;
+                int32_t vy = (int32_t) d[1] + yadd;
+                if (vy < 0) vy = 0; else if (vy > 255) vy = 255;
+                d[1] = (uint8_t) vy;
+            }
+        }
+    }
+
+
+    // ---- Gyro-Space fusion pipeline ----------------------------------------
+    // Raw int16 reader + live IMU diagnostics (fields 0xe9-0xee), captured even
+    // while gyro aiming is off so the portal curves always show sensor data.
     auto rd16 = [&](int off) -> int32_t {
         return (int16_t)((uint16_t)d[off] | ((uint16_t)d[off + 1] << 8));
     };
-    // Live IMU diagnostics for the portal curves (fields 0x6a-0x6f). Captured
-    // even when gyro aiming is off so the curves always show real sensor data.
     { extern volatile int16_t g_diag_imu_gx, g_diag_imu_gy, g_diag_imu_gz,
              g_diag_imu_ax, g_diag_imu_ay, g_diag_imu_az;
       g_diag_imu_gx = (int16_t)rd16(15); g_diag_imu_gy = (int16_t)rd16(19); g_diag_imu_gz = (int16_t)rd16(17);
@@ -677,7 +1207,7 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
     // Live diagnostic (portal, field 0x35): |aim-space horizontal rate| lets
     // sensitivity be calibrated against real numbers (0 = inactive).
-    // Fields 0x88/0x89: final gyro→stick output (deg/s * 100) after space
+    // Fields 0xe7/0xe8: final gyro→stick output (deg/s * 100) after space
     // conversion but before accumulator truncation — for debugging mapping.
     { extern volatile uint16_t g_diag_gyro;
       extern volatile int16_t g_diag_stick_x, g_diag_stick_y;
@@ -1051,7 +1581,14 @@ int main() {
             if (!wake_host_is_suspended() &&
                 now - last_synth_tick_ms >= state_synth_interval_ms()) {
                 last_synth_tick_ms = now;
-                if (state_synth_tick()) {
+                // ...or when a battery notification is running. state_synth_tick()
+                // returns false until the HOST has sent an output report, so on an
+                // idle desktop with no game driving the controller nothing ever
+                // composed a report - the notification fired in firmware and never
+                // reached the lightbar. state_set() builds from the state module's
+                // own struct, not from the host cache, so it is safe to compose
+                // one for this alone.
+                if (state_synth_tick() || battery_notify_wants_report()) {
                     uint8_t outputData[78]{};
                     outputData[0] = 0x31;
                     outputData[1] = reportSeqCounter << 4;
@@ -1078,6 +1615,11 @@ int main() {
 #if ENABLE_BATT_LED
         battery_led_tick();
 #endif
+        // Lightbar notification. Deliberately OUTSIDE ENABLE_BATT_LED: that flag
+        // governs the Pico's onboard LED, and this drives the controller's
+        // lightbar. They are separate indicators for separate distances and
+        // either may be used without the other.
+        battery_notify_tick();
         button_check();
         bt_inquiring_led();
         dse_task();

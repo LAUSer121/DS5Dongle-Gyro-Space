@@ -59,6 +59,8 @@ bool macro_any_mouse_output(uint32_t disable_mask);
 
 static inline bool usb_mouse_iface_needed(const Config_body &c) {
     return c.gyro_output >= 1              // 1 = mouse, 2 = mouse + flick stick
+        || c.stick_mouse >= 1              // 1 = right stick, 2 = left stick
+        || c.touch_mouse >= 1              // touchpad as a trackpad
         || macro_any_mouse_output(c.macro_disable);
 }
 
@@ -165,6 +167,19 @@ constexpr uint16_t MACRO_MOTION_STEP_DEFAULT = 1800;
 // motion gestures can happen, because the axes never compete.
 constexpr uint8_t MACRO_STICK_UP = 0, MACRO_STICK_RIGHT = 1,
                   MACRO_STICK_DOWN = 2, MACRO_STICK_LEFT = 3;
+// Two presses closer together than this count as a double tap. Also the longest
+// a single tap can be delayed, and only ever on a chord that has a double row.
+constexpr uint32_t MACRO_DOUBLE_MS = 250;
+
+// How long a one-shot injects a CONTROLLER BUTTON or MOUSE BUTTON for.
+//
+// Keyboard output is a sequence the host queues, but a controller button is a
+// STATE in the report the game reads - a one-shot has to hold it down for long
+// enough to be sampled. Games poll their input once a frame, so this has to
+// cover several frames at 60Hz to be seen reliably; 80ms is about five, and
+// still far too short to read as a deliberate hold.
+constexpr uint32_t MACRO_PULSE_MS = 80;
+
 constexpr uint8_t MACRO_STICK_THRESH = 48;   // deflection from centre, of 127
 constexpr uint8_t MACRO_STICK_HYST   = 10;   // release margin, same units
 
@@ -182,6 +197,31 @@ enum : uint8_t {
     // the source stick zeroed, in the OUTBOUND report. Without it a remap is
     // additive and the game sees both the original and the replacement.
     MACRO_FLAG_REPLACE = 1u << 2,
+    // STICK_ALWAYS extends REPLACE on a STICK row from "while a direction is
+    // engaged" to "for as long as the row exists". Without it the stick is only
+    // centred past the threshold, so at rest the pad's own jitter still reaches
+    // the game - a stream of tiny CHANGING axis values. A game's dead zone kills
+    // the movement but prompt detection usually reads raw deltas before it, so
+    // the HUD flips to controller glyphs while the macro's keys say keyboard,
+    // over and over. Nothing in the game's settings can fix that; the values
+    // have to stop leaving the dongle.
+    //
+    // It is OPT-IN because the old behaviour is a legitimate hybrid: fine
+    // pressure walks the character as analog while a hard push fires a key.
+    // Turning it on by default would silently break those rows, and an entry
+    // saved before this flag existed has the bit clear, so upgrades keep
+    // behaving exactly as they did.
+    MACRO_FLAG_STICK_ALWAYS = 1u << 3,
+    // DOUBLE fires this row on a DOUBLE TAP: two presses of the same chord
+    // within MACRO_DOUBLE_MS of each other.
+    //
+    // It is opt-in per row, and that is what keeps it free. A single-tap row
+    // can only be resolved late if a double-tap row exists on the SAME chord -
+    // until the window closes you cannot know which the user meant. So the
+    // deferral is applied only when such a row is present: with no double row
+    // on the chord, a single tap still fires on press exactly as before, with
+    // no added latency anywhere in the table.
+    MACRO_FLAG_DOUBLE = 1u << 4,
 };
 
 // Default long-press threshold, centiseconds. 750 ms, matching ps_shortcut.
@@ -192,7 +232,11 @@ constexpr uint8_t MACRO_HOLD_CS_DEFAULT = 75;
 // buttons. Continuing the same field keeps one output list in the portal, and
 // the split is by VALUE RANGE so main.cpp's controller loop simply never sees
 // them. Clicks are held while the input is held; scroll is a tick per press.
-constexpr uint8_t MOUT_FIRST      = T2BTN_COUNT; // 11
+// 11, fixed. It was T2BTN_COUNT, which happened to be 11 when the mouse
+// outputs were added - but the two stopped being the same number the moment
+// controller buttons were appended past the mouse block, and these values are
+// PERSISTED in every saved macro.
+constexpr uint8_t MOUT_FIRST      = 11;
 constexpr uint8_t MOUT_LEFT       = 11;
 constexpr uint8_t MOUT_RIGHT      = 12;
 constexpr uint8_t MOUT_MIDDLE     = 13;
@@ -315,6 +359,10 @@ bool macro_motion_capturing();
 uint32_t macro_suppress_mask();   // logical buttons to CLEAR
 uint32_t macro_inject_mask();     // logical buttons to SET
 bool     macro_suppress_stick(bool right);
+// True when the macro engine needs the outgoing report rewritten this tick.
+bool     macro_report_active();
+// Live keyboard/mouse output, for diagnostics (see macro_output_state).
+void     macro_output_state(uint8_t &keys_held, uint8_t &first_key, uint8_t &mouse_btns);
 
 // Analog travel for an L2/R2 controller output, or 0 when that output is not
 // active. Non-zero only when a TRIGGER is driving a trigger: remapping L2 to R2
@@ -333,5 +381,12 @@ int8_t   macro_mouse_take_scroll();   // consumes: only call once the report wil
 // uses it to avoid interleaving its F15 keystroke with a macro on the shared
 // keyboard instance.
 bool macro_busy();
+
+// Touchpad-click diagnostics for the portal: X where the finger last landed
+// (0-1919), how many click presses have been seen, and which half the last one
+// resolved to (1 = left, 2 = right, 0 = unqualified). Exists because this is
+// not something that can be reasoned about from the code - the pad's behaviour
+// at press time has to be measured on real hardware.
+void macro_pad_debug(uint16_t &x, uint8_t &presses, uint8_t &last_half);
 
 #endif // DS5_BRIDGE_MACRO_H

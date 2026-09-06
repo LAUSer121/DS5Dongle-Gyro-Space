@@ -402,7 +402,6 @@ const SECTIONS = [
     [0x18,'auto_haptics_slope','u8','Filter Slope','select',{6:'6 dB/oct (gentle)',12:'12 dB/oct (default)',24:'24 dB/oct (steep)'}],
     [0x15,'auto_mute_replace','u8','Auto-mute Speaker (Replace)','bool'],
     [0x16,'auto_mute_mix','u8','Auto-mute Speaker (Mix)','bool'],
-    [0x19,'lightbar_off','u8','Lightbar Off in Replace Mode','bool'],
     [0x1d,'rumble_haptic_strength','u8','Converted Rumble Strength (Mix) — above 100 overdrives','number',[0,200]],
     [0x1e,'effect_leak_volume','u8','Effect Leak Volume (0=off)','number',[0,100]],
     [0x23,'effect_leak_sensitivity','u8','Effect Leak Sensitivity','number',[0,100]],
@@ -437,40 +436,81 @@ const SECTIONS = [
     [0x06,'inactive_time','u8','Inactive Time (min)','number',[5,60]],
     [0x07,'disable_inactive_disconnect','u8','Disable Inactive Disconnect','bool'],
     [0x08,'disable_pico_led','u8','Disable Pico LED','bool'],
+    [0x19,'lightbar_off','u8','Lightbar Off','bool'],
     [0x11,'enable_wake','u8','Wake PC on PS Button','bool'],
     // Windows native battery (UPS), OFF by default. battery_mode toggling
     // changes the USB descriptor, so it is listed in ENUM_FIELDS below
     // (reconnect on save). Simulated levels below 5% are clamped by the
     // firmware so Windows never treats the emulated battery as critical.
-    [0x85,'battery_mode','u8','Windows Native Battery (UPS)','select',{0:'Off (default)',1:'Real (Bluetooth controller)',2:'Simulated (fixed level)'}],
-    [0x86,'battery_fake','u8','Simulated battery level (%) — min 5 shown','number',[0,100]],
+    // Fork fields moved to 0xBE+ on the v1.40.0 merge (upstream took 0x8F-0xB8).
+    [0xbe,'battery_mode','u8','Windows Native Battery (UPS)','select',{0:'Off (default)',1:'Real (Bluetooth controller)',2:'Simulated (fixed level)'}],
+    [0xbf,'battery_fake','u8','Simulated battery level (%) — min 5 shown','number',[0,100]],
     // Battery display refinements (v1.20.x). Blend + poll interval are
     // Real-mode only; smooth applies to Real mode.
-    [0x87,'battery_volt_blend','u8','Blend battery voltage for finer %','bool'],
-    [0x90,'battery_smooth','u8','Smooth percentage transitions','bool'],
-    [0x91,'battery_volt_poll_s','u16','Voltage poll interval (0.1s) — 1-3000','number',[1,3000]],
-    [0x93,'battery_volt_weight','u8','Voltage blend weight (%) — 0-100','number',[0,100]],
+    [0xc0,'battery_volt_blend','u8','Blend battery voltage for finer %','bool'],
+    [0xc1,'battery_smooth','u8','Smooth percentage transitions','bool'],
+    [0xc2,'battery_volt_poll_s','u16','Voltage poll interval (0.1s) — 1-3000','number',[1,3000]],
+    [0xc3,'battery_volt_weight','u8','Voltage blend weight (%) — 0-100','number',[0,100]],
     // Keep-online: stays on the USB bus (idle identity) after the controller
     // disconnects, so Windows keeps the UPS battery icon without needing an
     // Explorer restart. Old behaviour left the bus entirely. Applies whenever
     // the UPS battery interface is enabled (battery_mode != 0).
-    [0x94,'battery_keep_online','u8','Stay on USB after disconnect (new behaviour)','bool'],
+    [0xc4,'battery_keep_online','u8','Stay on USB after disconnect (new behaviour)','bool'],
     // Auto-calibration: samples (voltage, level) pairs while the controller is
     // in use and fits the voltage->% curve to THIS battery. Toggle + read-only
     // anchors + persist/reset live in the calibration card below the section.
-    [0x95,'battery_calib_enable','u8','Auto-calibrate voltage → % mapping','bool'],
+    [0xc5,'battery_calib_enable','u8','Auto-calibrate voltage → % mapping','bool'],
     // Capacity (v1.20.x): nominal mAh reported as DesignCapacity, and the
     // auto-estimate toggle that lets the firmware scale it from the calibrated
     // voltage span (aged cells hold less). FullCharge/Remaining follow below.
-    [0xa4,'battery_capacity_mah','u16','Battery capacity (mAh)','number',[100,10000]],
-    [0xa5,'battery_capacity_auto','u8','Auto-estimate actual capacity','bool'],
+    [0xc6,'battery_capacity_mah','u16','Battery capacity (mAh)','number',[100,10000]],
+    [0xc7,'battery_capacity_auto','u8','Auto-estimate actual capacity','bool'],
     // Coverage gate for the auto estimate: how many sampled levels and what
     // minimum level gap before the capacity estimate is trusted.
-    [0xa8,'battery_cap_min_levels','u8','Capacity estimate min levels','number',[2,11]],
-    [0xa9,'battery_cap_min_span','u8','Capacity estimate min level span','number',[1,10]],
+    [0xc8,'battery_cap_min_levels','u8','Capacity estimate min levels','number',[2,11]],
+    [0xc9,'battery_cap_min_span','u8','Capacity estimate min level span','number',[1,10]],
     // Average mode: running average per level (more accurate the longer it
     // runs) vs the old EMA (faster to adapt, never fully settles).
-    [0xaa,'battery_calib_avg','u8','Running average mode (more accurate over time)','bool'],
+    [0xca,'battery_calib_avg','u8','Running average mode (more accurate over time)','bool'],
+  ]},
+  { title: 'Battery Notification', fields: [
+    [0x8e,'batt_notify_enable','u8','Battery notification on the controller lightbar','bool'],
+    [0x9f,'batt_stage_on_0','u8','Stage 1 — enabled','bool'],
+    [0xa0,'batt_stage_on_1','u8','Stage 2 — enabled','bool'],
+    [0xa1,'batt_stage_on_2','u8','Stage 3 — enabled','bool'],
+    [0x8f,'batt_stage_level_0','u8','Stage 1 — notify at battery level','select',{0:'Off',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'}],
+    [0x90,'batt_stage_blinks_0','u8','Stage 1 — number of blinks','number',[1,20]],
+    [0x91,'batt_stage_r_0','u8','Stage 1 — colour red','number',[0,255]],
+    [0x92,'batt_stage_g_0','u8','Stage 1 — colour green','number',[0,255]],
+    [0x93,'batt_stage_b_0','u8','Stage 1 — colour blue','number',[0,255]],
+    [0x94,'batt_stage_level_1','u8','Stage 2 — notify at battery level','select',{0:'Off',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'}],
+    [0x95,'batt_stage_blinks_1','u8','Stage 2 — number of blinks','number',[1,20]],
+    [0x96,'batt_stage_r_1','u8','Stage 2 — colour red','number',[0,255]],
+    [0x97,'batt_stage_g_1','u8','Stage 2 — colour green','number',[0,255]],
+    [0x98,'batt_stage_b_1','u8','Stage 2 — colour blue','number',[0,255]],
+    [0x99,'batt_stage_level_2','u8','Stage 3 — notify at battery level','select',{0:'Off',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'}],
+    [0x9a,'batt_stage_blinks_2','u8','Stage 3 — number of blinks','number',[1,20]],
+    [0x9b,'batt_stage_r_2','u8','Stage 3 — colour red','number',[0,255]],
+    [0x9c,'batt_stage_g_2','u8','Stage 3 — colour green','number',[0,255]],
+    [0x9d,'batt_stage_b_2','u8','Stage 3 — colour blue','number',[0,255]],
+  ]},
+  { title: 'Tilt Steering (experimental)', fields: [
+    [0xab,'tilt_steer','u8','Tilt Steering','bool'],
+    [0xac,'tilt_steer_range','u8','Tilt range (degrees for full effect)','number',[1,90]],
+    [0xad,'tilt_steer_amount','u8','Maximum stick added (%)','number',[0,100]],
+    [0xae,'tilt_steer_deadzone','u8','Tilt deadzone (degrees)','number',[0,30]],
+    [0xaf,'tilt_steer_invert','u8','Invert tilt direction','bool'],
+    [0xb3,'tilt_steer_y','u8','Also tilt forward/back (lean)','bool'],
+    [0xb4,'tilt_steer_y_amount','u8','Maximum stick added, lean (%)','number',[0,100]],
+    [0xb5,'tilt_steer_y_invert','u8','Invert lean direction','bool'],
+  ]},
+  { title: 'Touchpad as Mouse', fields: [
+    [0xa2,'touch_mouse','u8','Touchpad as Mouse','bool'],
+    [0xa3,'touch_mouse_sens','u8','Touchpad Speed','number',[1,250]],
+    [0xa4,'touch_mouse_min','u8','Touchpad Jitter Filter','number',[0,20]],
+    [0xa5,'touch_mouse_invert','u8','Touchpad Invert','select',{0:'None',1:'X',2:'Y',3:'Both'}],
+    [0xa6,'touch_mouse_trackball','u8','Touchpad Trackball (keep gliding)','bool'],
+    [0xa7,'touch_mouse_friction','u8','Trackball Friction','number',[1,100]],
   ]},
   { title: 'Native Haptics Filter', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
@@ -531,18 +571,33 @@ const SECTIONS = [
     [0x2f,'gyro_mode','u8','Mode','select',[[0,'Off'],[2,'Always on'],[1,'Only while L2 (aim) held'],[5,'Only while R2 (fire) held'],[6,'Only while L1 held'],[7,'Only while R1 held'],[3,'Only while touchpad touched'],[4,'Always on — touch touchpad to pause (ratchet)']]],
     [0x30,'gyro_sens','u8','Sensitivity','number',[1,100]],
     [0x31,'gyro_axis','u8','Horizontal source (Yaw space)','select',{0:'Yaw (turn controller)',1:'Roll (tilt sideways)'}],
-    [0x80,'gyro_space','u8','Space (orientation mapping)','select',[[0,'Yaw — yaw (gyro_axis=0) or roll (gyro_axis=1) to horizontal, pitch to vertical (classic dual-axis)'],[1,'Roll — roll to horizontal, pitch to vertical (classic dual-axis)'],[2,'Yaw + Roll — yaw & roll (gravity axis) to horizontal, pitch to vertical (Steam-style)'],[3,'Local Space — axes follow the controller (default, yaw→X pitch→Y)'],[4,'Player Space — world yaw + local pitch (Steam-style)'],[5,'World Space — gravity-aligned, grip-independent (recommended)'],[6,'Laser Pointer — screen projection of the forward vector (relative to activation)']]],
-    [0x81,'gyro_fusion','u8','Fusion gain (gravity correction)','number',[0,100]],
-    [0x82,'gyro_cal_x','i16','Gyro calibration offset X (raw)','number',[-32768,32767]],
-    [0x83,'gyro_cal_y','i16','Gyro calibration offset Y (raw)','number',[-32768,32767]],
-    [0x84,'gyro_cal_z','i16','Gyro calibration offset Z (raw)','number',[-32768,32767]],
+    // Gyro-Space fork extension: 0xB9-0xBD after the v1.40.0 merge (upstream
+    // took 0x80-0x87 for gyro_sens_mode / gyro_natural_* / batt_stage*).
+    [0xb9,'gyro_space','u8','Space (orientation mapping)','select',[[0,'Yaw — yaw (gyro_axis=0) or roll (gyro_axis=1) to horizontal, pitch to vertical (classic dual-axis)'],[1,'Roll — roll to horizontal, pitch to vertical (classic dual-axis)'],[2,'Yaw + Roll — yaw & roll (gravity axis) to horizontal, pitch to vertical (Steam-style)'],[3,'Local Space — axes follow the controller (default, yaw→X pitch→Y)'],[4,'Player Space — world yaw + local pitch (Steam-style)'],[5,'World Space — gravity-aligned, grip-independent (recommended)'],[6,'Laser Pointer — screen projection of the forward vector (relative to activation)']]],
+    [0xba,'gyro_fusion','u8','Fusion gain (gravity correction)','number',[0,100]],
+    [0xbb,'gyro_cal_x','i16','Gyro calibration offset X (raw)','number',[-32768,32767]],
+    [0xbc,'gyro_cal_y','i16','Gyro calibration offset Y (raw)','number',[-32768,32767]],
+    [0xbd,'gyro_cal_z','i16','Gyro calibration offset Z (raw)','number',[-32768,32767]],
     [0x32,'gyro_invert','u8','Invert gyro aim','bits',['X (horizontal)','Y (vertical)']],
     [0x75,'gyro_sens_y','u8','Vertical sensitivity (0 = same as Sensitivity)','number',[0,100]],
     [0x73,'gyro_output','u8','Gyro output','select',{0:'Right stick (works everywhere)',1:'Mouse (finer aim; needs the pad hidden in most games)',2:'Mouse + Flick Stick (right stick flicks to a bearing)'}],
-    [0x74,'flick_counts_360','u16','Flick Stick — mouse counts per 360°','number',[500,50000]],
+    [0xb8,'flick_angle','u8','Flick turn angle (degrees)','number',[1,180]],
+    [0x74,'flick_counts_360','u16','Mouse counts per 360° (Flick Stick and Natural sensitivity)','number',[500,50000]],
+    [0x80,'gyro_sens_mode','u8','Gyro sensitivity scale','select',{0:'Manual — tune by feel, no calibration needed',1:'Natural — real-world ratio (default; needs counts per 360°)'}],
+    [0x81,'gyro_natural_x10','u8','Natural multiplier ×10 (10 = 1:1, 25 = 2.5×)','number',[5,200]],
+    [0x82,'gyro_natural_y_x10','u8','Natural vertical ×10 (0 = same as above)','number',[0,200]],
+    [0x84,'gyro_scale_trim_x100','u16','Gyro scale trim (100 = nominal; see the angle check)','number',[50,1000]],
   ]},
   { title: 'Right Stick', fields: [
     [0x65,'rstick_invert','u8','Invert right stick','bits',['X (horizontal)','Y (vertical)']],
+  ]},
+  { title: 'Stick to Mouse', fields: [
+    [0x76,'stick_mouse','u8','Drive the mouse from a stick','select',{0:'Off',1:'Right stick',2:'Left stick'}],
+    [0x77,'stick_mouse_sens','u16','Speed \u2014 mouse counts/sec at full tilt (0 = 600)','number',[0,20000]],
+    [0x66,'stick_mouse_sens_y','u16','Vertical speed (0 = same as above)','number',[0,20000]],
+    [0x78,'stick_mouse_deadzone','u8','Deadzone (% of full tilt)','number',[0,50]],
+    [0x79,'stick_mouse_curve','u8','Response curve \u00d710 (10 = linear, 18 = default)','number',[10,40]],
+    [0x7a,'stick_mouse_invert','u8','Invert stick-to-mouse','bits',['X (horizontal)','Y (vertical)']],
   ]},
   { title: 'Advanced — BT Latency (experimental)', fields: [
     [0x1b,'bt_flush_timeout','u16','BT Flush Timeout (0=off)','select',{0:'Off (reliable)',4:'~2.5ms (low latency)',6:'~3.75ms',10:'~6.25ms',16:'~10ms'}],
@@ -573,7 +628,21 @@ const DESCRIPTIONS = {
   auto_haptics_slope: "How sharply the low-pass cuts off the unwanted higher frequencies.",
   auto_mute_replace: "Mutes the controller speaker automatically in Replace mode.",
   auto_mute_mix: "Mutes the controller speaker automatically in Mix mode.",
-  lightbar_off: "Turns the lightbar off while Replace mode is active.",
+  tilt_steer_y: "Adds leaning the controller forward and back to the left stick's Y, on its own switch so it does not affect games where only steering matters. Meant for bikes and anything with a weight shift \u2014 in MotorStorm it is how you lean a bike in the air.",
+  tilt_steer_y_amount: "The most lean may add, as a percentage of full stick. Separate from the steering amount, because how much lean a game wants is not how much steering it wants.",
+  tilt_steer_y_invert: "Flip which way a lean pushes.",
+  tilt_steer: "Roll the controller like a small steering wheel and it ADDS to the left stick, rather than replacing it \u2014 coarse steering stays on the stick and tilt supplies trim on top. The angle comes from gravity, so it never drifts and always returns to centre when you level the pad. Calibrate it with the live test on the Macros tab: roll the pad and watch the L stick figure move, so you can see what the game will actually receive.",
+  tilt_steer_range: "How far you have to roll the pad for the full effect. Smaller means a small tilt does more.",
+  tilt_steer_amount: "The most tilt may add, as a percentage of full stick. Racing games apply their own steering dead zone, so anything below about 60 does nothing you can feel. Around 70 gives usable trim on top of the stick; 100 makes tilt able to steer on its own.",
+  tilt_steer_deadzone: "Degrees around level that do nothing, so the way you naturally hold the pad does not steer for you.",
+  tilt_steer_invert: "Flip which way a roll steers.",
+  touch_mouse: "Use the touchpad as a trackpad: the pointer follows how far your finger MOVES, like a laptop touchpad. Clicks are not part of this \u2014 bind the touchpad-click halves as macros with a mouse output, which lets you choose which half is left and which is right. Turning this on adds the mouse interface, so the device re-enumerates once.",
+  touch_mouse_sens: "Pointer speed. 100 is roughly 1:1 with the pad; raise it to cross the screen in one swipe.",
+  touch_mouse_min: "Ignore finger movement smaller than this many pad counts, so a resting finger does not make the pointer drift. 1 or 2 is usually enough.",
+  touch_mouse_invert: "Flip the pointer direction on either axis.",
+  touch_mouse_trackball: "Keep the pointer gliding after you lift your finger, so a flick can cross a large screen without repeated drags.",
+  touch_mouse_friction: "How quickly the glide slows down. Higher stops sooner.",
+  lightbar_off: "Keeps the controller's lightbar dark, in every haptics mode. A battery notification still overrides it for the seconds it runs.",
   rumble_haptic_strength: "Strength of a game's rumble re-created on the actuators when it can't be handed to native rumble.",
   effect_leak_volume: "How loudly sharp one-off sounds leak to the speaker while it's muted.",
   effect_leak_sensitivity: "How readily a sound counts as a sharp onset worth leaking.",
@@ -655,7 +724,11 @@ const DESCRIPTIONS = {
   // Gyro Aiming
   gyro_mode: "When gyro aiming is active - off, always, or only while a chosen button is held.",
   gyro_sens: "How much aim movement the gyro produces.",
-  gyro_axis: "Whether turning or tilting the controller drives horizontal aim.",
+  gyro_axis: "Whether turning or tilting the controller drives horizontal aim. \u201cPlayer space\u201d uses the accelerometer to work out which way is down and combines both, so the aim behaves the same whether the pad is held flat or tilted up \u2014 no need to pick an axis and then hold the controller a fixed way.",
+  gyro_sens_mode: "Manual is the original slider: a number with no real-world meaning, retuned per game. Natural makes it a RATIO - at 1.0x, rotating the controller 10 degrees turns the view 10 degrees - so one setting is correct in every game that shares the same counts per 360. Natural needs the counts per 360 value below to be right, and applies to gyro-to-MOUSE only: gyro-to-stick tells the game how FAST to turn, not how far, so a rotation ratio has nothing to attach to there.",
+  gyro_natural_x10: "The ratio, x10. 10 means 1:1 - the view turns exactly as far as you rotate the pad. Most people play between 25 (2.5x) and 120 (12x), higher the less they rely on the stick. To check it is truly 1:1 on your hardware, use the degrees readout in the Device tab: rotate through a known angle and compare.",
+  gyro_natural_y_x10: "Vertical ratio, x10. 0 follows the horizontal one. A game's vertical aiming range is much smaller than its horizontal one, so a lower value here is common.",
+  flick_angle: "How far a full sideways flick turns the view. Flick Stick is absolute by design \u2014 push right and you face right, 90\u00b0 \u2014 which is what makes a smaller check impossible. This scales it, so the direction still means something while the amount is yours. 90 is the original behaviour; 45 turns half as far for the same stick push. It scales rotating a held stick by the same factor, so a flick and the turn back stay consistent.",
   flick_counts_360: "How far a flick turns you, in this game. It is the same number a real mouse needs to spin a full 360 degrees: (cm per 360) x (DPI / 2.54). If you know your cm/360 and DPI, just calculate it - no trial needed. Otherwise leave 6500 and correct once: flick fully back (a 180), see how far you actually turned, then multiply this value by 180 / the degrees you got. Two tries is usually enough. Turn mouse acceleration OFF and raw input ON, or no single value can be correct. Changing the game's own sensitivity means recalibrating.",
   gyro_sens_y: "Vertical gyro sensitivity on its own. Leave at 0 and both axes use the Sensitivity setting above, exactly as before. A lower value here is the usual choice: the vertical aiming range in a game is far smaller than the horizontal one, so the gain that feels right for turning is often too fast for looking up and down.",
   gyro_output: "Right stick works in any game with no setup. Mouse sends pointer movement instead, which is what a gyro naturally produces - finer at low speed and it never pegs on a fast turn - but many games ignore mouse input while a gamepad is present, so it usually needs the pad hidden. Changing this re-enumerates the controller.",
@@ -1013,8 +1086,16 @@ async function uiSlotActivate(i){
     if (res.needsReenum){
       toast(`Slot ${i+1} active \u2014 device re-enumerating\u2026`);
       try { await sendCmd(0x03); } catch(_){}
+      // The device we are holding is about to disappear. Drop every cache that
+      // describes it BEFORE reacquiring, or the panels keep rendering state
+      // read from the old handle - which is why macros and slots came back
+      // blank after a reconnect until the portal was reopened.
+      window._macroRows = null;
       await sleep(2500);
       await reacquire();
+      // Re-read the macro table on the new handle; refreshSlots() below does
+      // the same for the slot list.
+      try { window._macroRows = await hidLocked(() => macroReadAll()); } catch(_){}
     } else {
       toast(`Slot ${i+1} active`);
     }
@@ -1126,6 +1207,16 @@ async function readAll(){
   // ENUM_FIELDS/kbdIfaceNeeded comparison used a stale baseline, so the next save
   // could trigger a reconnect that was not needed or skip one that was.
   savedSnapshot = {...fresh};
+}
+
+// Clamp a number input to its declared range and reflect the result in the box.
+function cfgClampNum(el, min, max, isFloat){
+  let v = isFloat ? parseFloat(el.value) : parseInt(el.value, 10);
+  if (!isFinite(v)) v = min;
+  if (v < min) v = min;
+  if (v > max) v = max;
+  if (String(v) !== String(el.value)) el.value = v;   // show what will be sent
+  return v;
 }
 
 async function writeField(fieldId, type, value){
@@ -1769,6 +1860,227 @@ function ceActiveWindows(list){
 // Read the firmware's wake diagnostics (cmd 0x16). The wake failure is
 // intermittent, so this reports what the device actually observed across the
 // sleeps since it was last powered up, rather than leaving us to guess.
+// --- Gyro angle check -------------------------------------------------------
+// Natural sensitivity converts wrist rotation to mouse counts using the gyro's
+// full-scale rating. If that rating were wrong, "1.0x" would be off by a fixed
+// ratio and there would be no way to tell from inside a game. So: measure a
+// known rotation and compare. Reading field 0x83 also RESETS the counter, which
+// is what makes Start work.
+// --- Counts-per-360 measurement --------------------------------------------
+// The dongle emits an exact number of mouse counts; you report how far the view
+// turned. counts_360 = sent * 360 / observed. This is the one number in the
+// chain that belongs to the GAME rather than the controller, so it cannot be
+// derived - but it can be measured, which beats the guess-and-correct loop.
+let CAL_COUNTS = 6500;
+// LINEARITY CHECK. If the game receives every count, half the counts must turn
+// the view exactly half as far. If it does not, counts are being lost or
+// scaled on the way in - by a frame-sampled mouse read, by in-game smoothing,
+// or by Windows pointer acceleration - and any counts-per-360 measured through
+// that is wrong no matter how carefully the angle is judged. Measuring twice at
+// different amounts is the only way to tell that from a genuinely low
+// sensitivity, since both simply look like "the view turned less".
+async function calSendAmount(n){
+  const box = document.getElementById('calbox');
+  try {
+    if (+config.gyro_output < 1){
+      box.innerHTML = '<span style="color:#e0a030">Set Gyro output to Mouse first \u2014 otherwise there is no mouse for the counts to move.</span>';
+      return;
+    }
+    CAL_COUNTS = n;
+    // Sending the FULL amount starts a new measurement run, so the previous
+    // run's readings are discarded. Without this they persisted: a second
+    // attempt found both amounts already recorded, skipped asking for the
+    // check, and compared the new reading against a stale one from before.
+    if (n === 6500) window._calLast = {};
+    box.innerHTML = `Switch to the game NOW \u2014 sending ${n} counts in 3s\u2026`;
+    await sleep(3000);
+    await hidLocked(() => writeField(0x86, 'u16', n));
+    box.innerHTML = `Sent <b>${n}</b> counts to the right (the sweep takes a few seconds). Type how far the view turned, then press 3.`;
+  } catch(e){ box.innerHTML = 'Could not send: ' + e.message; }
+}
+async function calSend(){ return calSendAmount(6500); }
+async function calSendHalf(){ return calSendAmount(3250); }
+function calCompute(){
+  const box = document.getElementById('calbox');
+  const obs = parseFloat(document.getElementById('calobs').value);
+  if (!isFinite(obs) || obs <= 0){ box.innerHTML = 'Enter the degrees the view actually turned.'; return; }
+  const c360 = Math.round(CAL_COUNTS * 360 / obs);
+  window._calLast = window._calLast || {};
+  window._calLast[CAL_COUNTS] = obs;
+  const recorded = Object.keys(window._calLast).sort((x, y) => y - x)
+    .map(k => `${k} \u2192 ${window._calLast[k]}\u00b0`).join(', ');
+  if (c360 < 500 || c360 > 50000){
+    box.innerHTML = `<span style="color:#e0a030">That works out to ${c360}, outside the sensible range. Check the game had focus and that mouse acceleration is off, then try again.</span>`;
+    return;
+  }
+  // If both amounts have been measured, check they agree.
+  let lin = '';
+  const a = window._calLast[6500], b = window._calLast[3250];
+  if (a && b){
+    const ratio = a / b;                       // should be 2.0
+    lin = (ratio > 1.8 && ratio < 2.2)
+      ? `<br><span style="color:#4ade80">Linearity OK: half the counts turned half as far (${ratio.toFixed(2)}x), so the game is receiving every count and this number is trustworthy.</span>`
+      : `<br><span style="color:#e0a030">Half the counts turned ${ratio.toFixed(2)}x less, not 2x. Counts are being lost or scaled on the way in \u2014 turn OFF in-game mouse smoothing/acceleration and Windows "Enhance pointer precision", then measure again. Until this reads about 2x, any counts-per-360 from here will be too high.</span>`;
+  } else {
+    lin = `<br><span style="color:var(--sub)">Now press <b>Send 3250</b> and measure again: half the counts should turn half as far. If they do not, counts are being lost and this number is too high \u2014 that check matters more than judging the angle precisely.</span>`;
+  }
+  box.innerHTML = `<span style="color:var(--sub)">Recorded this run: ${recorded} ` +
+    `<a href="#" onclick="calReset();return false;">clear</a></span><br>` +
+    `This game needs <b>${c360}</b> counts per 360\u00b0.` +
+    ` <button class="btn" style="padding:2px 10px;font-size:12px" onclick="calApply(${c360})">Apply it</button>` +
+    lin;
+}
+function calReset(){
+  window._calLast = {};
+  const box = document.getElementById('calbox');
+  if (box) box.innerHTML = 'Cleared. Press <b>Send 6500</b> to start a fresh measurement.';
+}
+async function calApply(v){
+  const box = document.getElementById('calbox');
+  try {
+    config.flick_counts_360 = v;
+    (window._dirty = window._dirty || {})['flick_counts_360'] = 1;
+    await hidLocked(() => writeField(0x74, 'u16', v));
+    window._calLast = {};   // applied: the run is finished
+    box.innerHTML = `Set to <b>${v}</b>. Save to keep it, or it reverts on the next profile load.`;
+    render();
+  } catch(e){ box.innerHTML = 'Could not apply: ' + e.message; }
+}
+
+async function gyroAngleStart(){
+  const box = document.getElementById('gyroangle');
+  // A FULL TURN, not a quarter. Judging 90 degrees by eye is the least accurate
+  // part of this measurement - a few degrees of human error is several percent
+  // of the answer. A 360 ends where it started, so you can line the controller
+  // up with the same edge of a desk or door frame and know you are within a
+  // degree or two, and the error is spread over four times the angle.
+  try {
+    await hidLocked(() => readField(0x83, 'u16'));   // read = reset
+  } catch(e){ if (box) box.innerHTML = 'Could not start: ' + e.message; return; }
+  for (let s = 8; s > 0; s--){
+    if (box) box.innerHTML = `<b>Turn now</b> \u2014 one full turn (360\u00b0) to the right, ending pointing exactly where you started. Keep the pad level, then hold still. <b>${s}s</b>`;
+    await sleep(1000);
+  }
+  if (box) box.innerHTML = 'Reading\u2026';
+  try {
+    const raw = await hidLocked(() => readField(0x83, 'u16'));
+    let hz = 0;
+    try { hz = await hidLocked(() => readField(0x85, 'u16')); } catch(e) {}
+    const deg = raw / 10;
+    if (deg < 60){
+      box.innerHTML = `Measured ${deg.toFixed(1)}\u00b0 \u2014 too little to judge. Press Measure and make a complete turn during the countdown.`;
+      return;
+    }
+    const err  = (deg - 360) / 360 * 100;
+    const trim = Math.round(360 / deg * 100);
+    let verdict;
+    if (Math.abs(err) <= 5){
+      verdict = `<span style="color:#4ade80">Within 5% of a full turn \u2014 the scale is right. Leave the trim at 100.</span>`;
+    } else {
+      verdict = `<span style="color:#e0a030">The gyro reads ${deg > 360 ? 'high' : 'low'} by ${Math.abs(err).toFixed(0)}%. Set <b>Gyro scale trim</b> to <b>${trim}</b> in the Gyro tab, then 1.0\u00d7 is true 1:1 and every multiplier is honest.</span>`;
+    }
+    box.innerHTML = `Measured <b>${deg.toFixed(1)}\u00b0</b> for one full turn.<br>${verdict}` +
+      `<br><span style="color:var(--sub)">Gyro samples arrived at ${hz || '?'} Hz during the turn. ` +
+      `Line the controller up with a desk edge or door frame and return to it exactly. Repeat two or three times and average \u2014 readings within a few percent of each other mean the measurement is sound. The total counts rotation in BOTH directions, so turn one way only and hold still until the countdown ends.</span>`;
+  } catch(e){ box.innerHTML = 'Could not read: ' + e.message; }
+}
+
+// 0x9e is a COMMAND, not a stored field: it starts a stage's blink on the
+// device. The dongle blinks its SAVED colours, so an unsaved edit will not show.
+
+// One row per stage: level, blinks, colour, on/off, test. Every control writes
+// straight into config[...] - the same values the generic renderer would have
+// written - so saving, profiles and slot backups need no special case.
+const BATT_LEVELS = [[0,'\u2014'],[1,'10%'],[2,'20%'],[3,'30%'],[4,'40%'],[5,'50%'],
+                     [6,'60%'],[7,'70%'],[8,'80%'],[9,'90%'],[10,'100%']];
+function battHex(i){
+  const h = v => ((+config['batt_stage_' + v + '_' + i] || 0) & 0xff).toString(16).padStart(2,'0');
+  return '#' + h('r') + h('g') + h('b');
+}
+// The picker hands back #rrggbb; split it into the three bytes the firmware
+// stores. Written as one change so a colour edit is a single undoable step.
+// Mirrors exactly what a generic field row does on change: set the value and
+// mark it dirty, so the existing save path picks it up with no special case.
+function battSet(key, v){
+  config[key] = +v || 0;
+  (window._dirty = window._dirty || {})[key] = 1;
+}
+function battColour(i, hex){
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return;
+  battSet('batt_stage_r_' + i, parseInt(m[1],16));
+  battSet('batt_stage_g_' + i, parseInt(m[2],16));
+  battSet('batt_stage_b_' + i, parseInt(m[3],16));
+  render();
+}
+// The explanatory text and the rows, drawn inside the Battery Notification
+// card itself.
+function battStagesPanelHTML(){
+  return '<div style="font-size:12px;color:var(--sub);margin-top:6px">' +
+         'Each stage fires once when the battery falls past its level, pulses that colour, and stops. ' +
+         'Levels are 10% steps because that is how the controller reports its charge. It is a gentle pulse that ' +
+         'fades up and back down, about 1.6 seconds each, not a hard flash.</div>' +
+         '<div style="margin-top:8px">' + battStagesHTML() + '</div>' +
+         // Below the rows, where it is read just before reaching for Test, and
+         // bold because missing it means testing the PREVIOUS settings and
+         // concluding the feature does not work.
+         '<div id="batttest" style="font-size:12px;margin-top:8px">' +
+         '<b>Test uses the settings already saved to the dongle, so save first.</b></div>';
+}
+function battStagesHTML(){
+  let h = '';
+  for (let i = 0; i < 3; i++){
+    // Keys are built here and interpolated WHOLE into the markup, so each
+    // handler carries a literal config['batt_stage_...'] exactly as a generic
+    // field row would. That is not cosmetic: the render harness proves every
+    // setting is reachable by scanning for those literals, and a key assembled
+    // inside the handler would be invisible to it - the setting would look
+    // unreachable while working perfectly, or worse, be genuinely unreachable
+    // and still pass.
+    const kOn = 'batt_stage_on_' + i, kLv = 'batt_stage_level_' + i, kBl = 'batt_stage_blinks_' + i;
+    const kR = 'batt_stage_r_' + i, kG = 'batt_stage_g_' + i, kB = 'batt_stage_b_' + i;
+    const on = (+config[kOn] || 0) === 1;
+    const dis = on ? '' : ' disabled';
+    const dirty = k => "(window._dirty=window._dirty||{})['" + k + "']=1";
+    h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line,#333)">';
+    h += '<label style="min-width:78px"><input type="checkbox"' + (on ? ' checked' : '') +
+         ' onchange="config[\'' + kOn + '\']=this.checked?1:0;' + dirty(kOn) + ';render()"> Stage ' + (i+1) + '</label>';
+    h += '<span style="font-size:12px;color:var(--sub)">at</span>';
+    h += '<select' + dis + ' onchange="config[\'' + kLv + '\']=+this.value;' + dirty(kLv) + '">';
+    for (const [v,lab] of BATT_LEVELS)
+      h += '<option value="' + v + '"' + ((+config[kLv] || 0) === v ? ' selected' : '') + '>' + lab + '</option>';
+    h += '</select>';
+    h += '<span style="font-size:12px;color:var(--sub)">pulses</span>';
+    h += '<input type="number" min="1" max="20" style="width:64px" value="' + (+config[kBl] || 5) + '"' + dis +
+         ' onchange="config[\'' + kBl + '\']=cfgClampNum(this,1,20,false);' + dirty(kBl) + '">';
+    h += '<span style="font-size:12px;color:var(--sub)">colour</span>';
+    h += '<input type="color" style="width:46px;height:26px;padding:0;border:1px solid var(--line,#333);background:none" value="' +
+         battHex(i) + '"' + dis + ' onchange="battColour(' + i + ', this.value)">';
+    // The picker writes three bytes at once, so the literals the harness needs
+    // live here. Same device as the macro_disable hidden input above.
+    h += '<input type="hidden" oninput="config[\'' + kR + '\']=+this.value" value="' + (+config[kR]||0) + '">';
+    h += '<input type="hidden" oninput="config[\'' + kG + '\']=+this.value" value="' + (+config[kG]||0) + '">';
+    h += '<input type="hidden" oninput="config[\'' + kB + '\']=+this.value" value="' + (+config[kB]||0) + '">';
+    h += '<button class="btn btn-outline" style="padding:2px 10px"' + (device ? '' : ' disabled') +
+         ' onclick="battTest(' + i + ')">Test</button>';
+    h += '</div>';
+  }
+  return h;
+}
+// 0x9e is a COMMAND, not a stored field: it starts a stage's blink on the
+// device. The dongle blinks its SAVED colours, so an unsaved edit will not show.
+
+// One row per stage: level, blinks, colour, on/off, test. Every control writes
+// straight into config[...] - the same values the generic renderer would have
+// written - so saving, profiles and slot backups need no special case.
+async function battTest(stage){
+  const el = document.getElementById('batttest');
+  if (!device){ if (el) el.textContent = 'No device.'; return; }
+  try {
+    await hidLocked(() => sendCmd(0x01, [0x9e, stage & 0xff]));
+    if (el) el.textContent = 'Running stage ' + (stage+1) + ' on the controller.';
+  } catch(e){ if (el) el.textContent = 'Test failed: ' + e; }
+}
 async function readWakeDiag(){
   const box = document.getElementById('wakediag');
   if (box) box.innerHTML = t('正在读取…','Reading…');
@@ -2606,6 +2918,21 @@ async function saveAll(){
     if (!needReconnect && ((+savedSnapshot.gyro_output >= 1) !== (+config.gyro_output >= 1))) {
       needReconnect = true;
     }
+    // Stick-to-mouse brings the same interface up. Mirrors
+    // usb_mouse_iface_needed() in macro.h - keep the two in step, or turning it
+    // on adds an interface the host is never told to re-read.
+    if (!needReconnect && ((+savedSnapshot.stick_mouse >= 1) !== (+config.stick_mouse >= 1))) {
+      needReconnect = true;
+    }
+    // Touchpad-to-mouse brings the SAME interface up, and was missed here when
+    // it was added: the firmware's usb_mouse_iface_needed() knew about it, but
+    // this list did not, so ticking it on a profile with no other mouse feature
+    // added an interface the host was never told to re-read - the setting simply
+    // did nothing. Three places now name the mouse interface; they have to move
+    // together.
+    if (!needReconnect && ((+savedSnapshot.touch_mouse >= 1) !== (+config.touch_mouse >= 1))) {
+      needReconnect = true;
+    }
 
     if (!needReconnect){
       // No enumeration-time change — settings are already applied live. Just
@@ -2662,20 +2989,40 @@ async function readDiag(){
     if (rssi > 127) rssi -= 256;
     let gy = null, sy = null, c01 = null, c23 = null;
     try { gy = await readField(0x35, 'u16'); sy = await readField(0x36, 'u8'); } catch(e) {}
+    // Raw accelerometer. At rest one axis reads about +/-8000 (gravity) and the
+    // other two near zero - which axis it is tells you the mapping, and the sign
+    // tells you the orientation. Worth having visible: the wiki's axis names
+    // were already wrong once about which byte carries yaw.
+    let axv = null, ayv = null, azv = null;
+    try {
+      axv = await readField(0xa8, 'u16'); ayv = await readField(0xa9, 'u16'); azv = await readField(0xaa, 'u16');
+    } catch(e) {}
+    // Tilt steering, end to end: did the block run, what roll did it compute,
+    // and what did it add to the stick. If "add" is non-zero and the game does
+    // not move, the fault is past the dongle.
+    let tdeg = null, tadd = null, tran = null, tydeg = null, tyadd = null;
+    try {
+      tdeg = await readField(0xb0, 'u16'); tadd = await readField(0xb1, 'u16'); tran = await readField(0xb2, 'u8');
+      tydeg = await readField(0xb6, 'u16'); tyadd = await readField(0xb7, 'u16');
+    } catch(e) {}
     try { c01 = await readField(0x37, 'u16'); c23 = await readField(0x38, 'u16'); } catch(e) {}
     let ke = null;
     try { ke = await readField(0x3c, 'u8'); } catch(e) {}
     let rl = null, rr = null, rf = null;
     try { rl = await readField(0x3d, 'u8'); rr = await readField(0x3e, 'u8'); rf = await readField(0x3f, 'u8'); } catch(e) {}
+    // The touchpad-click (0x7b/0x7c) and macro-engine (0x88-0x8d) fields are no
+    // longer read here: they moved to the Macros tab and are fetched by
+    // readMacroDiag(), so this poll does not pay for reads the Device tab has
+    // nothing to show.
     // Battery (0x68), read from the DualSense input report. (The auto-haptics
     // meters 0x69-0x6b now live on the Haptics tab, read by readAhMeter().)
     let bat = null;
     try { bat = await readField(0x68, 'u8'); } catch(e) {}
-    // Factory-test battery voltage (0x92, mV; 0 = unknown).
+    // Factory-test battery voltage (0xe3, mV; 0 = unknown).
     let volt = null;
-    try { volt = await readField(0x92, 'u16'); } catch(e) {}
-    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat, volt};
-  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null, volt:null}; }
+    try { volt = await readField(0xe3, 'u16'); } catch(e) {}
+    return {br, ch, rssi, gy, sy, c01, c23, ke, rl, rr, rf, bat, volt, axv, ayv, azv, tdeg, tadd, tran, tydeg, tyadd};
+  } catch(e){ return {br:'err', ch:'err', rssi:null, gy:null, sy:null, c01:null, c23:null, ke:null, rl:null, rr:null, rf:null, bat:null, volt:null, axv:null, ayv:null, azv:null, tdeg:null, tadd:null, tran:null, tydeg:null, tyadd:null}; }
 }
 function rssiLabel(r){
   if (r === null || r === undefined) return t('无','n/a');
@@ -2737,6 +3084,26 @@ async function refreshDiag(){
       if (d.ke !== null && d.ke !== undefined)
         extra += `<br>${t('回推包络：','Push-back envelope: ')}${d.ke}/255  (${t('自适应扳机启用时必须随震动/枪声上升；踢击在 >=32 触发 — 如果震动时一直是 0，说明所选源没有产生信号','must rise with rumble/gunfire while AT-engaged; kick fires at >=32 - if this stays 0 during rumble, the selected source isn\'t producing signal')})`;
     }
+    // The macro-engine readout (suppress / inject / stick / keyboard state) and
+    // the touchpad-click diagnostics MOVED TO THE MACROS TAB, next to the rows
+    // they describe and beside the live test that corroborates them. Reading
+    // "hiding L3" here while the macro row sat on another tab meant holding the
+    // two halves of the diagnosis in your head; see macroLivePanelHTML().
+    if (d.tran !== null && d.tran !== undefined) {
+      const sg = v => (v > 32767 ? v - 65536 : v);
+      const st = d.tran === 1 ? 'running' : d.tran === 2 ? 'gravity reading rejected (shake or free fall)'
+                                          : 'NOT running \u2014 the setting is off, or was clamped away on save';
+      extra += `<br>Tilt steering: ${st}, roll ${sg(d.tdeg)}\u00b0, adding ${sg(d.tadd)} to the left stick` +
+               ` (roll should swing as you tilt the pad; if "adding" is non-zero and the car does not turn, the game is ignoring it)`;
+      if (d.tydeg !== null && d.tydeg !== undefined && (sg(d.tydeg) || sg(d.tyadd))) {
+        extra += `<br>Tilt lean: ${sg(d.tydeg)}\u00b0, adding ${sg(d.tyadd)} to the left stick's Y`;
+      }
+    }
+    if (d.axv !== null && d.axv !== undefined) {
+      const sgn = v => (v > 32767 ? v - 65536 : v);
+      extra += `<br>Accelerometer: X ${sgn(d.axv)}  Y ${sgn(d.ayv)}  Z ${sgn(d.azv)}` +
+               `  (at rest one axis sits near \u00b18000 \u2014 that is gravity, and it is what "player space" uses to work out which way is down)`;
+    }
     if (d.rl !== null && d.rl !== undefined) {
       const rq = [];
       if (d.rf & 1) rq.push(t('启用震动仿真','EnableRumbleEmulation'));
@@ -2754,7 +3121,7 @@ async function refreshDiag(){
       const pct = Math.min(lvl * 10, 100);
       const status = st === 1 ? t('充电中','charging') : st === 2 ? t('已充满','full') : st >= 0x0F ? t('电量异常','charge error') : t('未充电','on battery');
       const col = (st === 0 && pct <= 10) ? '#e0704a' : 'var(--fg,#ddd)';
-      // Factory-test battery voltage (mV) from field 0x92, when available.
+      // Factory-test battery voltage (mV) from field 0xe3, when available.
       let voltTxt = '';
       if (d.volt) {
         const v = d.volt;
@@ -2772,6 +3139,7 @@ setInterval(()=>{
     await readLoadedProfile();                              // every tab: keep the bar current
     if (document.getElementById('ahbox')) await readAhMeter();   // Haptics tab: live auto-haptics meter
     if (document.getElementById('diagbox')) await refreshDiag(); // Device tab only
+    if (document.getElementById('macrodiagout')) await readMacroDiag(); // Macros tab
     if (document.getElementById('abSignal')) await abPoll();     // browser audio bridge
     refreshStatus();                                          // zeroes inputRate every second
   });
@@ -2812,15 +3180,16 @@ function imuCardHTML(){ return `<div class="card"><div class="card-title">${t('�
 // Plots the voltage->percentage mapping: the fitted (auto-calibrated) curve in
 // green through the sampled anchors, the fixed Li-ion default in grey, and the
 // latest (voltage, level) observation as a white dot. Live while the device tab
-// is open. Fields: 0x96 = sample count, 0x97-0xA1 = anchors lvl 0..10 (u16 mV),
-// plus 0x92 = last voltage. Reset (0xA3) and persist-now (0xA2) are writes.
-const CALIB_KEYS = [[0x96,'cCount','u8'],
-  [0x97,'cv0','u16'],[0x98,'cv1','u16'],[0x99,'cv2','u16'],[0x9a,'cv3','u16'],
-  [0x9b,'cv4','u16'],[0x9c,'cv5','u16'],[0x9d,'cv6','u16'],[0x9e,'cv7','u16'],
-  [0x9f,'cv8','u16'],[0xa0,'cv9','u16'],[0xa1,'cv10','u16'],
-  [0xab,'cn0','u16'],[0xac,'cn1','u16'],[0xad,'cn2','u16'],[0xae,'cn3','u16'],
-  [0xaf,'cn4','u16'],[0xb0,'cn5','u16'],[0xb1,'cn6','u16'],[0xb2,'cn7','u16'],
-  [0xb3,'cn8','u16'],[0xb4,'cn9','u16'],[0xb5,'cn10','u16']];
+// is open. Fork field ids moved on the v1.40.0 merge: 0xE4 = sample count,
+// 0xCB-0xD5 = anchors lvl 0..10 (u16 mV), 0xD6-0xE0 = per-level counts,
+// 0xE3 = last voltage. Reset (0xE2) and persist-now (0xE1) are writes.
+const CALIB_KEYS = [[0xe4,'cCount','u8'],
+  [0xcb,'cv0','u16'],[0xcc,'cv1','u16'],[0xcd,'cv2','u16'],[0xce,'cv3','u16'],
+  [0xcf,'cv4','u16'],[0xd0,'cv5','u16'],[0xd1,'cv6','u16'],[0xd2,'cv7','u16'],
+  [0xd3,'cv8','u16'],[0xd4,'cv9','u16'],[0xd5,'cv10','u16'],
+  [0xd6,'cn0','u16'],[0xd7,'cn1','u16'],[0xd8,'cn2','u16'],[0xd9,'cn3','u16'],
+  [0xda,'cn4','u16'],[0xdb,'cn5','u16'],[0xdc,'cn6','u16'],[0xdd,'cn7','u16'],
+  [0xde,'cn8','u16'],[0xdf,'cn9','u16'],[0xe0,'cn10','u16']];
 // The built-in Li-ion default curve, mirroring ups_battery.cpp.
 const DEFAULT_VOLT_CURVE = [[3000,0],[3300,3],[3400,6],[3500,10],[3600,18],
   [3700,32],[3800,48],[3900,65],[4000,82],[4100,93],[4200,100]];
@@ -2936,9 +3305,9 @@ async function pollCalib(){
     const got = await bulkReadFields(CALIB_KEYS);
     if (!got) return;
     let volt = 0, fullCap = 0, autoCap = 0;
-    try { volt = await readField(0x92, 'u16'); } catch(_){}
-    try { fullCap = await readField(0xa6, 'u16'); } catch(_){}
-    try { autoCap = await readField(0xa7, 'u16'); } catch(_){}
+    try { volt = await readField(0xe3, 'u16'); } catch(_){}
+    try { fullCap = await readField(0xe5, 'u16'); } catch(_){}
+    try { autoCap = await readField(0xe6, 'u16'); } catch(_){}
     const bat = (lastInput && lastInput[52]) || 0;
     const lvl = (bat & 0x0F) <= 10 ? (bat & 0x0F) : null;
     _calibCache = { count: got.cCount, anchors: [got.cv0,got.cv1,got.cv2,got.cv3,got.cv4,got.cv5,got.cv6,got.cv7,got.cv8,got.cv9,got.cv10], counts: [got.cn0,got.cn1,got.cn2,got.cn3,got.cn4,got.cn5,got.cn6,got.cn7,got.cn8,got.cn9,got.cn10], volt, level: lvl, fullCap, autoCap };
@@ -2959,14 +3328,14 @@ setInterval(()=>{ if(!_calibBusy && !saving && !slotsBusy && device && device.op
 
 async function calibPersistNow(){
   try {
-    await writeFieldSafe(0xa2, 'u8', 1);
+    await writeFieldSafe(0xe1, 'u8', 1);
     toast(t('校准锚点已保存','Calibration anchors saved'));
   } catch(e){ toast('Save failed: ' + e.message, true); }
 }
 async function calibReset(){
   if (!confirm(t('确定要重置电量校准吗？所有已采样的电压锚点将被清除。','Reset battery calibration? All sampled voltage anchors will be cleared.'))) return;
   try {
-    await writeFieldSafe(0xa3, 'u8', 1);
+    await writeFieldSafe(0xe2, 'u8', 1);
     try { await sendCmd(0x02); } catch(e){ /* flash write may stall the USB briefly */ }
     _calibCache = null;
     toast(t('校准已重置','Calibration reset'));
@@ -2974,11 +3343,11 @@ async function calibReset(){
   } catch(e){ toast('Reset failed: ' + e.message, true); }
 }
 
-// Set the voltage sample rate (field 0x91, deciseconds) and persist it.
+// Set the voltage sample rate (field 0xc2, deciseconds) and persist it.
 async function calibRateSet(ds){
   const v = Math.max(1, Math.min(3000, parseInt(ds, 10) || 300));
   try {
-    await writeFieldSafe(0x91, 'u16', v);
+    await writeFieldSafe(0xc2, 'u16', v);
     try { await sendCmd(0x02); } catch(e){ /* flash write may stall USB briefly */ }
     config['battery_volt_poll_s'] = v;
     savedSnapshot = {...config};
@@ -3014,9 +3383,12 @@ function calibExportCsv(){
   toast(t('样本已导出','Samples exported'));
 }
 
-const IMU_KEYS = [[0x77,'gx','i16'],[0x78,'gy','i16'],[0x79,'gz','i16'],
-                  [0x7a,'ax','i16'],[0x7b,'ay','i16'],[0x7c,'az','i16'],
-                  [0x88,'sx','i16'],[0x89,'sy','i16']];
+// Fork IMU + stick diag fields moved to 0xE9-0xEE / 0xE7-0xE8 on the v1.40.0
+// merge (upstream took 0x77-0x7C for stick_mouse_curve / macro pad debug and
+// 0x88/0x89 for its macro suppress-mask readout).
+const IMU_KEYS = [[0xe9,'gx','i16'],[0xea,'gy','i16'],[0xeb,'gz','i16'],
+                  [0xec,'ax','i16'],[0xed,'ay','i16'],[0xee,'az','i16'],
+                  [0xe7,'sx','i16'],[0xe8,'sy','i16']];
 const imuHist = { gx:[],gy:[],gz:[],ax:[],ay:[],az:[],sx:[],sy:[] };
 const IMU_MAX_PTS = 300; // ~30 s of history at 10 Hz
 let _imuBusy = false;
@@ -3148,7 +3520,11 @@ const SECTION_TAB = {
   'Native Haptics Filter':'haptics',
   'Gyro Aiming':'gyro',
   'Right Stick':'gyro',
+  'Stick to Mouse':'gyro',
   'Device & Connection':'device',
+  'Battery Notification':'device',
+  'Touchpad as Mouse':'device',
+  'Tilt Steering (experimental)':'device',
   'Advanced — BT Latency (experimental)':'device',
   'Macros':'macros',
 };
@@ -3480,6 +3856,10 @@ const MACRO_OFF_MOTION = 12, MACRO_OFF_MOTION_LEN = 14, MACRO_OFF_MOTION_STEP = 
 // the deflection a stick direction needs. Entry offsets 17 and 18.
 const MACRO_OFF_OUT_BTN = 17, MACRO_OFF_STICK_THRESH = 18;
 const MACRO_FLAG_LONG_PRESS = 0x01, MACRO_FLAG_HOLD = 0x02, MACRO_FLAG_REPLACE = 0x04;
+// Bit 3, mirroring MACRO_FLAG_STICK_ALWAYS in src/macro.h. Stick rows only.
+const MACRO_FLAG_STICK_ALWAYS = 0x08;
+// Bit 4, mirroring MACRO_FLAG_DOUBLE in src/macro.h.
+const MACRO_FLAG_DOUBLE = 0x10;
 const GEST_STICK = 0x20, GEST_STICK_RIGHT = 0x40;
 // Index IS the T2Button value, so order and position are load-bearing.
 // L2/R2 carry analog travel when a trigger drives them - see macro_analog_out().
@@ -3495,7 +3875,13 @@ function outBtnFromMask(mask){
 }
 
 const MACRO_OUT_BTNS = ['Keyboard','Cross','Circle','Square','Triangle','L1','R1','L3','R3','L2','R2',
-                        'Left click','Right click','Middle click','Scroll up','Scroll down'];
+                        'Left click','Right click','Middle click','Scroll up','Scroll down',
+                        // 16+ : controller buttons appended after the mouse block, matching
+                        // the T2BTN_* enum in src/config.h. They start at 16 rather than
+                        // continuing from 11 because 11-15 are already the mouse outputs in
+                        // every saved macro.
+                        'Create','Options','Touchpad click',
+                        'D-pad Up','D-pad Down','D-pad Left','D-pad Right'];
 // Index 11+ are MOUSE actions, matching MOUT_* in src/macro.h. The split is by
 // value range so the firmware's controller loop never sees them.
 const MOUT_FIRST = 11, MOUT_LAST = 15;
@@ -3528,6 +3914,17 @@ const BTN = [
   ['PS',         1<<16, 'PS'],
   ['TOUCHPAD',   1<<17, 'Touchpad click'],
   ['MUTE',       1<<18, 'Mute'],
+  // DualSense Edge only. Sony's app owns Fn + a FACE button for its on-board
+  // profile switching, so Fn + D-pad is the combination worth building on.
+  ['LEFT_FN',   1<<19, 'Fn (left)'],
+  ['RIGHT_FN',  1<<20, 'Fn (right)'],
+  ['LEFT_PAD',  1<<21, 'Left paddle'],
+  ['RIGHT_PAD', 1<<22, 'Right paddle'],
+  // Touchpad click qualified by half. TOUCHPAD is still set on every click, so
+  // an older chord keeps matching either side; a chord naming a half only
+  // matches that half and wins over the generic one (longest chord wins).
+  ['PAD_CLICK_LEFT',  1<<23, 'Touchpad click (left)'],
+  ['PAD_CLICK_RIGHT', 1<<24, 'Touchpad click (right)'],
 ];
 // Hat value -> direction bits. THE D-PAD IS AN ENUM, NOT A BITMASK: "Up" is hat
 // value 0, indistinguishable from "no button", and the idle value 8 would read
@@ -3547,8 +3944,35 @@ function macroButtonMask(d){
   if (b2 & 0x01) m |= 1<<16;
   if (b2 & 0x02) m |= 1<<17;
   if (b2 & 0x04) m |= 1<<18;
+  // Edge-only bits 4-7 of byte 9. button_mask() in src/input_buttons.h decodes
+  // these and the BTN table lists them, but this decoder stopped at bit 18 - so
+  // the firmware could MATCH an Fn/paddle chord that recording could never
+  // CAPTURE. A standard DualSense leaves them clear, so decoding is
+  // unconditional here exactly as it is in the header.
+  if (b2 & 0x10) m |= 1<<19;   // Fn (left)
+  if (b2 & 0x20) m |= 1<<20;   // Fn (right)
+  if (b2 & 0x40) m |= 1<<21;   // Left paddle
+  if (b2 & 0x80) m |= 1<<22;   // Right paddle
+  // The touchpad-click HALF is NOT decided here. The firmware takes it from
+  // where the finger LANDED (see macro.cpp), because the position while the
+  // pad is being pressed is unreliable - the contact patch spreads and its
+  // centre moves. Deriving it here from the current report would let recording
+  // capture the opposite half from the one the firmware matches, so the macro
+  // would never fire. macroPadHalf() below supplies it from the touch-down
+  // position the recorder already tracks.
   return m >>> 0;
 }
+// Which half a click belongs to, from where the finger LANDED - the same rule
+// and the same neutral band as pad_half_from_touch() in src/macro.cpp. Keep the
+// two in step: if they disagree, a recorded chord will not match at play time.
+function macroPadHalf(x0){
+  if (x0 === undefined || x0 === null) return 0;
+  const HALF = Math.floor(TOUCH_X_MAX / 2), BAND = Math.floor(TOUCH_X_MAX / 12);
+  if (x0 > HALF + BAND) return 1<<24;
+  if (x0 < HALF - BAND) return 1<<23;
+  return 0;                      // centre band: unqualified, as the firmware does
+}
+
 function macroChordName(mask){
   if (!mask) return '';
   return BTN.filter(b => (mask & b[1])).map(b => b[2]).join(' + ');
@@ -3811,15 +4235,26 @@ function macroKeyOptions(){
 }
 
 window._macroPick = window._macroPick || null;   // {row, mods:[usage], key:usage}
+window._macroPickIn = window._macroPickIn || null; // {row, mask} manual trigger chord
 
 // The Pick panel for a CONTROLLER output: the same eleven choices the dropdown
 // carried, but reached the same way as the keyboard picker so a row asks its
 // question once.
-function macroPickBtnHTML(i, m){ return macroPickOutHTML(i, m, 1, MOUT_FIRST - 1, 'Which controller button should this macro send?'); }
-function macroPickOutHTML(i, m, lo, hi, prompt){
+// Controller outputs are NOT one contiguous range any more: 1-10 are the
+// originals, 11-15 are the mouse block, and 16+ are the buttons appended after
+// it. Pass an explicit list rather than a lo/hi span, or the new ones are
+// unreachable and the mouse actions appear in the controller picker.
+function macroOutBtnValues(){
+  const v = [];
+  for (let k = 1; k < MOUT_FIRST; k++) v.push(k);
+  for (let k = MOUT_LAST + 1; k < MACRO_OUT_BTNS.length; k++) v.push(k);
+  return v;
+}
+function macroPickBtnHTML(i, m){ return macroPickOutHTML(i, m, macroOutBtnValues(), 'Which controller button should this macro send?'); }
+function macroPickOutHTML(i, m, values, prompt){
   let h = '<div style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin:6px 0">';
   h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' + prompt + '</div>';
-  for (let k = lo; k <= hi; k++){
+  for (const k of values){
     const on = (m.out_btn|0) === k;
     h += '<button class="btn' + (on ? '' : ' btn-outline') + '" style="padding:2px 8px;margin:0 4px 4px 0;font-size:12px" ' +
          'onclick="macroSetOutBtn(' + i + ', ' + k + ');macroPickClose()">' + MACRO_OUT_BTNS[k] + '</button>';
@@ -3829,6 +4264,59 @@ function macroPickOutHTML(i, m, lo, hi, prompt){
   return h;
 }
 function macroPickClose(){ window._macroPick = null; macroRender(); }
+
+// ---- manual INPUT chord picker --------------------------------------------
+// Recording is still the fast path, but some triggers cannot be recorded
+// reliably: the Edge Fn buttons and paddles only report when the controller is
+// not already consuming them (see the README), and a chord built on them may be
+// easier to tick than to hold. This writes the same chord bits recording would.
+function macroPickInOpen(i){
+  const rows = window._macroRows || [];
+  const m = rows[i]; if (!m) return;
+  window._macroPickIn = { row: i, mask: (m.gesture ? 0 : (m.chord >>> 0)) };
+  macroRender();
+}
+function macroPickInClose(){ window._macroPickIn = null; macroRender(); }
+function macroPickInToggle(bit, on){
+  const p = window._macroPickIn; if (!p) return;
+  p.mask = on ? ((p.mask | bit) >>> 0) : ((p.mask & ~bit) >>> 0);
+  // One press cannot be both "either half" and "this half", so the generic
+  // touchpad click and the two qualified ones are mutually exclusive here.
+  const PAD = 1<<17, L = 1<<23, R = 1<<24;
+  if (on && (bit === L || bit === R)) p.mask &= ~(PAD | (bit === L ? R : L));
+  if (on && bit === PAD)              p.mask &= ~(L | R);
+  p.mask = p.mask >>> 0;
+  macroRender();
+}
+function macroPickInApply(){
+  const p = window._macroPickIn; if (!p) return;
+  const rows = window._macroRows || [];
+  const m = rows[p.row]; if (!m) { macroPickInClose(); return; }
+  m.chord = p.mask >>> 0;
+  if (m.chord) m.gesture = 0;      // a chord and a gesture are alternatives
+  // macroDirty() never existed - this threw here, so Apply appeared to do
+  // nothing and the panel stayed open. The change had already been written to
+  // the row, which is why pressing Cancel afterwards revealed it: Cancel closed
+  // the panel and the re-render showed the new chord. Follow the same pattern
+  // the keyboard picker uses: clear the picker state, then re-render.
+  window._macroPickIn = null;
+  macroRender();
+}
+function macroPickInHTML(i){
+  const p = window._macroPickIn;
+  let h = '<div style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin:6px 0">';
+  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">Tick the buttons this macro should trigger on. Fn and paddle bits are DualSense Edge only, and only report when the controller is not already using them.</div>';
+  for (const b of BTN){
+    const on = (p.mask & b[1]) !== 0;
+    h += '<button class="btn' + (on ? '' : ' btn-outline') + '" style="padding:2px 8px;margin:0 4px 4px 0;font-size:12px" ' +
+         'onclick="macroPickInToggle(' + b[1] + ', ' + (on ? 'false' : 'true') + ')">' + b[2] + '</button>';
+  }
+  h += '<div style="margin-top:4px;font-size:12px;color:var(--sub)">Chord: ' + (macroChordName(p.mask) || 'none') + '</div>';
+  h += '<div style="margin-top:4px"><button class="btn" style="padding:2px 10px;font-size:12px" onclick="macroPickInApply()">Apply</button>' +
+       ' <button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickInClose()">Cancel</button></div>';
+  h += '</div>';
+  return h;
+}
 
 function macroPickOpen(i){
   const rows = window._macroRows || [];
@@ -4395,21 +4883,36 @@ async function macroRecordStop(){
   if (st.which === 0){
     try { device.removeEventListener('inputreport', macroOnInputReport); } catch(e){}
     await macroSuspendFiring(false);
-    // A swipe wins only when no real buttons were held. The touchpad CLICK is a
-    // button, so a pressed swipe would otherwise register as both.
-    const chordNoPad = (st.peak >>> 0) & ~(1<<17);
-    if (st.gesture && !chordNoPad){
+    // A swipe wins only when NOTHING was held - including the touchpad click,
+    // which is a button in its own right. The pad bit used to be stripped from
+    // the committed chord as well as from this test, so a touchpad click could
+    // never be recorded as a trigger: click-with-no-movement produced no
+    // gesture and an empty chord, i.e. nothing at all. Keep the bit in the
+    // chord; only the swipe-versus-chord decision ignores it.
+    // A qualified click sets three bits (TOUCHPAD + the half), which changes
+    // nothing here: any of them means something was held, so a swipe still
+    // loses to a press, and a plain swipe still sets none of them.
+    let held = (st.peak >>> 0);
+    // Qualify a recorded touchpad click from the finger-down position, matching
+    // the firmware. st.tX0 is the landing point the touch tracking above keeps.
+    if (held & (1<<17)) held |= macroPadHalf(st.tX0);
+    // Record the HALF alone, not "click + left". The firmware still reports the
+    // generic bit on every click, so a chord naming only the half matches (and
+    // outranks a generic binding); carrying both bits would just be a chord
+    // that reads like two buttons for one press.
+    if (held & ((1<<23) | (1<<24))) held &= ~(1<<17);
+    if (st.gesture && !held){
       m.gesture = st.gesture & 0xff;
       m.chord = 0;
       m.flags &= ~1;          // a swipe has no release, so it can only pulse
       m.hold_cs = 0;
     } else if (st.peak){
-      m.chord = chordNoPad >>> 0;
+      m.chord = held >>> 0;
       m.gesture = 0;
       // The hold you performed sets the mode: a tap records short, a hold
       // records long with the duration you actually held.
-      const held = (st.upAt && st.peakAt) ? (st.upAt - st.peakAt) : 0;
-      if (held >= 400){ m.flags |= 1; m.hold_cs = Math.min(255, Math.round(held/10)); }
+      const heldMs = (st.upAt && st.peakAt) ? (st.upAt - st.peakAt) : 0;
+      if (heldMs >= 400){ m.flags |= 1; m.hold_cs = Math.min(255, Math.round(heldMs/10)); }
       else { m.flags &= ~1; m.hold_cs = 0; }
     }
   } else {
@@ -4574,6 +5077,384 @@ function macroMotionImportPick(){
 // The prototype block. Deliberately SELF-CONTAINED and below the macro table:
 // the table above is hardware-verified and this must not be able to regress it.
 // If motion never ships, this block is what gets deleted.
+// ===== Live controller test (tier 1 prototype) + macro engine diagnostics =====
+// TWO HALVES OF ONE QUESTION, deliberately in one panel.
+//
+//  - The TESTER is push: the portal opens the same gamepad interface the GAME
+//    reads, so an 'inputreport' is the report AFTER the firmware has rewritten
+//    it - after macro suppression, injection and stick centring. It therefore
+//    shows what the game receives, not what the pad did. No bus traffic: it is
+//    a passive listener, unlike the 1 Hz polls, so it cannot collide with
+//    readAll on the shared 0x81 buffer.
+//  - The DIAGNOSTIC is polled from the firmware and says what the macro engine
+//    BELIEVES it is hiding and sending this tick.
+//
+// Read together they bracket a fault: engine says "hiding L3" while the tester
+// still lights L3 = the rewrite never reached the report (the 1.32.8 defect).
+// Engine says "hiding nothing" = the rule never fired, which is a row problem.
+// That is why these belong side by side rather than one tab apart.
+const LIVE_FPS_MS = 33;             // ~30 fps: reports arrive at 250-1000 Hz and
+                                    // redrawing per report would fight the UI.
+// Byte offsets mirror src/input_buttons.h (RPT_L2_AXIS / RPT_R2_AXIS). Sticks
+// occupy 0-3 ahead of them. Keep in step with the header.
+const RPT_L2_AXIS_JS = 4, RPT_R2_AXIS_JS = 5;
+function macroLiveReport(ev){
+  const st = window._macroLive; if (!st) return;
+  const d = ev.data; if (!d || d.byteLength < 10) return;
+  // Decode only. NO DOM work here and no macroRender() - this runs up to 1000
+  // times a second; the rAF writer below owns the drawing.
+  st.mask = macroButtonMask(d);
+  st.lx = d.getUint8(0); st.ly = d.getUint8(1);
+  st.rx = d.getUint8(2); st.ry = d.getUint8(3);
+  st.l2 = d.getUint8(RPT_L2_AXIS_JS); st.r2 = d.getUint8(RPT_R2_AXIS_JS);
+  const f1 = macroTouchPoint(d, 0), f2 = macroTouchPoint(d, 1);
+  st.f1 = f1; st.f2 = f2;
+  if (f1 && f1.down && !st.tDown){ st.tDown = true; st.landX = f1.x; }
+  else if (f1 && !f1.down) st.tDown = false;
+  // THE HALF BITS ARE NOT IN THE REPORT. The pad is one physical switch: the
+  // controller sets the generic click bit and nothing else, and 23/24 are
+  // synthesised inside the firmware (apply_pad_half in macro.cpp) from where the
+  // finger LANDED. macroButtonMask() therefore cannot produce them and a click
+  // on either side reads as a plain "Touchpad click".
+  //
+  // The tester derives them the same way the firmware does, and LATCHES the
+  // half for the whole press exactly as apply_pad_half does - re-deriving per
+  // report would let a finger drifting across the middle flip the half
+  // mid-press, which is the 1.30.2 bug. Gated on a finger being present, so a
+  // knuckle or pad-edge click stays unqualified rather than reusing a stale
+  // landing.
+  if (st.mask & (1<<17)){
+    if (!st.half) st.half = (st.tDown ? macroPadHalf(st.landX) : 0);
+    st.mask |= st.half;
+  } else st.half = 0;
+  st.seen = (st.seen | st.mask) >>> 0;
+  st.n++;
+  const now = performance.now();
+  if (now - st.rateAt >= 1000){ st.rate = Math.round(st.n * 1000 / (now - st.rateAt)); st.n = 0; st.rateAt = now; }
+}
+// ===== Tier 2: the visual pad =====
+// Built ONCE as static SVG with ids, then updated per frame by touching a
+// handful of attributes. Rebuilding the markup at 30 fps would churn the DOM
+// for no reason, and innerHTML on every frame makes text selection impossible.
+// macroRender() destroys the box often (a recording status update redraws it
+// several times a second), so the tick checks isConnected and re-injects.
+const LP_COL_OFF = '#2a2f36', LP_COL_ON = '#4caf50', LP_COL_EDGE = '#a070d0';
+// Where each button bit is drawn. [bit, shape, x, y, w/r, h, label]
+// 'r' = rect, 'c' = circle, 'p' = pill with a label.
+const LP_SHAPES = [
+  [1<<0,  'r', 62,  74,  16, 16, ''],      // D-pad up
+  [1<<1,  'r', 62,  110, 16, 16, ''],      // down
+  [1<<2,  'r', 44,  92,  16, 16, ''],      // left
+  [1<<3,  'r', 80,  92,  16, 16, ''],      // right
+  [1<<4,  'c', 340, 100, 11, 0,  '□'],     // Square
+  [1<<5,  'c', 362, 122, 11, 0,  '✕'],     // Cross
+  [1<<6,  'c', 384, 100, 11, 0,  '○'],     // Circle
+  [1<<7,  'c', 362, 78,  11, 0,  '△'],     // Triangle
+  [1<<8,  'p', 40,  16,  38, 16, 'L1'],
+  [1<<9,  'p', 342, 16,  38, 16, 'R1'],
+  [1<<12, 'p', 100, 96,  46, 16, 'Create'],
+  [1<<13, 'p', 272, 96,  50, 16, 'Options'],
+  [1<<16, 'p', 190, 150, 30, 16, 'PS'],
+  [1<<18, 'p', 226, 150, 40, 16, 'Mute'],
+  [1<<19, 'p', 26,  224, 44, 15, 'Fn L'],
+  [1<<20, 'p', 350, 224, 44, 15, 'Fn R'],
+  [1<<21, 'p', 76,  224, 58, 15, 'Paddle L'],
+  [1<<22, 'p', 286, 224, 58, 15, 'Paddle R'],
+];
+function macroLivePadSVG(){
+  const g = (id, body) => '<g id="' + id + '">' + body + '</g>';
+  let s = '<svg id="lp_svg" viewBox="0 0 420 246" style="width:100%;max-width:460px;height:auto">';
+  // triggers
+  s += '<rect x="40" y="36" width="120" height="14" rx="3" fill="#222"/>' +
+       '<rect id="lp_l2bar" x="40" y="36" width="0" height="14" rx="3" fill="#4a90d9"/>' +
+       '<line id="lp_l2t2" x1="40" y1="34" x2="40" y2="52" stroke="#e0a030" stroke-width="2" visibility="hidden"/>' +
+       '<text x="40" y="66" font-size="10" fill="#8b9197">L2</text>' +
+       '<text id="lp_l2txt" x="160" y="66" font-size="10" fill="#8b9197" text-anchor="end">0</text>';
+  s += '<rect x="260" y="36" width="120" height="14" rx="3" fill="#222"/>' +
+       '<rect id="lp_r2bar" x="260" y="36" width="0" height="14" rx="3" fill="#4a90d9"/>' +
+       '<line id="lp_r2t2" x1="260" y1="34" x2="260" y2="52" stroke="#e0a030" stroke-width="2" visibility="hidden"/>' +
+       '<text x="260" y="66" font-size="10" fill="#8b9197">R2</text>' +
+       '<text id="lp_r2txt" x="380" y="66" font-size="10" fill="#8b9197" text-anchor="end">0</text>';
+  // touchpad, with the neutral band drawn so an ambiguous click is visibly
+  // ambiguous rather than a surprise
+  s += '<rect x="150" y="74" width="120" height="62" rx="5" fill="#1a1e23" stroke="#3a3f45"/>' +
+       '<rect id="lp_padL" x="150" y="74" width="49" height="62" fill="#4caf50" opacity="0"/>' +
+       '<rect id="lp_padR" x="221" y="74" width="49" height="62" fill="#4caf50" opacity="0"/>' +
+       '<rect x="199" y="74" width="22" height="62" fill="#8b9197" opacity="0.12"/>' +
+       '<line x1="210" y1="74" x2="210" y2="136" stroke="#3a3f45" stroke-dasharray="3 3"/>' +
+       '<circle id="lp_touch" cx="210" cy="105" r="4" fill="#e0a030" visibility="hidden"/>' +
+       '<circle id="lp_land" cx="210" cy="105" r="6" fill="none" stroke="#e0a030" stroke-dasharray="2 2" visibility="hidden"/>';
+  // sticks: outer body, threshold ring, live dot
+  for (const [id, cx] of [['l', 110], ['r', 310]]){
+    s += '<circle cx="' + cx + '" cy="176" r="34" fill="#1a1e23" stroke="#3a3f45"/>' +
+         '<circle id="lp_' + id + 'sring" cx="' + cx + '" cy="176" r="16" fill="none" stroke="#8b9197" stroke-dasharray="2 3" opacity="0.7"/>' +
+         '<circle id="lp_' + id + 'sbody" cx="' + cx + '" cy="176" r="34" fill="none" stroke="' + LP_COL_OFF + '" stroke-width="3"/>' +
+         '<circle id="lp_' + id + 'sdot" cx="' + cx + '" cy="176" r="6" fill="#4a90d9"/>';
+  }
+  s += '<text x="110" y="221" font-size="9" fill="#8b9197" text-anchor="middle">L stick</text>';
+  s += '<text x="310" y="221" font-size="9" fill="#8b9197" text-anchor="middle">R stick</text>';
+  // everything driven purely by a button bit
+  for (const [bit, kind, x, y, a, b, label] of LP_SHAPES){
+    const id = 'lp_b' + bit;
+    if (kind === 'r')
+      s += '<rect id="' + id + '" x="' + x + '" y="' + y + '" width="' + a + '" height="' + b + '" rx="2" fill="' + LP_COL_OFF + '"/>';
+    else if (kind === 'c')
+      s += g(id + '_g', '<circle id="' + id + '" cx="' + x + '" cy="' + y + '" r="' + a + '" fill="' + LP_COL_OFF + '"/>' +
+              '<text x="' + x + '" y="' + (y + 4) + '" font-size="11" fill="#cfd4da" text-anchor="middle">' + label + '</text>');
+    else
+      s += g(id + '_g', '<rect id="' + id + '" x="' + x + '" y="' + y + '" width="' + a + '" height="' + b + '" rx="7" fill="' + LP_COL_OFF + '"/>' +
+              '<text x="' + (x + a/2) + '" y="' + (y + b - 4) + '" font-size="10" fill="#cfd4da" text-anchor="middle">' + label + '</text>');
+  }
+  s += '</svg>';
+  return s;
+}
+// The macro stick threshold, in report counts, for the ring. A stick row with
+// its own value wins; otherwise the firmware default (macro.h
+// MACRO_STICK_THRESH = 48 of 127). Drawing it is what turns "why is my stick
+// leaking through" into something you can see: inside the ring the row has not
+// engaged, so REPLACE is not centring the stick.
+const LP_STICK_THRESH_DEFAULT = 48;
+function macroLiveThresh(right){
+  const rows = window._macroRows || [];
+  for (const m of rows){
+    if (!m || !m.present) continue;
+    if (!(m.gesture & GEST_STICK)) continue;
+    if (!!(m.gesture & GEST_STICK_RIGHT) !== right) continue;
+    return m.stick_thresh || LP_STICK_THRESH_DEFAULT;
+  }
+  return LP_STICK_THRESH_DEFAULT;
+}
+function macroLivePadUpdate(st){
+  const $ = id => document.getElementById(id);
+  for (const [bit] of LP_SHAPES){
+    const el = $('lp_b' + bit); if (!el) continue;
+    const on = (st.mask & bit) !== 0;
+    el.setAttribute('fill', on ? (bit >= (1<<19) ? LP_COL_EDGE : LP_COL_ON) : LP_COL_OFF);
+  }
+  // triggers: bar plus the two-stage boundary, so the wall you feel and the
+  // boundary that fires the second stage can be lined up.
+  for (const [id, v, posKey, modeKey, x0] of
+       [['l2', st.l2, 't2_l2_pos', 't2_l2_mode', 40], ['r2', st.r2, 't2_pos', 't2_mode', 260]]){
+    const bar = $('lp_' + id + 'bar'), txt = $('lp_' + id + 'txt'), t2 = $('lp_' + id + 't2');
+    if (bar) bar.setAttribute('width', String((v / 255) * 120));
+    if (txt) txt.textContent = String(v);
+    if (t2){
+      const pos = +config[posKey] || 0, mode = +config[modeKey] || 0;
+      if (pos > 0 && mode > 0){
+        const x = x0 + (pos / 255) * 120;
+        t2.setAttribute('x1', String(x)); t2.setAttribute('x2', String(x));
+        t2.setAttribute('visibility', 'visible');
+      } else t2.setAttribute('visibility', 'hidden');
+    }
+  }
+  // sticks
+  for (const [id, cx, xv, yv, clickBit, right] of
+       [['l', 110, st.lx, st.ly, 1<<14, false], ['r', 310, st.rx, st.ry, 1<<15, true]]){
+    const dot = $('lp_' + id + 'sdot'), body = $('lp_' + id + 'sbody'), ring = $('lp_' + id + 'sring');
+    if (dot){
+      dot.setAttribute('cx', String(cx + ((xv - 128) / 128) * 28));
+      dot.setAttribute('cy', String(176 + ((yv - 128) / 128) * 28));
+      // Green once past the threshold: that is the moment a stick row engages
+      // and, with Replace, the moment the stick is centred for the game.
+      const th = macroLiveThresh(right);
+      const past = Math.abs(xv - 128) >= th || Math.abs(yv - 128) >= th;
+      dot.setAttribute('fill', past ? LP_COL_ON : '#4a90d9');
+    }
+    if (ring) ring.setAttribute('r', String((macroLiveThresh(right) / 128) * 28));
+    if (body) body.setAttribute('stroke', (st.mask & clickBit) ? LP_COL_ON : LP_COL_OFF);
+  }
+  // touchpad: live finger, plus where the last press LANDED - which is what
+  // decides the half, not where the finger is while pressing.
+  const touch = $('lp_touch'), land = $('lp_land');
+  if (touch){
+    if (st.f1 && st.f1.down){
+      touch.setAttribute('cx', String(150 + (st.f1.x / 1919) * 120));
+      touch.setAttribute('cy', String(74 + (st.f1.y / 1079) * 62));
+      touch.setAttribute('visibility', 'visible');
+    } else touch.setAttribute('visibility', 'hidden');
+  }
+  if (land){
+    if (st.landX === undefined) land.setAttribute('visibility', 'hidden');
+    else {
+      land.setAttribute('cx', String(150 + (st.landX / 1919) * 120));
+      land.setAttribute('visibility', 'visible');
+    }
+  }
+  const pl = $('lp_padL'), pr = $('lp_padR');
+  if (pl) pl.setAttribute('opacity', (st.mask & (1<<23)) ? '0.35' : '0');
+  if (pr) pr.setAttribute('opacity', (st.mask & (1<<24)) ? '0.35' : '0');
+}
+function macroLiveBar(v, c){
+  return '<span style="display:inline-block;width:90px;height:8px;background:#222;border-radius:3px;vertical-align:middle;overflow:hidden">' +
+         '<span style="display:block;width:' + Math.round((v/255)*100) + '%;height:100%;background:' + c + '"></span></span>';
+}
+function macroLiveHTML(){
+  const st = window._macroLive;
+  if (!st) return '<span style="color:var(--sub)">Not running.</span>';
+  if (!st.rate && !st.n) return '<span style="color:var(--sub)">Waiting for the first report — press a button or move a stick.</span>';
+  const half = macroPadHalf(st.landX);
+  const halfTxt = half === (1<<23) ? 'LEFT' : half === (1<<24) ? 'RIGHT' : 'unqualified (centre band)';
+  const st2 = (v) => (v - 128);
+  let h = '<div style="font-family:ui-monospace,monospace;font-size:12px;line-height:1.7">';
+  h += 'Held now: <b>' + (macroChordName(st.mask) || '<span style="color:var(--sub)">nothing</span>') + '</b>' +
+       ' <span style="color:var(--sub)">(mask 0x' + st.mask.toString(16) + ')</span><br>';
+  h += 'Seen since start: ' + (macroChordName(st.seen) || '<span style="color:var(--sub)">nothing yet</span>') +
+       '<br>';
+  h += 'Sticks: L ' + st2(st.lx) + ',' + st2(st.ly) + '  R ' + st2(st.rx) + ',' + st2(st.ry) + '<br>';
+  h += 'L2 ' + macroLiveBar(st.l2, '#4a90d9') + ' ' + st.l2 +
+       '   R2 ' + macroLiveBar(st.r2, '#4a90d9') + ' ' + st.r2 + '<br>';
+  if (st.f1) h += 'Touch: ' + (st.f1.down ? ('x=' + st.f1.x + ' y=' + st.f1.y) : 'no finger') +
+                  (st.f2 && st.f2.down ? '  (two fingers)' : '') +
+                  '  last landing x=' + (st.landX === undefined ? '—' : st.landX) +
+                  ' → <b>' + halfTxt + '</b>' +
+                  ' <span style="color:var(--sub)">(derived — the pad is one switch, so the half is worked out ' +
+                  'from the landing exactly as the firmware does; it is never in the report)</span><br>';
+  h += 'Report rate: <b>' + (st.rate || '…') + '</b>/s';
+  h += '</div>';
+  return h;
+}
+function macroLiveTick(){
+  const st = window._macroLive; if (!st) return;
+  const now = performance.now();
+  if (now - st.drawAt >= LIVE_FPS_MS){
+    st.drawAt = now;
+    // Look the element up every frame rather than caching it: macroRender()
+    // rebuilds the whole box (a recording status update does it several times a
+    // second), so a cached node goes stale. Missing element = draw nothing and
+    // keep looping, which self-heals on the next render.
+    const host = document.getElementById('macrolivepad');
+    if (host){
+      // The SVG is static markup built once; only attributes change per frame.
+      // isConnected catches the case where macroRender() replaced the box
+      // underneath us, so the pad is re-injected rather than updated into a
+      // detached node.
+      if (!st.svg || !st.svg.isConnected){
+        host.innerHTML = macroLivePadSVG();
+        st.svg = document.getElementById('lp_svg');
+      }
+      if (st.svg) macroLivePadUpdate(st);
+    }
+    const el = document.getElementById('macroliveout');
+    if (el) el.innerHTML = macroLiveHTML();
+  }
+  st.raf = requestAnimationFrame(macroLiveTick);
+}
+function macroLiveToggle(){
+  if (window._macroLive){
+    try { device.removeEventListener('inputreport', macroLiveReport); } catch(e){}
+    try { cancelAnimationFrame(window._macroLive.raf); } catch(e){}
+    window._macroLive = null;
+  } else {
+    if (!device) return;
+    window._macroLive = { mask:0, seen:0, half:0, lx:128, ly:128, rx:128, ry:128, l2:0, r2:0,
+                          f1:null, f2:null, tDown:false, landX:undefined,
+                          n:0, rate:0, rateAt:performance.now(), drawAt:0, raf:0, svg:null };
+    try { device.addEventListener('inputreport', macroLiveReport); } catch(e){}
+    window._macroLive.raf = requestAnimationFrame(macroLiveTick);
+  }
+  macroRender();
+}
+// Polled half. Reads ONLY the macro-engine fields - the touchpad-click
+// diagnostics (0x7b/0x7c) and the suppress/inject/stick/keyboard state
+// (0x88-0x8d). These used to sit in readDiag() on the Device tab, one tab away
+// from the macro rows they describe.
+async function readMacroDiag(){
+  if (saving || !device || !device.opened) return;
+  let padx = null, padinfo = null, supLo = null, supHi = null, injLo = null, injHi = null,
+      stickSup = null, kbOut = null;
+  try { padx = await readField(0x7b, 'u16'); padinfo = await readField(0x7c, 'u8'); } catch(e) {}
+  try {
+    supLo = await readField(0x88, 'u16'); supHi = await readField(0x89, 'u16');
+    injLo = await readField(0x8a, 'u16'); injHi = await readField(0x8b, 'u16');
+  } catch(e) {}
+  try { stickSup = await readField(0x8c, 'u8'); } catch(e) {}
+  try { kbOut = await readField(0x8d, 'u16'); } catch(e) {}
+  const el = document.getElementById('macrodiagout');
+  if (el) el.innerHTML = macroDiagHTML({padx, padinfo, supLo, supHi, injLo, injHi, stickSup, kbOut});
+}
+function macroDiagHTML(d){
+  if (d.supLo === null || d.supLo === undefined)
+    return '<span style="color:var(--sub)">Connect to see what the macro engine is doing.</span>';
+  const sup = ((d.supHi << 16) >>> 0) | d.supLo;
+  const inj = ((d.injHi << 16) >>> 0) | d.injLo;
+  // g_inject is NOT a chord mask. Suppression uses the logical button bits, so
+  // macroChordName() reads it correctly - but injection is built as
+  // 1 << (out_btn - 1), indexed by the OUTPUT enum, which is the same ordering
+  // as MACRO_OUT_BTNS. Decoding it with the chord table named every button
+  // wrongly: Triangle (output 4) sets bit 3, which the chord table calls D-pad
+  // right. Two masks that look alike and mean different things.
+  const injNames = m => {
+    const out = [];
+    for (let b = 0; b < 32; b++) {
+      if (!(m & (1 << b))) continue;
+      const v = b + 1;
+      out.push(MACRO_OUT_BTNS[v] || ('output ' + v));
+    }
+    return out.join(' + ');
+  };
+  const names = m => macroChordName(m) || 'none';
+  // A stick macro hides its stick through separate flags, not the button mask,
+  // so both have to be reported or a working stick remap reads as "nothing
+  // hidden".
+  const hid = [];
+  if (sup) hid.push(names(sup));
+  if (d.stickSup & 1) hid.push('left stick');
+  if (d.stickSup & 2) hid.push('right stick');
+  // Three separate output paths and only one is the inject mask: controller
+  // buttons go into the report, keys out on the keyboard interface, mouse
+  // actions on the mouse interface.
+  const nKeys = (d.kbOut || 0) & 0x0F;
+  const mBtns = ((d.kbOut || 0) >> 4) & 0x0F;
+  const key1  = ((d.kbOut || 0) >> 8) & 0xFF;
+  const out = [];
+  if (inj) out.push('buttons: ' + (injNames(inj) || inj));
+  if (nKeys) out.push(nKeys + ' key' + (nKeys > 1 ? 's' : '') + ' held' + (key1 ? ' (first usage 0x' + key1.toString(16) + ')' : ''));
+  if (mBtns) out.push('mouse buttons 0x' + mBtns.toString(16));
+  let h = 'Hiding <b>' + (hid.length ? hid.join(' + ') : 'nothing') + '</b>, sending <b>' +
+          (out.length ? out.join(', ') : 'nothing') + '</b>, report rewrite ' +
+          ((d.stickSup & 4) ? '<b>ON</b>' : 'off');
+  if (d.padx !== null && d.padx !== undefined){
+    const half = ['unqualified (centre band, or no finger)','LEFT','RIGHT'][d.padinfo & 3] || '?';
+    h += '<br>Touchpad click: last finger-down x=' + d.padx + '/1919, clicks seen=' +
+         ((d.padinfo >> 2) & 63) + ', last half=<b>' + half + '</b>';
+  }
+  h += '<div style="color:var(--sub);font-size:11px;margin-top:5px">Polled once a second. ' +
+       'Hold the input that will not hide: NOT listed above = the rule never fired, so check the row is a hold with the box ticked. ' +
+       'Listed here but still lit in the live test = the rewrite is not reaching the report.</div>';
+  return h;
+}
+function macroLivePanelHTML(){
+  const on = !!window._macroLive;
+  let h = '<div style="margin-top:14px;border:1px solid var(--line,#333);border-radius:6px;padding:10px">';
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Live test — what the game is receiving ' +
+       '<span style="font-size:11px;color:var(--sub)">(prototype)</span></div>';
+  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
+       'The portal reads the same interface the game does, so this is the report <b>after</b> the firmware has ' +
+       'rewritten it — hidden inputs are already gone and injected ones already present. Use it to prove a remap ' +
+       'end to end, to find which bits an Edge paddle actually sends, and to check a touchpad click resolves to the ' +
+       'half you meant.</div>';
+  h += '<button class="btn ' + (on ? '' : 'btn-outline') + '" style="padding:2px 10px;margin-bottom:8px" onclick="macroLiveToggle()"' +
+       (device ? '' : ' disabled') + '>' + (on ? 'Stop live test' : 'Start live test') + '</button>';
+  h += '<div id="macrolivepad" style="margin-bottom:4px"></div>';
+  h += '<div style="font-size:11px;color:var(--sub);margin-bottom:8px">' +
+       '<b style="color:#4caf50">green</b> = held · ' +
+       '<b style="color:#a070d0">purple</b> = Edge Fn / paddle · ' +
+       'a stick\'s outline lights on L3 / R3 · ' +
+       'the dashed ring is the macro stick threshold — inside it a stick row has not engaged, ' +
+       'so <i>hide input from game</i> is not centring the stick yet · ' +
+       'on the touchpad, the dot is the finger and the dashed circle is where the last press <b>landed</b>, ' +
+       'which is what decides the half · the shaded centre strip is the neutral band · ' +
+       'the amber line on a trigger is its two-stage boundary.</div>';
+  h += '<div id="macroliveout" style="font-size:12px">' +
+       (on ? '<span style="color:var(--sub)">starting…</span>'
+           : '<span style="color:var(--sub)">Not running.</span>') + '</div>';
+  h += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">';
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Macro engine, per tick</div>';
+  h += '<div id="macrodiagout" style="font-size:12px">' +
+       '<span style="color:var(--sub)">Connect to see what the macro engine is doing.</span></div>';
+  h += '</div></div>';
+  return h;
+}
 function macroMotionPanelHTML(){
   const rows = window._macroRows || [], mot = window._macroMotion || [];
   const rec = window._macroRec, t = window._macroTest;
@@ -4643,6 +5524,21 @@ function macroSetFlag(i, bit, on){
     m.flags = (m.flags|0) & ~MACRO_FLAG_LONG_PRESS;
     m.hold_cs = 0;
   }
+  // Same reasoning for the stick option: it only means anything alongside
+  // REPLACE (and REPLACE only alongside HOLD), so clear it when its
+  // prerequisite goes rather than leave a set bit waiting to take effect the
+  // next time the box above is ticked.
+  if ((bit === MACRO_FLAG_REPLACE || bit === MACRO_FLAG_HOLD) && !on){
+    m.flags = (m.flags|0) & ~MACRO_FLAG_STICK_ALWAYS;
+  }
+  // A double tap is resolved on the SECOND press, so it cannot also be a hold
+  // (driven by the held set) or a long press (resolved by duration).
+  if ((bit === MACRO_FLAG_HOLD || bit === MACRO_FLAG_LONG_PRESS) && on){
+    m.flags = (m.flags|0) & ~MACRO_FLAG_DOUBLE;
+  }
+  if (bit === MACRO_FLAG_DOUBLE && on){
+    m.flags = (m.flags|0) & ~(MACRO_FLAG_HOLD | MACRO_FLAG_LONG_PRESS);
+  }
   macroRender();
 }
 // Output kind: keyboard or controller. Splitting this out is what lets Record and
@@ -4686,7 +5582,11 @@ function macroSetOutBtn(i, v){
   // nothing like what was asked for. Only on the way IN, and the checkbox stays
   // editable - a chord that taps a button once is still a legitimate thing to
   // build, it is just not the default reading of "map this to that".
-  if (m.out_btn !== 0 && macroCanHold(m)) m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
+  // ...but NOT over an explicit double tap. That row already says how it fires,
+  // and a double tap now pulses a controller output rather than doing nothing,
+  // so forcing HOLD on would silently clear the box the user just ticked.
+  if (m.out_btn !== 0 && macroCanHold(m) && !(m.flags & MACRO_FLAG_DOUBLE))
+    m.flags = (m.flags|0) | MACRO_FLAG_HOLD;
   macroRender();
 }
 function macroSetStick(i, which){
@@ -4755,6 +5655,31 @@ function macroOptionsRowHTML(i, m, isStick, dis){
   h += '<label' + (hold ? '' : ' title="Only a held row can replace its input"') + '>' +
        '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_REPLACE, this.checked)"' +
        ((m.flags & MACRO_FLAG_REPLACE) ? ' checked' : '') + (hold && !dis ? '' : ' disabled') + '> hide input from game</label>';
+  // Double tap. Only meaningful on a button row that fires a burst: a hold row
+  // is driven by the held set, and a stick direction is not tapped.
+  if (!isStick){
+    const dbl = !!(m.flags & MACRO_FLAG_DOUBLE);
+    const canDbl = !hold && !(m.flags & MACRO_FLAG_LONG_PRESS);
+    h += '<label style="margin-left:10px"' +
+         (canDbl ? ' title="Fire this row on two presses within 250ms. A single-tap row on the SAME trigger then waits for that window before firing - only that trigger is affected. A controller or mouse output is pressed briefly and released."'
+                 : ' title="Not available on a hold row or a long press"') + '>' +
+         '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_DOUBLE, this.checked)"' +
+         (dbl ? ' checked' : '') + (canDbl && !dis ? '' : ' disabled') + '> double tap</label>';
+  }
+  if (isStick){
+    // Stick rows only, and only meaningful alongside "hide input from game".
+    // Without it the stick is centred ONLY past the threshold, so at rest the
+    // pad's own jitter still reaches the game as a stream of changing axis
+    // values - enough to flip a game's button prompts back to controller
+    // glyphs while the macro's keys say keyboard.
+    const always = !!(m.flags & MACRO_FLAG_STICK_ALWAYS);
+    const canAlways = hold && !!(m.flags & MACRO_FLAG_REPLACE);
+    h += '<label style="margin-left:10px"' +
+         (canAlways ? ' title="Centre the stick for the game at all times, not only past the threshold. Turn this on if the game keeps switching its button prompts back to controller glyphs."'
+                    : ' title="Needs hold while held and hide input from game"') + '>' +
+         '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_STICK_ALWAYS, this.checked)"' +
+         (always ? ' checked' : '') + (canAlways && !dis ? '' : ' disabled') + '> centre stick always</label>';
+  }
   if (isStick){
     h += '<div style="margin-top:5px">';
     STICK_DIRS.forEach((d, k) => {
@@ -4780,6 +5705,7 @@ function macroRender(){
   if (!rows){ box.textContent = device ? 'Reading macros…' : 'Connect a device to load macros.'; return; }
   const rec = window._macroRec;
   const pick = window._macroPick;
+  const pickIn = window._macroPickIn;
 
   let h = '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
           'Definitions are stored on the dongle and shared by every slot. The checkboxes are per-slot: ' +
@@ -4837,7 +5763,11 @@ function macroRender(){
     h += '<td style="padding:2px 6px"><input type="text" maxlength="15" placeholder="unnamed" ' +
          'style="width:104px;padding:2px 4px;font-size:12px" oninput="macroSetLabel(' + i + ', this.value)" ' +
          'value="' + escAttr(m.label || '') + '"></td>';
-    h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button></td>';
+    const pickInOpen = pickIn && pickIn.row === i;
+    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button>';
+    h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickInOpen(' + i + ')"' +
+         (rec || pickInOpen || isStick ? ' disabled' : '') +
+         ' title="Choose the trigger buttons by hand - needed for Fn and paddle chords the controller may not report while recording">Pick</button></td>';
     h += '<td style="padding:2px 8px;color:' + (inLbl ? 'inherit' : 'var(--sub)') + '">' + inTxt + '</td>';
     const pickOpen = pick && pick.row === i;
     h += '<td style="white-space:nowrap">';
@@ -4865,8 +5795,11 @@ function macroRender(){
     h += '<td><button class="btn btn-outline" style="padding:2px 6px" onclick="macroDeleteRow(' + i + ')"' + dis + '>−</button></td>';
     h += '</tr>';
     h += macroOptionsRowHTML(i, m, isStick, dis);
+    if (pickInOpen){
+      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickInHTML(i) + '</td></tr>';
+    }
     if (pickOpen && macroOutKind(i, m) === 2){
-      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickOutHTML(i, m, MOUT_FIRST, MOUT_LAST, 'Which mouse action should this macro send?') + '</td></tr>';
+      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickOutHTML(i, m, Array.from({length: MOUT_LAST - MOUT_FIRST + 1}, (_, n) => MOUT_FIRST + n), 'Which mouse action should this macro send?') + '</td></tr>';
     } else if (pickOpen && macroOutKind(i, m) === 1){
       // Controller output: pick a BUTTON, not a key combo.
       h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickBtnHTML(i, m) + '</td></tr>';
@@ -4904,6 +5837,7 @@ function macroRender(){
   h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
   h += '</div>';
   h += macroMotionPanelHTML();
+  h += macroLivePanelHTML();
   box.innerHTML = h;
 }
 
@@ -5256,6 +6190,9 @@ const PANEL_SEARCH = [
   { tab:'macros', title:'Macros — hold and replace',
     blurb:'Hold keeps the output asserted while the input is held; Replace hides the input from the game.',
     terms:'hold held replace suppress hide remap toggle burst' },
+  { tab:'macros', title:'Macros — live test and diagnostics',
+    blurb:'See the report the game receives, and what the macro engine is hiding and sending right now.',
+    terms:'test tester live diagnostic diagnostics debug input report hide hiding suppress inject paddle fn touchpad half rate monitor' },
   { tab:'macros', title:'Macros — import, export and backup',
     blurb:'Macro definitions are shared by every profile and travel in their own file.',
     terms:'macro export import backup restore share file json save' },
@@ -5387,6 +6324,25 @@ function t2GateWarning(key){
          `that is not gated by ${name}.`;
 }
 
+// Touchpad-to-mouse and the two touchpad-based gyro activation schemes both
+// want the same finger. Warned rather than blocked: the combination is coherent
+// on mode 4 if you actually want the pointer and the gyro to take turns, and
+// nothing here silently rewrites a setting the user chose.
+function touchGyroWarning(){
+  if (!(+config.touch_mouse >= 1)) return '';
+  const m = +config.gyro_mode || 0;
+  if (m !== 3 && m !== 4) return '';
+  if (m === 3) {
+    return 'Gyro is set to <b>only while the touchpad is touched</b>, which is exactly when ' +
+           'your finger is also driving the pointer. Both feed the same mouse, so every drag ' +
+           'gets finger movement plus wrist movement added together and overshoots. ' +
+           'Gate the gyro on a trigger or shoulder instead, or turn Touchpad as Mouse off here.';
+  }
+  return 'Gyro is set to <b>ratchet</b>, so touching the touchpad pauses it — which is every ' +
+         'time you move the pointer. You will get pointer or gyro, never both. That may be ' +
+         'what you want on a desktop profile; if not, gate the gyro on a trigger or shoulder.';
+}
+
 function ceGateWarning(key){
   const isR2 = key === 'ce_r2_yield';
   const y = +config[isR2 ? 'ce_r2_yield' : 'ce_l2_yield'] || 0;
@@ -5433,6 +6389,13 @@ function fieldRowHTML(f){
   // Voltage blend + poll interval + weight only apply to Real mode (mode == 1).
   if ((key === 'battery_volt_blend' || key === 'battery_volt_poll_s' || key === 'battery_volt_weight') &&
       +config['battery_mode'] !== 1) return '';
+  // The battery STAGE settings are stored as ordinary config fields so save,
+  // load, profiles and slot backups all carry them for free - but a level, a
+  // count, a colour and an on/off switch read as one thing, not five rows of
+  // numbers. They are drawn by battStagesHTML() as a row per stage with a real
+  // colour picker. The card still references config['...'] for each of them, so
+  // the render harness sees every field as reachable.
+  if (/^batt_stage_/.test(key)) return '';
   const _zh = FIELD_ZH[key];
   // FIELD_ZH carries the Chinese labels; only use them when the portal is in
   // Chinese, otherwise fall back to the English label in the FIELDS tuple.
@@ -5466,14 +6429,17 @@ function fieldRowHTML(f){
     });
     html += `</div>`;
   } else if(kind==='bool'){
-    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1">
+    // Same reasoning as the select below: a field that drives an inline warning
+    // has to redraw, or the warning only appears after some other edit.
+    const reRenderB = ['touch_mouse'].includes(key);
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRenderB?';render()':''}">
       <option value="0" ${config[key]==0?'selected':''}>${t('否','No')}</option>
       <option value="1" ${config[key]==1?'selected':''}>${t('是','Yes')}</option></select>`;
   } else if(kind==='select'){
     // NOTE: never embed a JSON array here - its double quotes close the onchange
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
-    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','battery_mode','t2_button','t2_l2_button'].includes(key);
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','battery_mode','t2_button','t2_l2_button','gyro_mode'].includes(key);
     html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
     { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl2] of pairs){ const l3 = (LANG === 'zh' && _zh && _zh.opts && _zh.opts[String(v)] != null) ? _zh.opts[String(v)] : lbl2; html += `<option value="${v}" ${config[key]==v?'selected':''}>${l3}</option>`; } }
     html += `</select>`;
@@ -5482,11 +6448,21 @@ function fieldRowHTML(f){
     const step = (type==='f32') ? '0.05' : '1';
     const val = (config[key]??0);
     const shown = (type==='f32') ? Number(val).toFixed(2) : val;
-    html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=${type==='f32'?'parseFloat(this.value)':'+this.value'};(window._dirty=window._dirty||{})['${key}']=1">`;
+    // CLAMP to the declared range. min/max on a number input only style the
+    // spinner - a typed value goes straight through, and writeField() then
+    // masks it to the field width. That silently turned a typed 2000 into 208
+    // (2000 & 0xFF) rather than the maximum, so the setting appeared to behave
+    // backwards. Clamp here and write the clamped value back into the box, so
+    // what is shown is what was sent.
+    html += `<input type="number" min="${min}" max="${max}" step="${step}" value="${shown}" onchange="config['${key}']=cfgClampNum(this, ${min}, ${max}, ${type === 'f32'});(window._dirty=window._dirty||{})['${key}']=1">`;
   }
   html += `</div></div>`;
   if(key === 'ce_r2_yield' || key === 'ce_l2_yield'){
     const w = ceGateWarning(key);
+    if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
+  }
+  if(key === 'touch_mouse' || key === 'gyro_mode'){
+    const w = touchGyroWarning();
     if(w) html += `<div class="row" style="padding-top:0"><div></div><div style="font-size:11px;color:#e0a030;line-height:1.35">⚠ ${w}</div></div>`;
   }
   if(key === 't2_button' || key === 't2_l2_button'){
@@ -5550,7 +6526,7 @@ function render(){
         <div class="logo">DS</div>
         <div>
           <div class="brand-title">${t('DS5 Bridge 配置','DS5 Studio Bridge')}</div>
-          <div class="brand-sub">v1.28.4 · ${t('DualSense 无线适配器配置门户','DualSense wireless dongle config portal')}</div>
+          <div class="brand-sub">v1.40.0 · ${t('DualSense 无线适配器配置门户','DualSense wireless dongle config portal')}</div>
         </div>
       </div>
       <div class="lang-switch" role="group" aria-label="Language / 语言">
@@ -5596,6 +6572,17 @@ function render(){
     if (section.title === R2_TITLE) { html += triggerPairHTML(); continue; }
     html += `<div class="card"><div class="card-title">${t(SECTION_ZH[section.title] || '', section.title)}</div>`;
     for(const f of section.fields) html += fieldRowHTML(f);
+    // The stage rows belong INSIDE their own section, directly under the enable
+    // they depend on - not appended after every other card at the foot of the
+    // page, where the Save button sits between a setting and its switch.
+    if (section.title === 'Battery Notification') html += battStagesPanelHTML();
+    if (section.title === 'Tilt Steering (experimental)') {
+      html += '<div style="font-size:12px;color:var(--sub);margin-top:6px">' +
+              'Calibrate with <b>Start live test</b> on the Macros tab: roll the pad and watch the ' +
+              '<b>L stick</b> figure. That is the value the game receives, so you can see the offset ' +
+              'appear and size it against the game\'s own steering dead zone \u2014 a setting that looks ' +
+              'active here can still be swallowed before it reaches the car.</div>';
+    }
     html += `</div>`;
     // BRACES MATTER HERE: the single-statement form let the two lines added
     // below run for EVERY section on EVERY tab, emitting the audio panel over
@@ -5689,6 +6676,23 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">${t('读取唤醒诊断','Read wake diagnostics')}</button>
       <div id="wakediag" style="font-size:12px;margin-top:6px">${t('尚未读取。','Nothing read yet.')}</div>
     </div></div>` : '') + `
+  ` + (!q && tab==='gyro' ? `<div class="card"><div class="card-title">Gyro calibration</div>
+    <div style="font-size:12px;color:var(--sub)">Both checks measure rather than guess: the first confirms the sensor scale, the second finds the number this game needs. Do them in that order.</div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
+      <span style="font-size:12px;color:var(--sub)">Gyro angle check \u2014 confirms that Natural sensitivity really is 1:1 on your hardware:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="gyroAngleStart()">Measure (8s)</button>
+      <div id="gyroangle" style="font-size:12px;margin-top:6px">Press Measure, then make one full turn (360\u00b0) to the right during the countdown, ending where you started, and hold still.</div>
+    </div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
+      <span style="font-size:12px;color:var(--sub)">Counts per 360\u00b0 \u2014 measure it instead of guessing. Needs gyro output set to Mouse, the game in the foreground, and in-game mouse acceleration and smoothing OFF:</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSend()">1. Send 6500</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSendHalf()">Send 3250 (check)</button>
+      <span style="font-size:12px">2. how far did the view turn?
+        <input id="calobs" type="number" min="1" max="3600" step="1" value="180" style="width:70px"> \u00b0
+      </span>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="calCompute()">3. Work it out</button>
+      <div id="calbox" style="font-size:12px;margin-top:6px">Switch to the game first \u2014 the counts go wherever the mouse pointer would.</div>
+    </div>` : '') + `
   `;
   app.innerHTML=html;
   if (tab === 'lights') { lightsPaint(); lightsSync(); }
