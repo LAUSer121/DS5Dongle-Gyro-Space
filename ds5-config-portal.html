@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DS5 Bridge Config (POC)</title>
+<title>DS5 手柄桥接配置 (POC)</title>
 <style>
   :root { --bg:#0f1115; --card:#1a1d24; --border:#2a2f3a; --text:#e6e8ec; --sub:#9aa0aa; --accent:#4ea1ff; --green:#3fb950; --red:#f85149; }
   * { box-sizing:border-box; }
@@ -385,6 +385,59 @@ const FIELD_ZH = {
   battery_cap_min_levels: { label:'容量估算最少档位数' },
   battery_cap_min_span: { label:'容量估算最少档位跨度' },
   battery_calib_avg: { label:'平均值模式（越久越准）' },
+  batt_notify_enable: { label:'手柄灯条上的电量提示' },
+  batt_stage_on_0: { label:'阶段 1 — 启用' },
+  batt_stage_on_1: { label:'阶段 2 — 启用' },
+  batt_stage_on_2: { label:'阶段 3 — 启用' },
+  batt_stage_level_0: { label:'阶段 1 — 电量降到该档时提示', opts:{0:'关闭',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'} },
+  batt_stage_blinks_0: { label:'阶段 1 — 闪烁次数' },
+  batt_stage_r_0: { label:'阶段 1 — 颜色 红' },
+  batt_stage_g_0: { label:'阶段 1 — 颜色 绿' },
+  batt_stage_b_0: { label:'阶段 1 — 颜色 蓝' },
+  batt_stage_level_1: { label:'阶段 2 — 电量降到该档时提示', opts:{0:'关闭',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'} },
+  batt_stage_blinks_1: { label:'阶段 2 — 闪烁次数' },
+  batt_stage_r_1: { label:'阶段 2 — 颜色 红' },
+  batt_stage_g_1: { label:'阶段 2 — 颜色 绿' },
+  batt_stage_b_1: { label:'阶段 2 — 颜色 蓝' },
+  batt_stage_level_2: { label:'阶段 3 — 电量降到该档时提示', opts:{0:'关闭',1:'10%',2:'20%',3:'30%',4:'40%',5:'50%',6:'60%',7:'70%',8:'80%',9:'90%',10:'100%'} },
+  batt_stage_blinks_2: { label:'阶段 3 — 闪烁次数' },
+  batt_stage_r_2: { label:'阶段 3 — 颜色 红' },
+  batt_stage_g_2: { label:'阶段 3 — 颜色 绿' },
+  batt_stage_b_2: { label:'阶段 3 — 颜色 蓝' },
+  tilt_steer: { label:'倾斜转向' },
+  tilt_steer_range: { label:'倾斜范围（达到满效果的度数）' },
+  tilt_steer_amount: { label:'最大附加摇杆量（%）' },
+  tilt_steer_deadzone: { label:'倾斜死区（度）' },
+  tilt_steer_invert: { label:'反转倾斜方向' },
+  tilt_steer_y: { label:'同时前后倾斜（压身）' },
+  tilt_steer_y_amount: { label:'最大附加摇杆量，压身（%）' },
+  tilt_steer_y_invert: { label:'反转压身方向' },
+  touch_mouse: { label:'触控板当鼠标' },
+  touch_mouse_sens: { label:'触控板速度' },
+  touch_mouse_min: { label:'触控板抖动过滤' },
+  touch_mouse_invert: { label:'触控板反转', opts:{0:'不反转',1:'X',2:'Y',3:'两者'} },
+  touch_mouse_trackball: { label:'触控板惯性滑行（保持滑行）' },
+  touch_mouse_friction: { label:'惯性摩擦力' },
+  t2_mode: { label:'两段式扳机', opts:{0:'关闭',1:'附加按键（保持扳机按住）',2:'附加按键 + 重映射下方区间',5:'切换为按键（释放扳机）',6:'切换为按键 + 重映射下方区间'} },
+  t2_pos: { label:'第二段分界（0=关闭，扳机位置 1-254）' },
+  t2_button: { label:'第二段按键', opts:{0:'无',1:'×（Cross）',2:'○（Circle）',3:'□（Square）',4:'△（Triangle）',5:'L1',6:'R1',7:'L3',8:'R3',9:'L2（按下）'} },
+  t2_l2_mode: { label:'两段式扳机', opts:{0:'关闭',1:'附加按键（保持扳机按住）',2:'附加按键 + 重映射下方区间',5:'切换为按键（释放扳机）',6:'切换为按键 + 重映射下方区间'} },
+  t2_l2_pos: { label:'第二段分界（0=关闭，扳机位置 1-254）' },
+  t2_l2_button: { label:'第二段按键', opts:{0:'无',1:'×（Cross）',2:'○（Circle）',3:'□（Square）',4:'△（Triangle）',5:'L1',6:'R1',7:'L3',8:'R3',10:'R2（按下）'} },
+  gyro_sens_y: { label:'垂直灵敏度（0 = 与“灵敏度”相同）' },
+  gyro_output: { label:'陀螺仪输出', opts:{0:'右摇杆（所有游戏都能用）',1:'鼠标（瞄准更精细；多数游戏需要隐藏手柄）',2:'鼠标 + 甩枪（右摇杆甩向某一方位）'} },
+  flick_angle: { label:'甩枪转动角度（度）' },
+  flick_counts_360: { label:'每 360° 的鼠标计数（甩枪与“自然”灵敏度）' },
+  gyro_sens_mode: { label:'陀螺仪灵敏度刻度', opts:{0:'手动 — 凭手感调，无需校准',1:'自然 — 真实世界比例（默认；需要每 360° 计数）'} },
+  gyro_natural_x10: { label:'自然倍率 ×10（10 = 1:1，25 = 2.5×）' },
+  gyro_natural_y_x10: { label:'自然垂直倍率 ×10（0 = 与上面相同）' },
+  gyro_scale_trim_x100: { label:'陀螺仪刻度微调（100 = 标称值；见角度检查）' },
+  stick_mouse: { label:'用摇杆驱动鼠标', opts:{0:'关闭',1:'右摇杆',2:'左摇杆'} },
+  stick_mouse_sens: { label:'速度 — 满推时的鼠标计数/秒（0 = 600）' },
+  stick_mouse_sens_y: { label:'垂直速度（0 = 与上面相同）' },
+  stick_mouse_deadzone: { label:'死区（满推的百分比）' },
+  stick_mouse_curve: { label:'响应曲线 ×10（10 = 线性，18 = 默认）' },
+  stick_mouse_invert: { label:'反转摇杆转鼠标', opts:['X（水平）','Y（垂直）'] },
 };
 const SECTIONS = [
   { title: 'Auto-Haptics & Speaker Effect Leak', fields: [
@@ -1032,23 +1085,23 @@ async function _refreshSlotsOnce(){
       }
     }
     if (info === null && i === 0){
-      box.innerHTML = 'Profile slots need firmware 1.1.2+.';
+      box.innerHTML = t('档案槽位需要固件 1.1.2 以上版本。','Profile slots need firmware 1.1.2+.');
       if (_slotHealTries++ < 8) setTimeout(() => refreshSlots(), 1500);
       return;
     }
-    const label = info && info.valid ? `<b>${info.name || '(unnamed)'}</b>` : '<span style="color:var(--sub)">empty</span>';
+    const label = info && info.valid ? `<b>${info.name || t('（未命名）','(unnamed)')}</b>` : `<span style="color:var(--sub)">${t('空','empty')}</span>`;
     rows += `<div style="display:flex;gap:8px;align-items:center;margin:4px 0">
-      <span style="width:52px;color:var(--sub)">Slot ${i+1}</span>
+      <span style="width:52px;color:var(--sub)">${t('槽位','Slot')} ${i+1}</span>
       <span style="flex:1">${label}</span>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(${i})">Save current</button>
-      <button class="btn btn-outline" style="padding:2px 10px" ${info && info.valid ? '' : 'disabled'} onclick="uiSlotActivate(${i})">Activate</button>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(${i})">${t('保存当前','Save current')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" ${info && info.valid ? '' : 'disabled'} onclick="uiSlotActivate(${i})">${t('激活','Activate')}</button>
     </div>`;
   }
   const boxNow = document.getElementById('slotbox'); // render() may have replaced the node mid-run
   if (boxNow) boxNow.innerHTML = rows +
     `<div style="display:flex;gap:8px;align-items:center;margin:10px 0 2px;padding-top:8px;border-top:1px solid var(--line,#333)">
-       <button class="btn btn-outline" style="padding:2px 10px" onclick="backupAllSlots()">Back up all slots</button>
-       <button class="btn btn-outline" style="padding:2px 10px" onclick="document.getElementById('restoreFile').click()">Restore from file</button>
+       <button class="btn btn-outline" style="padding:2px 10px" onclick="backupAllSlots()">${t('备份全部槽位','Back up all slots')}</button>
+       <button class="btn btn-outline" style="padding:2px 10px" onclick="document.getElementById('restoreFile').click()">${t('从文件恢复','Restore from file')}</button>
        <input id="restoreFile" type="file" accept="application/json,.json" style="display:none"
               onchange="if(this.files[0]){restoreAllSlots(this.files[0]); this.value='';}">
        <span id="backupStatus" style="flex:1;color:var(--sub);font-size:12px"></span>
@@ -1067,24 +1120,24 @@ async function refreshSlots(){
 }
 async function uiSlotSave(i){
   try{
-    if (!(await ensureDevice())){ toast('No device \u2014 click Connect', true); return; }
-    const name = prompt(`Name for slot ${i+1} (max 16 chars):`, '');
+    if (!(await ensureDevice())){ toast(t('没有设备 — 请点击“连接”','No device \u2014 click Connect'), true); return; }
+    const name = prompt(t(`槽位 ${i+1} 的名称（最多 16 个字符）：`, `Name for slot ${i+1} (max 16 chars):`), '');
     if (name === null) return;
     saving = true;
     const ok = await hidLocked(() => slotSave(i, name));
-    toast(ok ? `Saved current settings to slot ${i+1}` : 'Slot save failed', !ok);
+    toast(ok ? t(`已把当前设置保存到槽位 ${i+1}`, `Saved current settings to slot ${i+1}`) : t('槽位保存失败','Slot save failed'), !ok);
     await refreshSlots();
-  } catch(e){ toast('Slot save failed: ' + e.message, true); }
+  } catch(e){ toast(t('槽位保存失败：','Slot save failed: ') + e.message, true); }
   finally { saving = false; }
 }
 async function uiSlotActivate(i){
   try{
-    if (!(await ensureDevice())){ toast('No device \u2014 click Connect', true); return; }
+    if (!(await ensureDevice())){ toast(t('没有设备 — 请点击“连接”','No device \u2014 click Connect'), true); return; }
     saving = true;
     const res = await hidLocked(() => slotActivate(i));
-    if (!res){ toast('Slot activate failed', true); return; }
+    if (!res){ toast(t('槽位激活失败','Slot activate failed'), true); return; }
     if (res.needsReenum){
-      toast(`Slot ${i+1} active \u2014 device re-enumerating\u2026`);
+      toast(t(`槽位 ${i+1} 已激活 — 设备正在重新枚举…`, `Slot ${i+1} active \u2014 device re-enumerating\u2026`));
       try { await sendCmd(0x03); } catch(_){}
       // The device we are holding is about to disappear. Drop every cache that
       // describes it BEFORE reacquiring, or the panels keep rendering state
@@ -1097,10 +1150,10 @@ async function uiSlotActivate(i){
       // the same for the slot list.
       try { window._macroRows = await hidLocked(() => macroReadAll()); } catch(_){}
     } else {
-      toast(`Slot ${i+1} active`);
+      toast(t(`槽位 ${i+1} 已激活`, `Slot ${i+1} active`));
     }
     await readAll(); render(); await refreshSlots();
-  } catch(e){ toast('Slot activate failed: ' + e.message, true); }
+  } catch(e){ toast(t('槽位激活失败：','Slot activate failed: ') + e.message, true); }
   finally { saving = false; }
 }
 
@@ -1185,7 +1238,7 @@ async function readAll(){
       try { fresh[key] = await readField(fid, type); }
       catch(e){ ok = false; }
     }
-    if (!ok) toast('Some values could not be read — try Re-read', true);
+    if (!ok) toast(t('部分数值读取失败 — 请点“重新读取”再试。','Some values could not be read — try Re-read'), true);
   }
   // Decide bulk support from link health: if the per-field pass read the whole
   // config cleanly (healthy link) yet bulk had failed, bulk is genuinely
@@ -1303,13 +1356,13 @@ async function slotReadField(slot, fdef){ // fdef = [fid,key,type]
 // ===== Trigger Effect Monitor + Custom Captured Effects (v1.18.12) =====
 function effectTypeName(t){
   switch(t){
-    case 0x00: return 'None';   case 0x05: return 'Off';
-    case 0x01: case 0x21: return 'Resistance';
-    case 0x02: case 0x22: return 'Bow / snap';
-    case 0x06: case 0x26: return 'Vibration';
-    case 0x23: case 0x25: return 'Weapon break';
-    case 0x27: return 'Multi-pos vibration';
-    default: return 'Type 0x' + t.toString(16).padStart(2,'0');
+    case 0x00: return (LANG === 'zh' ? '无' : 'None');   case 0x05: return (LANG === 'zh' ? '关闭' : 'Off');
+    case 0x01: case 0x21: return (LANG === 'zh' ? '阻力' : 'Resistance');
+    case 0x02: case 0x22: return (LANG === 'zh' ? '弓 / 回弹' : 'Bow / snap');
+    case 0x06: case 0x26: return (LANG === 'zh' ? '振动' : 'Vibration');
+    case 0x23: case 0x25: return (LANG === 'zh' ? '枪械段落感' : 'Weapon break');
+    case 0x27: return (LANG === 'zh' ? '多位置振动' : 'Multi-pos vibration');
+    default: return (LANG === 'zh' ? '类型 0x' : 'Type 0x') + t.toString(16).padStart(2,'0');
   }
 }
 function isVibrationType(t){ return t === 0x26 || t === 0x06 || t === 0x27; }
@@ -1336,25 +1389,25 @@ async function refreshEffectMonitor(){
   if (!box) return;
   try {
     let html = '';
-    for (const [trig, label] of [[0,'R2 (right)'],[1,'L2 (left)']]){
+    for (const [trig, label] of [[0, t('R2（右）','R2 (right)')],[1, t('L2（左）','L2 (left)')]]){
       const effs = await hidLocked(() => readTriggerEffects(trig));
       window._monEffects[trig] = effs;
       html += `<div style="margin:8px 0"><b>${label}</b>`;
-      if (!effs.length){ html += ` <span style="color:var(--sub)">— nothing captured yet (trigger the effect in-game, then Refresh)</span></div>`; continue; }
-      html += `<div style="font-size:11px;color:var(--sub);margin:2px 0">Tick up to 5 states that make up one action. Mechanical states (walls, resistances) are placed by their trigger positions and played in sequence as you pull (e.g. wall → wall → end-resistance, or a resistance before a wall); vibration pairs blend at the rate slider.</div>`;
+      if (!effs.length){ html += ` <span style="color:var(--sub)">${t('— 还没有捕获到任何内容（请先在游戏里触发该效果，然后点“刷新”）','— nothing captured yet (trigger the effect in-game, then Refresh)')}</span></div>`; continue; }
+      html += `<div style="font-size:11px;color:var(--sub);margin:2px 0">${t('最多勾选 5 个构成同一个动作的状态。机械类状态（墙、阻力）按各自的扳机位置摆放，并在你拉动时依次播放（例如 墙 → 墙 → 末端阻力，或阻力在前、墙在后）；振动对则按速率滑块混合。','Tick up to 5 states that make up one action. Mechanical states (walls, resistances) are placed by their trigger positions and played in sequence as you pull (e.g. wall → wall → end-resistance, or a resistance before a wall); vibration pairs blend at the rate slider.')}</div>`;
       effs.forEach((eff, i) => {
         const nm = effectTypeName(eff[0]);
         const hex = eff.map(b => b.toString(16).padStart(2,'0')).join(' ');
         html += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:12px">
           <input type="checkbox" id="mon_${trig}_${i}" onchange="onMonPick(${trig})">
-          <span style="min-width:110px"><b>${nm}</b>${i===0?' (newest)':''}</span>
+          <span style="min-width:110px"><b>${nm}</b>${i===0?' ('+t('最新','newest')+')':''}</span>
           <code style="color:var(--sub);font-size:11px">${hex}</code></div>`;
       });
-      html += `<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px" onclick="assignCustom(${trig})">Assign ticked → custom effect (${trig===0?'R2':'L2'})</button>
-        <button class="btn btn-outline" style="padding:2px 10px" onclick="saveCustomFile(${trig})">Save ticked to file</button></div></div>`;
+      html += `<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px" onclick="assignCustom(${trig})">${t('把勾选项指定为自定义效果 →','Assign ticked → custom effect')} (${trig===0?'R2':'L2'})</button>
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="saveCustomFile(${trig})">${t('把勾选项保存到文件','Save ticked to file')}</button></div></div>`;
     }
     box.innerHTML = html;
-  } catch(e){ box.innerHTML = 'Monitor error: ' + (e && e.message ? e.message : e); }
+  } catch(e){ box.innerHTML = t('监视器错误：','Monitor error: ') + (e && e.message ? e.message : e); }
 }
 function getMonPicks(trig){
   const effs = window._monEffects[trig] || [];
@@ -1408,15 +1461,15 @@ function ceValidateStates(list, getBytes){
 }
 
 const CE_ZONE_CLASH_MSG = zone =>
-  `Two of the ticked states begin at the same trigger position (zone ${zone}).\n\n` +
-  `A multi-stage effect is ordered by where each stage starts, so every stage must ` +
-  `start at a different position. Assigning these would fall back to rapid A/B ` +
-  `cycling instead — with a weapon break in the set that is heard as constant clicking.\n\n` +
-  `Untick one of them and assign again.`;
+  t(`勾选的状态中有两个从同一个扳机位置开始（区域 ${zone}）。\n\n`, `Two of the ticked states begin at the same trigger position (zone ${zone}).\n\n`) +
+  t(`多段效果按每段的起始位置排序，所以每一段都必须 `, `A multi-stage effect is ordered by where each stage starts, so every stage must `) +
+  t(`从不同的位置开始。这样指定会退化成快速的 A/B 交替，`, `start at a different position. Assigning these would fall back to rapid A/B `) +
+  t(`如果集合里有枪械段落感，听起来就是连续不断的咔哒声。\n\n`, `cycling instead — with a weapon break in the set that is heard as constant clicking.\n\n`) +
+  t(`请取消勾选其中一个后再指定。`, `Untick one of them and assign again.`);
 
 async function assignCustom(trig){
   let picks = getMonPicks(trig);
-  if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  if (!picks.length){ alert(t('请先勾选 1 或 2 个状态。','Tick 1 or 2 states first.')); return; }
   {
     const v = ceValidateStates(picks, b => b);
     if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
@@ -1441,13 +1494,13 @@ async function assignCustom(trig){
     (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
     window._dirty[pfx + '_state_count'] = 1;
     render();
-    alert(`Assigned ${picks.length}-state custom effect to ${trig===0?'R2':'L2'}. Set condition/threshold/rate in the Custom Effect fields above, then Save to a slot.`);
-  } catch(e){ alert('Assign failed: ' + (e && e.message ? e.message : e)); }
+    alert(t(`已把 ${picks.length} 个状态的自定义效果指定给 ${trig===0?'R2':'L2'}。请在上方“自定义效果”字段中设置条件/阈值/速率，然后保存到槽位。`, `Assigned ${picks.length}-state custom effect to ${trig===0?'R2':'L2'}. Set condition/threshold/rate in the Custom Effect fields above, then Save to a slot.`));
+  } catch(e){ alert(t('指定失败：','Assign failed: ') + (e && e.message ? e.message : e)); }
 }
 // Save ticked states to a JSON file (transport / sharing).
 function saveCustomFile(trig){
   const picks = getMonPicks(trig);
-  if (!picks.length){ alert('Tick 1 or 2 states first.'); return; }
+  if (!picks.length){ alert(t('请先勾选 1 或 2 个状态。','Tick 1 or 2 states first.')); return; }
   const dump = {
     format: 'ds5dongle-custom-effect', version: 1,
     source: trig===0?'R2':'L2',
@@ -1480,9 +1533,9 @@ async function tlRecordStart(){
   try {
     const ok = await hidLocked(() => tlSetArmed(true));
     document.getElementById('tlbox').innerHTML = ok
-      ? '<b>● Recording…</b> perform the trigger action in-game, then press Stop & fetch.'
-      : 'Arm failed.';
-  } catch(e){ alert('Record failed: ' + e); }
+      ? t('<b>● 录制中…</b> 请在游戏里做出该扳机动作，然后点“停止并抓取”。','<b>● Recording…</b> perform the trigger action in-game, then press Stop & fetch.')
+      : t('预武装失败。','Arm failed.');
+  } catch(e){ alert(t('录制失败：','Record failed: ') + e); }
 }
 async function tlRecordStop(){
   const box = document.getElementById('tlbox');
@@ -1504,9 +1557,9 @@ async function tlRecordStop(){
     let html = '';
     for (const [trig,label] of [[0,'R2'],[1,'L2']]){
       const tl = window._tlData[trig];
-      html += `<div style="margin:6px 0"><b>${label} timeline</b>`;
-      if (!tl.length){ html += ` <span style="color:var(--sub)">— nothing recorded</span></div>`; continue; }
-      html += ` <span style="color:var(--sub);font-size:11px">(tick up to 5 entries — the loopable core of the action — then Assign)</span>`;
+      html += `<div style="margin:6px 0"><b>${label} ${t('时间轴','timeline')}</b>`;
+      if (!tl.length){ html += ` <span style="color:var(--sub)">${t('— 没有录制到内容','— nothing recorded')}</span></div>`; continue; }
+      html += ` <span style="color:var(--sub);font-size:11px">${t('（最多勾选 5 条 — 也就是该动作中可循环的核心部分 — 然后点“指定”）','(tick up to 5 entries — the loopable core of the action — then Assign)')}</span>`;
       tl.forEach((e,i)=>{
         const nm = effectTypeName(e.bytes[0]);
         const hex = e.bytes.map(b=>b.toString(16).padStart(2,'0')).join(' ');
@@ -1516,11 +1569,11 @@ async function tlRecordStop(){
           <code style="color:var(--sub);font-size:11px">${hex}</code></div>`;
       });
       html += `<div style="margin-top:4px">
-        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlAssign(${trig})">Assign ticked timeline → ${label}</button>
-        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlSaveFile(${trig})">Save ticked to file</button></div></div>`;
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlAssign(${trig})">${t('把勾选项指定为时间轴 →','Assign ticked timeline →')} ${label}</button>
+        <button class="btn btn-outline" style="padding:2px 10px" onclick="tlSaveFile(${trig})">${t('把勾选项保存到文件','Save ticked to file')}</button></div></div>`;
     }
-    box.innerHTML = html || 'No timeline.';
-  } catch(e){ box.innerHTML = 'Fetch failed: ' + e; }
+    box.innerHTML = html || t('没有时间轴。','No timeline.');
+  } catch(e){ box.innerHTML = t('抓取失败：','Fetch failed: ') + e; }
 }
 function tlPicks(trig){
   const tl = window._tlData[trig] || [];
@@ -1530,13 +1583,13 @@ function tlPicks(trig){
 }
 async function tlAssign(trig){
   let picks = tlPicks(trig);
-  if (!picks.length){ alert('Tick 1-5 timeline entries first.'); return; }
+  if (!picks.length){ alert(t('请先勾选 1-5 条时间轴条目。','Tick 1-5 timeline entries first.')); return; }
   {
     const v = ceValidateStates(picks, e => e.bytes);
     if (v.clash !== null){ alert(CE_ZONE_CLASH_MSG(v.clash)); return; }
     if (v.dropped.length){
       picks = v.kept;
-      alert(`${v.dropped.length} ticked entr${v.dropped.length===1?'y was':'ies were'} an exact repeat of another — the game returning to a state it had already used, not a separate effect. ${v.dropped.length===1?'It has':'They have'} been skipped; assigning ${picks.length} state${picks.length===1?'':'s'}.`);
+      alert(t(`勾选的条目中有 ${v.dropped.length} 条与另一条完全相同 — 那是游戏回到了它已经用过的状态，而不是另一个独立效果。已跳过它们，现在指定 ${picks.length} 个状态。`, `${v.dropped.length} ticked entr${v.dropped.length===1?'y was':'ies were'} an exact repeat of another — the game returning to a state it had already used, not a separate effect. ${v.dropped.length===1?'It has':'They have'} been skipped; assigning ${picks.length} state${picks.length===1?'':'s'}.`));
     }
   }
   try {
@@ -1555,12 +1608,12 @@ async function tlAssign(trig){
     const pfx2 = trig===0?'ce_r2':'ce_l2';
     config[pfx2 + '_enable'] = 1;
     config[pfx2 + '_state_count'] = picks.length;
-    alert(`Assigned ${picks.length}-entry TIMELINE to ${trig===0?'R2':'L2'} — replays with the recorded timing (rate slider not used). Save to a slot to keep it.`);
+    alert(t(`已把 ${picks.length} 条的时间轴指定给 ${trig===0?'R2':'L2'} — 会按录制的时序重放（不使用速率滑块）。保存到槽位以保留。`, `Assigned ${picks.length}-entry TIMELINE to ${trig===0?'R2':'L2'} — replays with the recorded timing (rate slider not used). Save to a slot to keep it.`));
   } catch(e){ alert('Assign failed: ' + e); }
 }
 function tlSaveFile(trig){
   const picks = tlPicks(trig);
-  if (!picks.length){ alert('Tick entries first.'); return; }
+  if (!picks.length){ alert(t('请先勾选条目。','Tick entries first.')); return; }
   const dump = { format:'ds5dongle-custom-effect', version:2, source: trig===0?'R2':'L2',
     state_count: picks.length,
     states: picks.map(e => ({ type:'0x'+e.bytes[0].toString(16).padStart(2,'0'),
@@ -1632,7 +1685,7 @@ function cebShowLevels(){
     const el = document.getElementById(id), sp = document.getElementById(out);
     if (!el || !sp) return;
     const w = cebWire100(+el.value || 0);
-    sp.textContent = ` = level ${w}/7 (${Math.round(w*100/7)}%)` + (w === 0 ? ' — may not be felt' : '');
+    sp.textContent = t(` = 档位 ${w}/7（${Math.round(w*100/7)}%）`, ` = level ${w}/7 (${Math.round(w*100/7)}%)`) + (w === 0 ? t(' — 可能感觉不到',' — may not be felt') : '');
   };
   fmt('ceb_str', 'ceb_strlvl');
   fmt('ceb_snap', 'ceb_snaplvl');
@@ -1641,15 +1694,15 @@ function cebShowLevels(){
 function cebTypeChanged(){
   const t = document.getElementById('ceb_type').value;
   document.getElementById('ceb_endlbl').firstChild.textContent =
-    (t === 'break') ? 'Break zone ' : (t === 'bow') ? 'Draw end zone ' : 'End zone ';
+    (t === 'break') ? (LANG === 'zh' ? '断裂区 ' : 'Break zone ') : (t === 'bow') ? (LANG === 'zh' ? '拉弦终点区 ' : 'Draw end zone ') : (LANG === 'zh' ? '终点区 ' : 'End zone ');
   document.getElementById('ceb_freqlbl').style.display = (t === 'vibration') ? '' : 'none';
   document.getElementById('ceb_snaplbl').style.display = (t === 'bow') ? '' : 'none';
   document.getElementById('ceb_strlbl').firstChild.textContent =
-    (t === 'bow') ? 'Draw strength % ' : 'Strength % ';
+    (t === 'bow') ? (LANG === 'zh' ? '拉弦力度 % ' : 'Draw strength % ') : (LANG === 'zh' ? '力度 % ' : 'Strength % ');
   cebShowLevels();
 }
 function cebAddStage(){
-  if (window._cebStages.length >= 5){ alert('5 stages maximum.'); return; }
+  if (window._cebStages.length >= 5){ alert(t('最多 5 个阶段。','5 stages maximum.')); return; }
   const st = {
     type: document.getElementById('ceb_type').value,
     start: +document.getElementById('ceb_start').value,
@@ -1661,7 +1714,7 @@ function cebAddStage(){
   st.bytes = cebBuildBytes(st);
   const z = cebStartZone(st.bytes);
   if (window._cebStages.some(o => cebStartZone(o.bytes) === z)){
-    alert('A stage in the list below already starts at zone ' + z + '.\n\nStages are ordered by their start zone, so each needs a different one. Use ✕ to drop that stage, or "Clear list" to start over.');
+    alert(t('下方列表里已经有一个阶段从区域 ' + z + ' 开始。\n\n阶段按起始区域排序，所以每个阶段的起始区域都必须不同。用 ✕ 删掉那个阶段，或者点“清空列表”重来。','A stage in the list below already starts at zone ' + z + '.\n\nStages are ordered by their start zone, so each needs a different one. Use ✕ to drop that stage, or "Clear list" to start over.'));
     return;
   }
   window._cebStages.push(st);
@@ -1676,12 +1729,12 @@ function cebRender(){
   // placeholder while _cebStages survives — same reason cebRender runs at all).
   const vz = document.getElementById('ceb_viz');
   if (vz) vz.innerHTML = list.length
-    ? ceEffectPanel(list.map(s => ({ bytes: s.bytes, dt: 0 })), 'Effect map — how these stages play across the trigger pull')
+    ? ceEffectPanel(list.map(s => ({ bytes: s.bytes, dt: 0 })), t('效果图 — 这些阶段在拉动扳机过程中如何播放','Effect map — how these stages play across the trigger pull'))
     : '';
   if (!box) return;
-  if (!list.length){ box.innerHTML = 'No stages yet.'; return; }
+  if (!list.length){ box.innerHTML = t('还没有阶段。','No stages yet.'); return; }
   const sorted = list.map((st, i) => ({ st, i })).sort((a, b) => cebStartZone(a.st.bytes) - cebStartZone(b.st.bytes));
-  let html = '<div style="color:var(--sub);font-size:11px;margin-bottom:2px">Played in this order as you pull:</div>';
+  let html = '<div style="color:var(--sub);font-size:11px;margin-bottom:2px">' + t('拉动时按这个顺序播放：','Played in this order as you pull:') + '</div>';
   const warn = [];
   sorted.forEach(({ st, i }, n) => {
     const hex = st.bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
@@ -1690,10 +1743,10 @@ function cebRender(){
     const ze = zones.length ? zones[zones.length - 1] : 0;
     const nm = effectTypeName(st.bytes[0]);
     const at = Math.round(zs * 25.5);
-    const det = (st.type === 'break') ? `wall ${zs}→${ze}` :
-                (st.type === 'bow') ? `draw ${zs}→${ze}, snap ${st.snap}%` :
-                (st.type === 'vibration') ? `zones ${zs}–${ze}, freq ${st.freq}` :
-                `zones ${zs}–${ze}`;
+    const det = (st.type === 'break') ? t(`墙 ${zs}→${ze}`, `wall ${zs}→${ze}`) :
+                (st.type === 'bow') ? t(`拉弦 ${zs}→${ze}，回弹 ${st.snap}%`, `draw ${zs}→${ze}, snap ${st.snap}%`) :
+                (st.type === 'vibration') ? t(`区域 ${zs}–${ze}，频率 ${st.freq}`, `zones ${zs}–${ze}, freq ${st.freq}`) :
+                t(`区域 ${zs}–${ze}`, `zones ${zs}–${ze}`);
     // did the hardware limits change what was asked for?
     const askLo = Math.min(st.start, st.end), askHi = Math.max(st.start, st.end);
     const clamped = (st.type === 'break' || st.type === 'bow') && (zs !== askLo || ze !== askHi);
@@ -1701,12 +1754,12 @@ function cebRender(){
     const nextZ = (n + 1 < sorted.length) ? cebStartZone(sorted[n + 1].st.bytes) : 10;
     const from = (n === 0) ? 0 : Math.max(0, Math.round(zs * 25.5) - 12);
     const to = (n + 1 < sorted.length) ? Math.max(0, Math.round(nextZ * 25.5) - 12) : 255;
-    if (to - from < 40) warn.push(`stage ${n + 1} (${nm}) is only active over ~${to - from} of 255 counts — a normal pull can skip straight past it. Space the stages further apart.`);
+    if (to - from < 40) warn.push(t(`阶段 ${n + 1}（${nm}）只在 255 个计数中的约 ${to - from} 个区间内生效 — 正常的一次拉动可能直接跳过它。请把阶段之间拉开距离。`, `stage ${n + 1} (${nm}) is only active over ~${to - from} of 255 counts — a normal pull can skip straight past it. Space the stages further apart.`));
     if (n === 0 && (st.bytes[0] === 0x26 || st.bytes[0] === 0x06 || st.bytes[0] === 0x27))
-      warn.push('the first stage is a Vibration — it is armed at rest and a vibration ignores trigger position, so it will buzz continuously. Put the vibration on a later (deeper) stage.');
+      warn.push(t('第一个阶段是振动 — 它在静止时就已武装，而振动会忽略扳机位置，所以它会一直嗡嗡响。请把振动放到靠后（更深）的阶段。','the first stage is a Vibration — it is armed at rest and a vibration ignores trigger position, so it will buzz continuously. Put the vibration on a later (deeper) stage.'));
     html += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0">
       <span style="min-width:14px;color:var(--sub)">${n + 1}.</span>
-      <span style="min-width:210px"><b>${nm}</b> — ${det}, ${st.strength}% <span style="color:var(--sub)">(pos ${from}–${to}${clamped ? ', clamped by hw' : ''})</span></span>
+      <span style="min-width:210px"><b>${nm}</b> — ${det}, ${st.strength}% <span style="color:var(--sub)">${t('位置 ','pos ')}${from}–${to}${clamped ? t('，已按硬件限制夹紧',' , clamped by hw') : ''}</span></span>
       <code style="color:var(--sub);font-size:11px">${hex}</code>
       <button class="btn btn-outline" style="padding:0 6px" onclick="cebRemove(${i})">✕</button></div>`;
   });
@@ -1719,7 +1772,7 @@ function cebRender(){
 // captured data and do need the guard.
 async function cebAssign(trig){
   const list = window._cebStages;
-  if (!list.length){ alert('Add at least one stage first.'); return; }
+  if (!list.length){ alert(t('请先添加至少一个阶段。','Add at least one stage first.')); return; }
   const sorted = list.slice().sort((a, b) => cebStartZone(a.bytes) - cebStartZone(b.bytes));
   const base = trig === 0 ? 0x57 : 0x5c;   // used by the writes AND the read-back below
   try {
@@ -1740,7 +1793,7 @@ async function cebAssign(trig){
     const vEnable = await hidLocked(() => readField(base + 0, 'u8'));
     const vCount  = await hidLocked(() => readField(base + 4, 'u8'));
     if (vEnable !== 1 || vCount !== sorted.length){
-      alert(`VERIFY FAILED — device reports enable=${vEnable}, state count=${vCount} (expected 1 and ${sorted.length}). The effect will not play correctly; try Assign again.`);
+      alert(t(`校验失败 — 设备报告 enable=${vEnable}，状态数=${vCount}（期望 1 和 ${sorted.length}）。该效果不会正常播放；请重新点“分配”。`, `VERIFY FAILED — device reports enable=${vEnable}, state count=${vCount} (expected 1 and ${sorted.length}). The effect will not play correctly; try Assign again.`));
       return;
     }
     const pfx = trig === 0 ? 'ce_r2' : 'ce_l2';
@@ -1751,12 +1804,12 @@ async function cebAssign(trig){
     (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
     window._dirty[pfx + '_state_count'] = 1;
     render(); cebRender();
-    alert(`Built ${sorted.length}-stage effect assigned to ${trig === 0 ? 'R2' : 'L2'} (condition While held, zone 0 set for you). Save to a slot to keep it.`);
-  } catch(e){ alert('Assign failed: ' + (e && e.message ? e.message : e)); }
+    alert(t(`已把 ${sorted.length} 个阶段构建的效果指定给 ${trig === 0 ? 'R2' : 'L2'}（条件已设为“按住期间”，区域 0 已为你设好）。保存到槽位以保留。`, `Built ${sorted.length}-stage effect assigned to ${trig === 0 ? 'R2' : 'L2'} (condition While held, zone 0 set for you). Save to a slot to keep it.`));
+  } catch(e){ alert(t('指定失败：','Assign failed: ') + (e && e.message ? e.message : e)); }
 }
 async function ceClearDevice(trig){
   const name = trig === 0 ? 'R2' : 'L2';
-  if (!confirm(`Remove the custom effect from ${name}?\n\nThis wipes its stored states on the device and returns ${name} to the trigger sliders. Your other ${name} settings, including the custom-effect-vs-sliders hand-off, are left alone. Save to a slot afterwards to make it permanent for that profile.`)) return;
+  if (!confirm(t(`要移除 ${name} 上的自定义效果吗？\n\n这会清除设备上已存储的状态，并让 ${name} 交还给扳机滑块。你的其它 ${name} 设置（包括“自定义效果 vs 滑块”的交接设置）都保持不变。之后保存到槽位，即可让该配置档永久生效。`, `Remove the custom effect from ${name}?\n\nThis wipes its stored states on the device and returns ${name} to the trigger sliders. Your other ${name} settings, including the custom-effect-vs-sliders hand-off, are left alone. Save to a slot afterwards to make it permanent for that profile.`))) return;
   const base = trig === 0 ? 0x57 : 0x5c;
   // NOTE: deliberately does NOT touch ce_*_yield (the custom-effect-vs-sliders
   // hand-off). That is a profile preference about how the trigger is shared, not
@@ -1775,7 +1828,7 @@ async function ceClearDevice(trig){
     const vEnable = await hidLocked(() => readField(base + 0, 'u8'));
     const vCount  = await hidLocked(() => readField(base + 4, 'u8'));
     if (vEnable !== 0 || vCount !== 0){
-      alert(`VERIFY FAILED — device still reports enable=${vEnable}, state count=${vCount}. Try again.`);
+      alert(t(`校验失败 — 设备仍报告 enable=${vEnable}，状态数=${vCount}。请重试。`, `VERIFY FAILED — device still reports enable=${vEnable}, state count=${vCount}. Try again.`));
       return;
     }
     window._cebStages = [];              // removing the effect starts the builder fresh
@@ -1785,8 +1838,8 @@ async function ceClearDevice(trig){
     (window._dirty = window._dirty || {})[pfx + '_enable'] = 1;
     window._dirty[pfx + '_state_count'] = 1;
     render();
-    alert(`${name} cleared — the trigger is back on its slider settings. Save to a slot to keep it that way.`);
-  } catch(e){ alert('Clear failed: ' + (e && e.message ? e.message : e)); }
+    alert(t(`${name} 已清除 — 该扳机已回到滑块设置。保存到槽位即可保持这个状态。`, `${name} cleared — the trigger is back on its slider settings. Save to a slot to keep it that way.`));
+  } catch(e){ alert(t('清除失败：','Clear failed: ') + (e && e.message ? e.message : e)); }
 }
 
 // ---- Reader: decode whatever is actually on a trigger -------------------------
@@ -1798,6 +1851,8 @@ async function ceClearDevice(trig){
 const CE_TYPE_NAMES = {0x21:'Resistance',0x01:'Resistance',0x25:'Weapon break',0x23:'Weapon break',
                        0x22:'Bow / snap',0x02:'Bow / snap',0x26:'Vibration',0x06:'Vibration',
                        0x05:'Off',0x00:'(empty)'};
+const CE_TYPE_ZH = { 'Resistance':'阻力', 'Weapon break':'枪械段落感', 'Bow / snap':'弓 / 回弹', 'Vibration':'振动', 'Off':'关闭', '(empty)':'（空）' };
+function ctn(en){ return (LANG === 'zh' && CE_TYPE_ZH[en]) ? CE_TYPE_ZH[en] : en; }
 const cePct = w => Math.round((w & 7) * 100 / 7);
 const ceZpos = z => Math.floor(z * 51 / 2);   // exactly the firmware's integer (z*51)/2
 function ceZonesOfBytes(b){
@@ -1816,19 +1871,19 @@ function ceZoneForce(b, z){            // inverse of cebPackZones
 // it, and flag 0 since an effect at level 0 may be imperceptible.
 function ceForceLabel(b, z){
   const w = ceZoneForce(b, z);
-  return w === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${w}/7 (${cePct(w)}%)`;
+  return w === 0 ? t('力度 0/7（最弱 — 可能感觉不到）','force 0/7 (weakest — may not be felt)') : t(`力度 ${w}/7（${cePct(w)}%）`, `force ${w}/7 (${cePct(w)}%)`);
 }
 function ceIsMechBytes(b){ return [0x21,0x01,0x25,0x23,0x22,0x02].includes(b[0]); }
 function ceDescribeState(b){
   const t = b[0], z = ceZonesOfBytes(b);
-  const name = CE_TYPE_NAMES[t] !== undefined ? CE_TYPE_NAMES[t] : ('type 0x' + t.toString(16));
+  const name = ctn(CE_TYPE_NAMES[t] !== undefined ? CE_TYPE_NAMES[t] : ('type 0x' + t.toString(16)));
   if (t === 0x05 || t === 0x00) return name;
-  if (!z.length) return `${name} — no zones set`;
+  if (!z.length) return LANG === 'zh' ? `${name} — 未设置任何区域` : `${name} — no zones set`;
   const lo = z[0], hi = z[z.length - 1];
-  if (t === 0x25 || t === 0x23) return `${name} — wall ${lo}→${hi}, ${b[3] === 0 ? 'force 0/7 (weakest — may not be felt)' : `force ${b[3] & 7}/7 (${cePct(b[3])}%)`}`;
-  if (t === 0x22 || t === 0x02) return `${name} — draw ${lo}→${hi}, force ${b[3] & 7}/7, snap ${(b[3] >> 3) & 7}/7`;
-  if (t === 0x26 || t === 0x06) return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
-  return `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
+  if (t === 0x25 || t === 0x23) return (LANG === 'zh' ? `${name} — 墙 ${lo}→${hi}，` : `${name} — wall ${lo}→${hi}, `) + (b[3] === 0 ? (LANG === 'zh' ? '力度 0/7（最弱 — 可能感觉不到）' : 'force 0/7 (weakest — may not be felt)') : (LANG === 'zh' ? `力度 ${b[3] & 7}/7（${cePct(b[3])}%）` : `force ${b[3] & 7}/7 (${cePct(b[3])}%)`));
+  if (t === 0x22 || t === 0x02) return LANG === 'zh' ? `${name} — 拉弦 ${lo}→${hi}，力度 ${b[3] & 7}/7，回弹 ${(b[3] >> 3) & 7}/7` : `${name} — draw ${lo}→${hi}, force ${b[3] & 7}/7, snap ${(b[3] >> 3) & 7}/7`;
+  if (t === 0x26 || t === 0x06) return LANG === 'zh' ? `${name} — 区域 ${lo}–${hi}，${ceForceLabel(b, lo)}，频率 ${b[9]}` : `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}, freq ${b[9]}`;
+  return LANG === 'zh' ? `${name} — 区域 ${lo}–${hi}，${ceForceLabel(b, lo)}` : `${name} — zones ${lo}–${hi}, ${ceForceLabel(b, lo)}`;
 }
 // Mirror of the firmware's run_sequencer (state_mgr.cpp). A set of 2..5 stages
 // with AT LEAST ONE mechanical stage (wall/resistance/bow) and DISTINCT start
@@ -1883,7 +1938,7 @@ async function calSendAmount(n){
   const box = document.getElementById('calbox');
   try {
     if (+config.gyro_output < 1){
-      box.innerHTML = '<span style="color:#e0a030">Set Gyro output to Mouse first \u2014 otherwise there is no mouse for the counts to move.</span>';
+      box.innerHTML = '<span style="color:#e0a030">' + t('请先把陀螺仪输出设为“鼠标” — 否则没有鼠标可以让这些计数移动。','Set Gyro output to Mouse first \u2014 otherwise there is no mouse for the counts to move.') + '</span>';
       return;
     }
     CAL_COUNTS = n;
@@ -1892,25 +1947,25 @@ async function calSendAmount(n){
     // attempt found both amounts already recorded, skipped asking for the
     // check, and compared the new reading against a stale one from before.
     if (n === 6500) window._calLast = {};
-    box.innerHTML = `Switch to the game NOW \u2014 sending ${n} counts in 3s\u2026`;
+    box.innerHTML = t(`立刻切到游戏 — 将在 3 秒后发送 ${n} 个计数…`, `Switch to the game NOW \u2014 sending ${n} counts in 3s\u2026`);
     await sleep(3000);
     await hidLocked(() => writeField(0x86, 'u16', n));
-    box.innerHTML = `Sent <b>${n}</b> counts to the right (the sweep takes a few seconds). Type how far the view turned, then press 3.`;
-  } catch(e){ box.innerHTML = 'Could not send: ' + e.message; }
+    box.innerHTML = t(`已向右发送 <b>${n}</b> 个计数（扫描需要几秒）。请输入视角转过的度数，然后按第 3 步。`, `Sent <b>${n}</b> counts to the right (the sweep takes a few seconds). Type how far the view turned, then press 3.`);
+  } catch(e){ box.innerHTML = t('发送失败：','Could not send: ') + e.message; }
 }
 async function calSend(){ return calSendAmount(6500); }
 async function calSendHalf(){ return calSendAmount(3250); }
 function calCompute(){
   const box = document.getElementById('calbox');
   const obs = parseFloat(document.getElementById('calobs').value);
-  if (!isFinite(obs) || obs <= 0){ box.innerHTML = 'Enter the degrees the view actually turned.'; return; }
+  if (!isFinite(obs) || obs <= 0){ box.innerHTML = t('请输入视角实际转过的度数。','Enter the degrees the view actually turned.'); return; }
   const c360 = Math.round(CAL_COUNTS * 360 / obs);
   window._calLast = window._calLast || {};
   window._calLast[CAL_COUNTS] = obs;
   const recorded = Object.keys(window._calLast).sort((x, y) => y - x)
     .map(k => `${k} \u2192 ${window._calLast[k]}\u00b0`).join(', ');
   if (c360 < 500 || c360 > 50000){
-    box.innerHTML = `<span style="color:#e0a030">That works out to ${c360}, outside the sensible range. Check the game had focus and that mouse acceleration is off, then try again.</span>`;
+    box.innerHTML = t(`<span style="color:#e0a030">算出为 ${c360}，超出合理范围。请确认游戏处于焦点状态、鼠标加速已关闭，然后重试。</span>`, `<span style="color:#e0a030">That works out to ${c360}, outside the sensible range. Check the game had focus and that mouse acceleration is off, then try again.</span>`);
     return;
   }
   // If both amounts have been measured, check they agree.
@@ -1919,21 +1974,21 @@ function calCompute(){
   if (a && b){
     const ratio = a / b;                       // should be 2.0
     lin = (ratio > 1.8 && ratio < 2.2)
-      ? `<br><span style="color:#4ade80">Linearity OK: half the counts turned half as far (${ratio.toFixed(2)}x), so the game is receiving every count and this number is trustworthy.</span>`
-      : `<br><span style="color:#e0a030">Half the counts turned ${ratio.toFixed(2)}x less, not 2x. Counts are being lost or scaled on the way in \u2014 turn OFF in-game mouse smoothing/acceleration and Windows "Enhance pointer precision", then measure again. Until this reads about 2x, any counts-per-360 from here will be too high.</span>`;
+      ? t(`<br><span style="color:#4ade80">线性正常：一半的计数只转了不到一半的行程（${ratio.toFixed(2)} 倍），说明游戏收到了每一个计数，这个数值可信。</span>`, `<br><span style="color:#4ade80">Linearity OK: half the counts turned half as far (${ratio.toFixed(2)}x), so the game is receiving every count and this number is trustworthy.</span>`)
+      : t(`<br><span style="color:#e0a030">一半的计数只转了 ${ratio.toFixed(2)} 倍，而不是 2 倍。计数在传入过程中被丢失或缩放了 — 请关闭游戏内的鼠标平滑/加速以及 Windows 的“提高指针精确度”，然后重新测量。在这个数值接近 2 倍之前，这里算出的每 360° 计数都会偏高。</span>`, `<br><span style="color:#e0a030">Half the counts turned ${ratio.toFixed(2)}x less, not 2x. Counts are being lost or scaled on the way in \u2014 turn OFF in-game mouse smoothing/acceleration and Windows "Enhance pointer precision", then measure again. Until this reads about 2x, any counts-per-360 from here will be too high.</span>`);
   } else {
-    lin = `<br><span style="color:var(--sub)">Now press <b>Send 3250</b> and measure again: half the counts should turn half as far. If they do not, counts are being lost and this number is too high \u2014 that check matters more than judging the angle precisely.</span>`;
+    lin = t(`<br><span style="color:var(--sub)">现在按 <b>发送 3250</b> 再测一次：一半的计数应该只转一半的行程。如果不是，说明计数正在丢失、这个数值偏高 — 这项校验比精确判断角度更重要。</span>`, `<br><span style="color:var(--sub)">Now press <b>Send 3250</b> and measure again: half the counts should turn half as far. If they do not, counts are being lost and this number is too high \u2014 that check matters more than judging the angle precisely.</span>`);
   }
-  box.innerHTML = `<span style="color:var(--sub)">Recorded this run: ${recorded} ` +
-    `<a href="#" onclick="calReset();return false;">clear</a></span><br>` +
-    `This game needs <b>${c360}</b> counts per 360\u00b0.` +
-    ` <button class="btn" style="padding:2px 10px;font-size:12px" onclick="calApply(${c360})">Apply it</button>` +
+  box.innerHTML = `<span style="color:var(--sub)">${t('本次记录：','Recorded this run: ')}${recorded} ` +
+    `<a href="#" onclick="calReset();return false;">${t('清除','clear')}</a></span><br>` +
+    t(`本游戏需要每 360° <b>${c360}</b> 个计数。`, `This game needs <b>${c360}</b> counts per 360\u00b0.`) +
+    ` <button class="btn" style="padding:2px 10px;font-size:12px" onclick="calApply(${c360})">${t('应用它','Apply it')}</button>` +
     lin;
 }
 function calReset(){
   window._calLast = {};
   const box = document.getElementById('calbox');
-  if (box) box.innerHTML = 'Cleared. Press <b>Send 6500</b> to start a fresh measurement.';
+  if (box) box.innerHTML = t('已清除。按 <b>发送 6500</b> 开始新的测量。','Cleared. Press <b>Send 6500</b> to start a fresh measurement.');
 }
 async function calApply(v){
   const box = document.getElementById('calbox');
@@ -1942,9 +1997,9 @@ async function calApply(v){
     (window._dirty = window._dirty || {})['flick_counts_360'] = 1;
     await hidLocked(() => writeField(0x74, 'u16', v));
     window._calLast = {};   // applied: the run is finished
-    box.innerHTML = `Set to <b>${v}</b>. Save to keep it, or it reverts on the next profile load.`;
+    box.innerHTML = t(`已设为 <b>${v}</b>。保存后才能保留，否则下次载入配置时会还原。`, `Set to <b>${v}</b>. Save to keep it, or it reverts on the next profile load.`);
     render();
-  } catch(e){ box.innerHTML = 'Could not apply: ' + e.message; }
+  } catch(e){ box.innerHTML = t('应用失败：','Could not apply: ') + e.message; }
 }
 
 async function gyroAngleStart(){
@@ -1956,33 +2011,33 @@ async function gyroAngleStart(){
   // degree or two, and the error is spread over four times the angle.
   try {
     await hidLocked(() => readField(0x83, 'u16'));   // read = reset
-  } catch(e){ if (box) box.innerHTML = 'Could not start: ' + e.message; return; }
+  } catch(e){ if (box) box.innerHTML = t('启动失败：','Could not start: ') + e.message; return; }
   for (let s = 8; s > 0; s--){
-    if (box) box.innerHTML = `<b>Turn now</b> \u2014 one full turn (360\u00b0) to the right, ending pointing exactly where you started. Keep the pad level, then hold still. <b>${s}s</b>`;
+    if (box) box.innerHTML = t(`<b>现在开始转</b> — 向右完整转一圈（360°），结束时朝向与起点完全一致。保持手柄水平，然后静止不动。<b>${s}s</b>`, `<b>Turn now</b> \u2014 one full turn (360\u00b0) to the right, ending pointing exactly where you started. Keep the pad level, then hold still. <b>${s}s</b>`);
     await sleep(1000);
   }
-  if (box) box.innerHTML = 'Reading\u2026';
+  if (box) box.innerHTML = t('读取中…','Reading\u2026');
   try {
     const raw = await hidLocked(() => readField(0x83, 'u16'));
     let hz = 0;
     try { hz = await hidLocked(() => readField(0x85, 'u16')); } catch(e) {}
     const deg = raw / 10;
     if (deg < 60){
-      box.innerHTML = `Measured ${deg.toFixed(1)}\u00b0 \u2014 too little to judge. Press Measure and make a complete turn during the countdown.`;
+      box.innerHTML = t(`测得 ${deg.toFixed(1)}° — 太少，无法判断。请按“开始测量”，并在倒计时内转完整一圈。`, `Measured ${deg.toFixed(1)}\u00b0 \u2014 too little to judge. Press Measure and make a complete turn during the countdown.`);
       return;
     }
     const err  = (deg - 360) / 360 * 100;
     const trim = Math.round(360 / deg * 100);
     let verdict;
     if (Math.abs(err) <= 5){
-      verdict = `<span style="color:#4ade80">Within 5% of a full turn \u2014 the scale is right. Leave the trim at 100.</span>`;
+      verdict = t(`<span style="color:#4ade80">与整圈相差在 5% 以内 — 刻度正确，微调保留 100 即可。</span>`, `<span style="color:#4ade80">Within 5% of a full turn \u2014 the scale is right. Leave the trim at 100.</span>`);
     } else {
-      verdict = `<span style="color:#e0a030">The gyro reads ${deg > 360 ? 'high' : 'low'} by ${Math.abs(err).toFixed(0)}%. Set <b>Gyro scale trim</b> to <b>${trim}</b> in the Gyro tab, then 1.0\u00d7 is true 1:1 and every multiplier is honest.</span>`;
+      verdict = t(`<span style="color:#e0a030">陀螺仪读数${deg > 360 ? '偏高' : '偏低'} ${Math.abs(err).toFixed(0)}%。请在“陀螺仪”页把 <b>陀螺仪刻度微调</b> 设为 <b>${trim}</b>，这样 1.0× 才是真正的 1:1，所有倍率才准确。</span>`, `<span style="color:#e0a030">The gyro reads ${deg > 360 ? 'high' : 'low'} by ${Math.abs(err).toFixed(0)}%. Set <b>Gyro scale trim</b> to <b>${trim}</b> in the Gyro tab, then 1.0\u00d7 is true 1:1 and every multiplier is honest.</span>`);
     }
-    box.innerHTML = `Measured <b>${deg.toFixed(1)}\u00b0</b> for one full turn.<br>${verdict}` +
-      `<br><span style="color:var(--sub)">Gyro samples arrived at ${hz || '?'} Hz during the turn. ` +
-      `Line the controller up with a desk edge or door frame and return to it exactly. Repeat two or three times and average \u2014 readings within a few percent of each other mean the measurement is sound. The total counts rotation in BOTH directions, so turn one way only and hold still until the countdown ends.</span>`;
-  } catch(e){ box.innerHTML = 'Could not read: ' + e.message; }
+    box.innerHTML = t(`完整转一圈测得 <b>${deg.toFixed(1)}°</b>。<br>${verdict}`, `Measured <b>${deg.toFixed(1)}\u00b0</b> for one full turn.<br>${verdict}`) +
+      t(`<br><span style="color:var(--sub)">转动期间陀螺仪采样率为 ${hz || '?'} Hz。`, `<br><span style="color:var(--sub)">Gyro samples arrived at ${hz || '?'} Hz during the turn. `) +
+      t(`把手柄对准桌边或门框，结束时精确回到同一条线。重复两三次取平均 — 几次读数相差在几个百分点以内，说明测量可靠。该计数会把两个方向的旋转都累加，所以只朝一个方向转，并在倒计时结束前保持静止。</span>`, `Line the controller up with a desk edge or door frame and return to it exactly. Repeat two or three times and average \u2014 readings within a few percent of each other mean the measurement is sound. The total counts rotation in BOTH directions, so turn one way only and hold still until the countdown ends.</span>`);
+  } catch(e){ box.innerHTML = t('读取失败：','Could not read: ') + e.message; }
 }
 
 // 0x9e is a COMMAND, not a stored field: it starts a stage's blink on the
@@ -2017,15 +2072,15 @@ function battColour(i, hex){
 // card itself.
 function battStagesPanelHTML(){
   return '<div style="font-size:12px;color:var(--sub);margin-top:6px">' +
-         'Each stage fires once when the battery falls past its level, pulses that colour, and stops. ' +
-         'Levels are 10% steps because that is how the controller reports its charge. It is a gentle pulse that ' +
-         'fades up and back down, about 1.6 seconds each, not a hard flash.</div>' +
+         t('每个阶段在电量降到对应档位时触发一次，闪出该颜色，然后停止。','Each stage fires once when the battery falls past its level, pulses that colour, and stops. ') +
+         t('档位按 10% 一档，因为手柄就是这样上报电量的。它是柔和的脉冲，','Levels are 10% steps because that is how the controller reports its charge. It is a gentle pulse that ') +
+         t('渐亮再渐暗，每次约 1.6 秒，不是硬闪一下。</div>','fades up and back down, about 1.6 seconds each, not a hard flash.</div>') +
          '<div style="margin-top:8px">' + battStagesHTML() + '</div>' +
          // Below the rows, where it is read just before reaching for Test, and
          // bold because missing it means testing the PREVIOUS settings and
          // concluding the feature does not work.
          '<div id="batttest" style="font-size:12px;margin-top:8px">' +
-         '<b>Test uses the settings already saved to the dongle, so save first.</b></div>';
+         t('<b>测试使用的是已保存到适配器的设置，所以请先保存。</b></div>','<b>Test uses the settings already saved to the dongle, so save first.</b></div>');
 }
 function battStagesHTML(){
   let h = '';
@@ -2044,16 +2099,16 @@ function battStagesHTML(){
     const dirty = k => "(window._dirty=window._dirty||{})['" + k + "']=1";
     h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line,#333)">';
     h += '<label style="min-width:78px"><input type="checkbox"' + (on ? ' checked' : '') +
-         ' onchange="config[\'' + kOn + '\']=this.checked?1:0;' + dirty(kOn) + ';render()"> Stage ' + (i+1) + '</label>';
-    h += '<span style="font-size:12px;color:var(--sub)">at</span>';
+         ' onchange="config[\'' + kOn + '\']=this.checked?1:0;' + dirty(kOn) + ';render()"> ' + t('阶段','Stage') + ' ' + (i+1) + '</label>';
+    h += '<span style="font-size:12px;color:var(--sub)">' + t('电量降至','at') + '</span>';
     h += '<select' + dis + ' onchange="config[\'' + kLv + '\']=+this.value;' + dirty(kLv) + '">';
     for (const [v,lab] of BATT_LEVELS)
       h += '<option value="' + v + '"' + ((+config[kLv] || 0) === v ? ' selected' : '') + '>' + lab + '</option>';
     h += '</select>';
-    h += '<span style="font-size:12px;color:var(--sub)">pulses</span>';
+    h += '<span style="font-size:12px;color:var(--sub)">' + t('闪烁次数','pulses') + '</span>';
     h += '<input type="number" min="1" max="20" style="width:64px" value="' + (+config[kBl] || 5) + '"' + dis +
          ' onchange="config[\'' + kBl + '\']=cfgClampNum(this,1,20,false);' + dirty(kBl) + '">';
-    h += '<span style="font-size:12px;color:var(--sub)">colour</span>';
+    h += '<span style="font-size:12px;color:var(--sub)">' + t('颜色','colour') + '</span>';
     h += '<input type="color" style="width:46px;height:26px;padding:0;border:1px solid var(--line,#333);background:none" value="' +
          battHex(i) + '"' + dis + ' onchange="battColour(' + i + ', this.value)">';
     // The picker writes three bytes at once, so the literals the harness needs
@@ -2075,7 +2130,7 @@ function battStagesHTML(){
 // written - so saving, profiles and slot backups need no special case.
 async function battTest(stage){
   const el = document.getElementById('batttest');
-  if (!device){ if (el) el.textContent = 'No device.'; return; }
+  if (!device){ if (el) el.textContent = t('没有设备。','No device.'); return; }
   try {
     await hidLocked(() => sendCmd(0x01, [0x9e, stage & 0xff]));
     if (el) el.textContent = 'Running stage ' + (stage+1) + ' on the controller.';
@@ -2395,7 +2450,7 @@ async function exportEffectFile(trig){
 
 function cebSaveFile(){
   const list = window._cebStages;
-  if (!list.length){ alert('Add at least one stage first.'); return; }
+  if (!list.length){ alert(t('请先添加至少一个阶段。','Add at least one stage first.')); return; }
   const sorted = list.slice().sort((a, b) => cebStartZone(a.bytes) - cebStartZone(b.bytes));
   const dump = { format: 'ds5dongle-custom-effect', version: 2, source: 'built',
     state_count: sorted.length,
@@ -3616,12 +3671,12 @@ let abSinks = [], abSinkId = '', abStatus = '', abRaw = [], abPerm = '', abSteps
 
 function audioBridgeHTML(){
   const on = !!abCtx;
-  let h = '<div class="card"><div class="card-title">Browser audio bridge ' +
-          '<span style="font-size:11px;color:var(--sub)">(experimental — no Python needed)</span></div>';
+  let h = '<div class="card"><div class="card-title">' + t('浏览器音频桥接','Browser audio bridge') + ' ' +
+          t('<span style="font-size:11px;color:var(--sub)">（实验性 — 无需 Python）</span></div>','<span style="font-size:11px;color:var(--sub)">(experimental — no Python needed)</span></div>');
   h += '<p style="margin:6px 0 8px;color:var(--sub);font-size:13px">' +
-       'Feeds PC audio to the dongle from this page, so auto-haptics work without running ' +
-       'ds5audio.py. Chrome on Windows only. Share the <b>entire screen</b> and tick ' +
-       '<b>Share system audio</b> when asked, or nothing will be captured.</p>';
+       t('从本页把电脑音频送入适配器，自动触觉无需运行 ','Feeds PC audio to the dongle from this page, so auto-haptics work without running ') +
+       t('ds5audio.py 也能工作。仅限 Windows 上的 Chrome。请共享<b>整个屏幕</b>，并在询问时勾选 ','ds5audio.py. Chrome on Windows only. Share the <b>entire screen</b> and tick ') +
+       t('<b>共享系统音频</b>，否则什么也采集不到。</p>','<b>Share system audio</b> when asked, or nothing will be captured.</p>');
 
   if (!abSinks.length){
     // Browsers only reveal output devices once the page holds a media
@@ -3629,48 +3684,48 @@ function audioBridgeHTML(){
     // on simply opening the tab - is startling and looks like the page wants to
     // listen to you. Ask only when the button is pressed, and say why first.
     h += '<p style="margin:6px 0 8px;color:var(--sub);font-size:12px">' +
-         'Chrome will not name audio devices until the page has been granted a media ' +
-         'permission, so listing them asks for microphone access. Nothing is recorded — ' +
-         'the microphone is released immediately.</p>';
-    h += '<button class="btn btn-outline" style="padding:3px 12px" onclick="abListSinks()">List output devices</button>';
+         t('在页面获得媒体权限之前，Chrome 不会给出音频设备的名称，','Chrome will not name audio devices until the page has been granted a media ') +
+         t('所以列出设备时会请求麦克风权限。不会录制任何内容 — ','permission, so listing them asks for microphone access. Nothing is recorded — ') +
+         t('麦克风会立刻释放。</p>','the microphone is released immediately.</p>');
+    h += '<button class="btn btn-outline" style="padding:3px 12px" onclick="abListSinks()">' + t('列出输出设备','List output devices') + '</button>';
   } else {
-    h += '<div style="margin-bottom:6px"><label style="font-size:12px;color:var(--sub)">Send to&nbsp;</label>' +
+    h += '<div style="margin-bottom:6px"><label style="font-size:12px;color:var(--sub)">' + t('发送到','Send to') + '&nbsp;</label>' +
          '<select id="abSink" onchange="abPickSink(this.value)" style="padding:2px 4px;font-size:12px;min-width:300px">';
     for (const d of abSinks){
       h += '<option value="' + escAttr(d.id) + '"' + (d.id === abSinkId ? ' selected' : '') + '>' +
            escAttr(d.label) + '</option>';
     }
-    h += '</select> <button class="btn btn-outline" style="padding:2px 8px;font-size:12px" onclick="abListSinks()">Refresh</button></div>';
-    h += on ? '<button class="btn" style="padding:3px 14px" onclick="abStop()">Stop bridging</button>'
-            : '<button class="btn" style="padding:3px 14px" onclick="abStart()">Start bridging</button>';
+    h += '</select> <button class="btn btn-outline" style="padding:2px 8px;font-size:12px" onclick="abListSinks()">' + t('刷新','Refresh') + '</button></div>';
+    h += on ? '<button class="btn" style="padding:3px 14px" onclick="abStop()">' + t('停止桥接','Stop bridging') + '</button>'
+            : '<button class="btn" style="padding:3px 14px" onclick="abStart()">' + t('开始桥接','Start bridging') + '</button>';
   }
   h += ' <span id="abStatus" style="font-size:12px;color:var(--sub);margin-left:8px">' + escAttr(abStatus) + '</span>';
   // What the browser ACTUALLY reported. Without this a failure is invisible: the
   // panel said "1 output found" while the one entry was an unusable placeholder.
   if (abRaw.length && !abSinks.length){
     h += '<div style="margin-top:8px;font-size:11px;color:var(--sub)">' +
-         '<b>Microphone permission:</b> ' + escAttr(abPerm || 'not checked') +
+         t('<b>麦克风权限：</b> ','<b>Microphone permission:</b> ') + escAttr(abPerm || t('未检查','not checked')) +
          (abPerm === 'denied'
-            ? ' — Chrome will not reveal audio outputs while this is blocked. Click the icon at the left of the address bar and allow Microphone for this site.'
+            ? t(' — 在此权限被阻止期间，Chrome 不会显示音频输出设备。请点击地址栏左侧的图标，为本站点允许麦克风。',' — Chrome will not reveal audio outputs while this is blocked. Click the icon at the left of the address bar and allow Microphone for this site.')
             : '') +
-         '<br><b>What happened, in order:</b><br>' +
+         t('<br><b>依次发生的情况：</b><br>','<br><b>What happened, in order:</b><br>') +
          abSteps.map(t => '&nbsp;&nbsp;' + escAttr(t)).join('<br>') +
-         '<br><b>What the browser reported:</b><br>';
+         t('<br><b>浏览器报告的内容：</b><br>','<br><b>What the browser reported:</b><br>');
     for (const d of abRaw){
-      h += escAttr(d.kind) + ' — label ' + (d.label ? '"' + escAttr(d.label) + '"' : '(blank)') +
-           ', id ' + (d.id ? escAttr(d.id.slice(0, 10)) + '…' : '(blank)') + '<br>';
+      h += escAttr(d.kind) + t(' — 名称 ',' — label ') + (d.label ? '"' + escAttr(d.label) + '"' : t('（空）','(blank)')) +
+           t('，id ',' , id ') + (d.id ? escAttr(d.id.slice(0, 10)) + '…' : t('（空）','(blank)')) + '<br>';
     }
     if (location.protocol === 'file:'){
-      h += '<b style="color:#e0a030">This page is open from a file on disk.</b> A file:// page ' +
-           'has no persistent origin, so the browser grants the microphone for one call and ' +
-           'then forgets it - which is exactly the "granted, then prompt, no labels" result ' +
-           'above. Open the portal over https instead ' +
-           '(artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html) and try again. ' +
-           'Everything else in the portal works from a file; only the audio bridge needs this.</div>';
+      h += t('<b style="color:#e0a030">本页面是从磁盘文件打开的。</b> file:// 页面 ','<b style="color:#e0a030">This page is open from a file on disk.</b> A file:// page ') +
+           t('没有固定的 origin，所以浏览器只授予一次麦克风权限，','has no persistent origin, so the browser grants the microphone for one call and ') +
+           t('之后就忘掉 — 这正是上面“已授予、又弹提示、却没有设备名称”的结果。','then forgets it - which is exactly the "granted, then prompt, no labels" result ') +
+           t('请改用 https 打开本门户：','above. Open the portal over https instead ') +
+           t('(artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html) 然后重试。','(artzox.github.io/DS5Dongle-Studio/ds5-config-portal.html) and try again. ') +
+           t('门户里其它功能从文件打开都能正常使用，只有音频桥接需要这样做。</div>','Everything else in the portal works from a file; only the audio bridge needs this.</div>');
     } else {
-      h += 'A blank id and label means the browser has not granted this page access to ' +
-           'audio outputs. Check the site permissions for Microphone, and note that ' +
-           'output selection needs Chrome 110 or newer.</div>';
+      h += t('id 和名称都为空，说明浏览器还没有授予本页面访问 ','A blank id and label means the browser has not granted this page access to ') +
+           t('音频输出的权限。请检查站点的麦克风权限，并注意','audio outputs. Check the site permissions for Microphone, and note that ') +
+           t('选择输出设备需要 Chrome 110 或更新版本。</div>','output selection needs Chrome 110 or newer.</div>');
     }
   }
   h += '<div id="abSignal" style="font-size:12px;color:var(--sub);margin-top:6px"></div>';
@@ -3882,6 +3937,24 @@ const MACRO_OUT_BTNS = ['Keyboard','Cross','Circle','Square','Triangle','L1','R1
                         // every saved macro.
                         'Create','Options','Touchpad click',
                         'D-pad Up','D-pad Down','D-pad Left','D-pad Right'];
+// Chinese names for the button/mouse labels above. Keyed by the ENGLISH name so the
+// tables stay the single source of truth for bit values and export order, and the
+// lookup happens at draw time - switching language updates them without a reload.
+const BTN_NAME_ZH = {
+  'Keyboard':'键盘', 'Left click':'鼠标左键', 'Right click':'鼠标右键', 'Middle click':'鼠标中键',
+  'Scroll up':'滚轮上滚', 'Scroll down':'滚轮下滚',
+  'D-pad Up':'十字键 上', 'D-pad Down':'十字键 下', 'D-pad Left':'十字键 左', 'D-pad Right':'十字键 右',
+  'Square':'□', 'Cross':'×', 'Circle':'○', 'Triangle':'△',
+  'L2 (click)':'L2（按下）', 'R2 (click)':'R2（按下）',
+  'Create':'创建', 'Options':'选项', 'Touchpad click':'触控板点击', 'Mute':'静音',
+  'Fn (left)':'Fn（左）', 'Fn (right)':'Fn（右）',
+  'Left paddle':'左背键', 'Right paddle':'右背键',
+  'Touchpad click (left)':'触控板点击（左）', 'Touchpad click (right)':'触控板点击（右）',
+  'Fn L':'Fn 左', 'Fn R':'Fn 右', 'Paddle L':'背键 左', 'Paddle R':'背键 右',
+  'Swipe up':'上滑', 'Swipe down':'下滑', 'Swipe left':'左滑', 'Swipe right':'右滑',
+};
+// Translate a button / mouse-action label, falling back to the English name.
+function bn(en){ return (LANG === 'zh' && BTN_NAME_ZH[en]) ? BTN_NAME_ZH[en] : en; }
 // Index 11+ are MOUSE actions, matching MOUT_* in src/macro.h. The split is by
 // value range so the firmware's controller loop never sees them.
 const MOUT_FIRST = 11, MOUT_LAST = 15;
@@ -3975,7 +4048,7 @@ function macroPadHalf(x0){
 
 function macroChordName(mask){
   if (!mask) return '';
-  return BTN.filter(b => (mask & b[1])).map(b => b[2]).join(' + ');
+  return BTN.filter(b => (mask & b[1])).map(b => bn(b[2])).join(' + ');
 }
 
 // Gesture byte: bits 0-1 direction, bit2 zone, bit3 fingers, bit7 valid.
@@ -3983,9 +4056,9 @@ const GEST_VALID = 0x80, GEST_ZONE_RIGHT = 0x04, GEST_TWO_FINGER = 0x08;
 const GEST_DIRS = ['Swipe up','Swipe down','Swipe left','Swipe right'];
 function macroGestureName(g){
   if (!g || !(g & GEST_VALID)) return '';
-  let t = GEST_DIRS[g & 0x03];
-  t += (g & GEST_ZONE_RIGHT) ? ' (right half)' : ' (left half)';
-  if (g & GEST_TWO_FINGER) t += ', two fingers';
+  let t = bn(GEST_DIRS[g & 0x03]);
+  t += (g & GEST_ZONE_RIGHT) ? (LANG === 'zh' ? '（右半）' : ' (right half)') : (LANG === 'zh' ? '（左半）' : ' (left half)');
+  if (g & GEST_TWO_FINGER) t += (LANG === 'zh' ? '，两指' : ', two fingers');
   return t;
 }
 
@@ -4250,16 +4323,16 @@ function macroOutBtnValues(){
   for (let k = MOUT_LAST + 1; k < MACRO_OUT_BTNS.length; k++) v.push(k);
   return v;
 }
-function macroPickBtnHTML(i, m){ return macroPickOutHTML(i, m, macroOutBtnValues(), 'Which controller button should this macro send?'); }
+function macroPickBtnHTML(i, m){ return macroPickOutHTML(i, m, macroOutBtnValues(), t('这个宏应该发送哪个手柄按键？','Which controller button should this macro send?')); }
 function macroPickOutHTML(i, m, values, prompt){
   let h = '<div style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin:6px 0">';
   h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' + prompt + '</div>';
   for (const k of values){
     const on = (m.out_btn|0) === k;
     h += '<button class="btn' + (on ? '' : ' btn-outline') + '" style="padding:2px 8px;margin:0 4px 4px 0;font-size:12px" ' +
-         'onclick="macroSetOutBtn(' + i + ', ' + k + ');macroPickClose()">' + MACRO_OUT_BTNS[k] + '</button>';
+         'onclick="macroSetOutBtn(' + i + ', ' + k + ');macroPickClose()">' + bn(MACRO_OUT_BTNS[k]) + '</button>';
   }
-  h += '<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickClose()">Close</button></div>';
+  h += '<div style="margin-top:4px"><button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickClose()">' + t('关闭','Close') + '</button></div>';
   h += '</div>';
   return h;
 }
@@ -4305,15 +4378,15 @@ function macroPickInApply(){
 function macroPickInHTML(i){
   const p = window._macroPickIn;
   let h = '<div style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin:6px 0">';
-  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">Tick the buttons this macro should trigger on. Fn and paddle bits are DualSense Edge only, and only report when the controller is not already using them.</div>';
+  h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' + t('勾选这个宏应由哪些按键触发。Fn 与背键位只有 DualSense Edge 才有，而且只有在手柄本身没有占用它们时才会上报。','Tick the buttons this macro should trigger on. Fn and paddle bits are DualSense Edge only, and only report when the controller is not already using them.') + '</div>';
   for (const b of BTN){
     const on = (p.mask & b[1]) !== 0;
     h += '<button class="btn' + (on ? '' : ' btn-outline') + '" style="padding:2px 8px;margin:0 4px 4px 0;font-size:12px" ' +
-         'onclick="macroPickInToggle(' + b[1] + ', ' + (on ? 'false' : 'true') + ')">' + b[2] + '</button>';
+         'onclick="macroPickInToggle(' + b[1] + ', ' + (on ? 'false' : 'true') + ')">' + bn(b[2]) + '</button>';
   }
-  h += '<div style="margin-top:4px;font-size:12px;color:var(--sub)">Chord: ' + (macroChordName(p.mask) || 'none') + '</div>';
-  h += '<div style="margin-top:4px"><button class="btn" style="padding:2px 10px;font-size:12px" onclick="macroPickInApply()">Apply</button>' +
-       ' <button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickInClose()">Cancel</button></div>';
+  h += '<div style="margin-top:4px;font-size:12px;color:var(--sub)">' + t('组合键：','Chord: ') + (macroChordName(p.mask) || t('无','none')) + '</div>';
+  h += '<div style="margin-top:4px"><button class="btn" style="padding:2px 10px;font-size:12px" onclick="macroPickInApply()">' + t('应用','Apply') + '</button>' +
+       ' <button class="btn btn-outline" style="padding:2px 10px;font-size:12px" onclick="macroPickInClose()">' + t('取消','Cancel') + '</button></div>';
   h += '</div>';
   return h;
 }
@@ -4343,9 +4416,9 @@ function macroPickApply(){
   const m = rows[p.row];
   if (!m){ window._macroPick = null; macroRender(); return; }
   const seq = p.mods.concat(p.key ? [p.key] : []);
-  if (!seq.length){ alert('Choose at least one key.'); return; }
+  if (!seq.length){ alert(t('请至少选择一个按键。','Choose at least one key.')); return; }
   if (seq.length > MACRO_KEYS){
-    alert('A macro holds at most ' + MACRO_KEYS + ' keys, including modifiers.');
+    alert(t('一个宏最多容纳 ' + MACRO_KEYS + ' 个按键（含修饰键）。','A macro holds at most ' + MACRO_KEYS + ' keys, including modifiers.'));
     return;
   }
   m.keys = [seq[0]||0, seq[1]||0, seq[2]||0, seq[3]||0];
@@ -4549,7 +4622,7 @@ function macroOutputName(m){
     return STICK_DIRS.map((d,k) => d + ' ' + (USAGE_NAME[m.keys[k]] || '—')).join(' ');
   }
   const ob = m.out_btn|0;
-  if (ob) return MACRO_OUT_BTNS[ob] || ('output ' + ob);
+  if (ob) return bn(MACRO_OUT_BTNS[ob]) || (t('输出 ','output ') + ob);
   return macroComboName(m.keys, m.rel_order);
 }
 
@@ -4563,7 +4636,7 @@ function macroEnabledSummary(mask){
     // a controller or mouse remap leaves it empty, so this used to print "?" for
     // exactly the rows where a surprise matters most: the ones that press a
     // button or click for you.
-    const what = (!m || macroRowEmpty(m)) ? '(empty)'
+    const what = (!m || macroRowEmpty(m)) ? t('（空）','(empty)')
                : ((m.label ? m.label + ' — ' : '') + (macroOutputName(m) || '?'));
     on.push('  ' + (i+1) + '. ' + what);
   }
@@ -4572,8 +4645,8 @@ function macroEnabledSummary(mask){
 function macroNoticeAfterMaskApplied(){
   const on = macroEnabledSummary(config['macro_disable']);
   if (!on.length) return;
-  alert('Profile applied. It enables ' + on.length + ' macro' + (on.length===1?'':'s') +
-        ' — using the definitions already on this dongle, possibly not the ones the profile was made with:\n\n' +
+  alert(t('配置档已应用。启用了 ' + on.length + ' 个宏','Profile applied. It enables ' + on.length + ' macro' + (on.length===1?'':'s')) +
+        t(' — 使用的是本适配器上已有的定义，未必是这个配置档制作时的那些：\n\n',' — using the definitions already on this dongle, possibly not the ones the profile was made with:\n\n') +
         on.join('\n'));
 }
 
@@ -4584,7 +4657,7 @@ async function macroSuspendFiring(on){
 let _macroBusy = false;
 async function refreshMacros(){
   const box = document.getElementById('macrobox');
-  if (!device){ if (box) box.textContent = 'Connect a device to load macros.'; return; }
+  if (!device){ if (box) box.textContent = t('连接设备后加载宏。','Connect a device to load macros.'); return; }
   // Gate on saving/slotsBusy BEFORE taking the HID lock, exactly as the 1 Hz
   // diagnostic poll does. hidLocked() alone is not enough: the main config read
   // path (reloadFromDevice -> readAll -> readField) does NOT go through the lock,
@@ -4596,11 +4669,11 @@ async function refreshMacros(){
   if (saving || slotsBusy) return;
   if (_macroBusy) return;            // render() fires often; one sweep at a time
   _macroBusy = true;
-  if (box) box.textContent = 'Reading macros…';
+  if (box) box.textContent = t('正在读取宏…','Reading macros…');
   try {
     window._macroRows = await hidLocked(() => macroReadAll());
   } catch(e){
-    if (box) box.textContent = 'Could not read macros: ' + e;
+    if (box) box.textContent = t('无法读取宏：','Could not read macros: ') + e;
     return;
   } finally {
     _macroBusy = false;
@@ -4726,32 +4799,32 @@ function macroRecStatus(){
   if (st.which === 2){
     const q = st.mot ? motQuantise(st.mot.raw, motStep()) : null;
     const p = q ? motPathName(q.codes) : '';
-    el.textContent = 'Recording motion — ' +
-      (!st.gate ? 'hold the gate button, then move the controller'
-                : (st.done ? 'captured: ' + (p || '(no movement)') +
-                             (st.mot ? '   suggested step ' + motSuggestStep(st.mot) : '') +
-                             (q && q.over ? '   TOO NOISY — raise the step' : '')
+    el.textContent = t('录制动作 — ','Recording motion — ') +
+      (!st.gate ? t('按住门槛按键，然后移动手柄','hold the gate button, then move the controller')
+                : (st.done ? t('已捕获：','captured: ') + (p || t('（无移动）','(no movement)')) +
+                             (st.mot ? t('   建议步长 ','   suggested step ') + motSuggestStep(st.mot) : '') +
+                             (q && q.over ? t('   太嘈杂 — 请提高步长','   TOO NOISY — raise the step') : '')
                            : (macroChordName(st.gate) + '  ' + (p || '…') +
-                              '   peak ' + (st.mot ? st.mot.peak : 0)))) +
-      '   (press Stop when done)';
+                              t('   峰值 ','   peak ') + (st.mot ? st.mot.peak : 0)))) +
+      t('   （完成后按停止）','   (press Stop when done)');
   } else if (st.which === 1){
-    el.textContent = 'Recording keyboard — ' + (st.press.map(u => USAGE_NAME[u] || u).join(' + ') || 'press your combo');
+    el.textContent = t('录制键盘 — ','Recording keyboard — ') + (st.press.map(u => USAGE_NAME[u] || u).join(' + ') || t('请按下你的组合键','press your combo'));
   } else {
     const seen = st.gesture ? macroGestureName(st.gesture)
                : (st.peak ? macroChordName(st.peak) : '');
     if (st.which === 4){
-      el.textContent = 'Recording mouse — ' + (st.mouseOut ? MACRO_OUT_BTNS[st.mouseOut]
-                                                           : 'click or scroll your mouse');
+      el.textContent = t('录制鼠标 — ','Recording mouse — ') + (st.mouseOut ? bn(MACRO_OUT_BTNS[st.mouseOut])
+                                                           : t('请点击或滚动你的鼠标','click or scroll your mouse'));
       return;
     }
     if (st.which === 3){
       const b = outBtnFromMask(st.peak >>> 0);
-      el.textContent = 'Recording output — ' + (b ? MACRO_OUT_BTNS[b] : 'press a controller button') +
-                       '   (press Stop when done)';
+      el.textContent = t('录制输出 — ','Recording output — ') + (b ? bn(MACRO_OUT_BTNS[b]) : t('请按一个手柄按键','press a controller button')) +
+                       t('   （完成后按停止）','   (press Stop when done)');
       return;
     }
-    el.textContent = 'Recording controller — ' + (seen || 'press buttons or swipe the touchpad') +
-                     '   (press Stop when done)';
+    el.textContent = t('录制手柄 — ','Recording controller — ') + (seen || t('请按键或在触控板上滑动','press buttons or swipe the touchpad')) +
+                     t('   （完成后按停止）','   (press Stop when done)');
   }
 }
 
@@ -4838,8 +4911,8 @@ async function macroRecordStop(){
     }
     macroRender();
     const elm = document.getElementById('macrosave');
-    if (elm) elm.textContent = st.mouseOut ? ('Output set to ' + MACRO_OUT_BTNS[st.mouseOut] + '.')
-                                           : 'No mouse action was captured - try again.';
+    if (elm) elm.textContent = st.mouseOut ? (t('输出已设为 ','Output set to ') + bn(MACRO_OUT_BTNS[st.mouseOut]) + t('。','.'))
+                                           : t('没有捕获到鼠标动作 - 请重试。','No mouse action was captured - try again.');
     return;
   }
 
@@ -4856,8 +4929,8 @@ async function macroRecordStop(){
     }
     macroRender();
     const el = document.getElementById('macrosave');
-    if (el) el.textContent = b ? ('Output set to ' + MACRO_OUT_BTNS[b] + '.')
-                               : 'No mappable button was pressed - try again.';
+    if (el) el.textContent = b ? (t('输出已设为 ','Output set to ') + bn(MACRO_OUT_BTNS[b]) + t('。','.'))
+                               : t('没有按下可映射的按键 - 请重试。','No mappable button was pressed - try again.');
     return;
   }
 
@@ -4933,7 +5006,7 @@ async function macroRecordStop(){
       m.rel_order = rel & 0xff;
     }
     if (st.sawMeta || st.unknown){
-      alert('Some keys could not be captured.\n\nWindows takes the Win key and Alt+Tab before the browser sees them, and the browser keeps Ctrl+W / Ctrl+T / F11.\n\nUse the Pick button on this row to set the combo by hand.');
+      alert(t('有些按键无法被捕获。\n\nWindows 会在浏览器之前截走 Win 键和 Alt+Tab，浏览器则保留 Ctrl+W / Ctrl+T / F11。\n\n请用本行的“Pick/选择”按钮手动设置组合键。','Some keys could not be captured.\n\nWindows takes the Win key and Alt+Tab before the browser sees them, and the browser keeps Ctrl+W / Ctrl+T / F11.\n\nUse the Pick button on this row to set the combo by hand.'));
     }
   }
   macroRender();
@@ -4950,7 +5023,7 @@ function macroAddRow(){
       return;                 // macroSetBit re-renders
     }
   }
-  alert('All ' + MACRO_COUNT + ' macros are in use.');
+  alert(t('全部 ' + MACRO_COUNT + ' 个宏都在使用中。','All ' + MACRO_COUNT + ' macros are in use.'));
 }
 function macroDeleteRow(i){
   const rows = window._macroRows || [];
@@ -4972,8 +5045,10 @@ function macroSubsetWarnings(){
       if (i===j) continue;
       const b = rows[j]; if (!b || !b.chord || !macroBit(j)) continue;
       if (a.chord !== b.chord && (b.chord & a.chord) === a.chord){
-        out.push('Row ' + (i+1) + ' (' + macroChordName(a.chord) + ') is contained in row ' +
-                 (j+1) + ' (' + macroChordName(b.chord) + ') — row ' + (j+1) + ' will never fire.');
+        out.push(t('第 ' + (i+1) + ' 行（' + macroChordName(a.chord) + '）被包含在第 ' +
+                 (j+1) + ' 行（' + macroChordName(b.chord) + '）之中 — 第 ' + (j+1) + ' 行永远不会触发。',
+                 'Row ' + (i+1) + ' (' + macroChordName(a.chord) + ') is contained in row ' +
+                 (j+1) + ' (' + macroChordName(b.chord) + ') — row ' + (j+1) + ' will never fire.'));
       }
     }
   }
@@ -5000,11 +5075,11 @@ function macroMotionTestReport(ev){
   const idx = motFind(codes, gate);
   const ambig = !!window._motAmbig;
   const rows = window._macroRows || [];
-  const name = idx >= 0 ? ((rows[idx] && rows[idx].label) || ('row ' + (idx+1))) : null;
+  const name = idx >= 0 ? ((rows[idx] && rows[idx].label) || (LANG === 'zh' ? '第 ' + (idx+1) + ' 行' : 'row ' + (idx+1))) : null;
   if (idx >= 0) t.hits++; else t.misses++;
   if (ambig) t.ambig++;
-  t.log.unshift((name ? (ambig ? '? ' : '✓ ') + name : '✗ no match') + '  ' + motPathName(codes) +
-                (ambig ? '  AMBIGUOUS' : '') + '  [' + macroChordName(gate) + ']');
+  t.log.unshift((name ? (ambig ? '? ' : '✓ ') + name : (LANG === 'zh' ? '✗ 无匹配' : '✗ no match')) + '  ' + motPathName(codes) +
+                (ambig ? (LANG === 'zh' ? '  有歧义' : '  AMBIGUOUS') : '') + '  [' + macroChordName(gate) + ']');
   if (t.log.length > 12) t.log.length = 12;
   macroRender();
 }
@@ -5191,8 +5266,8 @@ function macroLivePadSVG(){
          '<circle id="lp_' + id + 'sbody" cx="' + cx + '" cy="176" r="34" fill="none" stroke="' + LP_COL_OFF + '" stroke-width="3"/>' +
          '<circle id="lp_' + id + 'sdot" cx="' + cx + '" cy="176" r="6" fill="#4a90d9"/>';
   }
-  s += '<text x="110" y="221" font-size="9" fill="#8b9197" text-anchor="middle">L stick</text>';
-  s += '<text x="310" y="221" font-size="9" fill="#8b9197" text-anchor="middle">R stick</text>';
+  s += '<text x="110" y="221" font-size="9" fill="#8b9197" text-anchor="middle">' + t('左摇杆','L stick') + '</text>';
+  s += '<text x="310" y="221" font-size="9" fill="#8b9197" text-anchor="middle">' + t('右摇杆','R stick') + '</text>';
   // everything driven purely by a button bit
   for (const [bit, kind, x, y, a, b, label] of LP_SHAPES){
     const id = 'lp_b' + bit;
@@ -5200,10 +5275,10 @@ function macroLivePadSVG(){
       s += '<rect id="' + id + '" x="' + x + '" y="' + y + '" width="' + a + '" height="' + b + '" rx="2" fill="' + LP_COL_OFF + '"/>';
     else if (kind === 'c')
       s += g(id + '_g', '<circle id="' + id + '" cx="' + x + '" cy="' + y + '" r="' + a + '" fill="' + LP_COL_OFF + '"/>' +
-              '<text x="' + x + '" y="' + (y + 4) + '" font-size="11" fill="#cfd4da" text-anchor="middle">' + label + '</text>');
+              '<text x="' + x + '" y="' + (y + 4) + '" font-size="11" fill="#cfd4da" text-anchor="middle">' + bn(label) + '</text>');
     else
       s += g(id + '_g', '<rect id="' + id + '" x="' + x + '" y="' + y + '" width="' + a + '" height="' + b + '" rx="7" fill="' + LP_COL_OFF + '"/>' +
-              '<text x="' + (x + a/2) + '" y="' + (y + b - 4) + '" font-size="10" fill="#cfd4da" text-anchor="middle">' + label + '</text>');
+              '<text x="' + (x + a/2) + '" y="' + (y + b - 4) + '" font-size="10" fill="#cfd4da" text-anchor="middle">' + bn(label) + '</text>');
   }
   s += '</svg>';
   return s;
@@ -5290,26 +5365,26 @@ function macroLiveBar(v, c){
 }
 function macroLiveHTML(){
   const st = window._macroLive;
-  if (!st) return '<span style="color:var(--sub)">Not running.</span>';
-  if (!st.rate && !st.n) return '<span style="color:var(--sub)">Waiting for the first report — press a button or move a stick.</span>';
+  if (!st) return '<span style="color:var(--sub)">' + t('未运行。','Not running.') + '</span>';
+  if (!st.rate && !st.n) return '<span style="color:var(--sub)">' + t('等待第一份报告 — 按一个按键或拨动一下摇杆。','Waiting for the first report — press a button or move a stick.') + '</span>';
   const half = macroPadHalf(st.landX);
-  const halfTxt = half === (1<<23) ? 'LEFT' : half === (1<<24) ? 'RIGHT' : 'unqualified (centre band)';
+  const halfTxt = half === (1<<23) ? t('左半','LEFT') : half === (1<<24) ? t('右半','RIGHT') : t('未限定（中间带）','unqualified (centre band)');
   const st2 = (v) => (v - 128);
   let h = '<div style="font-family:ui-monospace,monospace;font-size:12px;line-height:1.7">';
-  h += 'Held now: <b>' + (macroChordName(st.mask) || '<span style="color:var(--sub)">nothing</span>') + '</b>' +
-       ' <span style="color:var(--sub)">(mask 0x' + st.mask.toString(16) + ')</span><br>';
-  h += 'Seen since start: ' + (macroChordName(st.seen) || '<span style="color:var(--sub)">nothing yet</span>') +
+  h += t('当前按下：','Held now: ') + '<b>' + (macroChordName(st.mask) || '<span style="color:var(--sub)">' + t('无','nothing') + '</span>') + '</b>' +
+       ' <span style="color:var(--sub)">' + t('（掩码 0x','(mask 0x') + st.mask.toString(16) + ')</span><br>';
+  h += t('启动以来出现过：','Seen since start: ') + (macroChordName(st.seen) || '<span style="color:var(--sub)">' + t('暂时没有','nothing yet') + '</span>') +
        '<br>';
-  h += 'Sticks: L ' + st2(st.lx) + ',' + st2(st.ly) + '  R ' + st2(st.rx) + ',' + st2(st.ry) + '<br>';
+  h += t('摇杆：左 ','Sticks: L ') + st2(st.lx) + ',' + st2(st.ly) + '  ' + t('右 ','R ') + st2(st.rx) + ',' + st2(st.ry) + '<br>';
   h += 'L2 ' + macroLiveBar(st.l2, '#4a90d9') + ' ' + st.l2 +
        '   R2 ' + macroLiveBar(st.r2, '#4a90d9') + ' ' + st.r2 + '<br>';
-  if (st.f1) h += 'Touch: ' + (st.f1.down ? ('x=' + st.f1.x + ' y=' + st.f1.y) : 'no finger') +
-                  (st.f2 && st.f2.down ? '  (two fingers)' : '') +
-                  '  last landing x=' + (st.landX === undefined ? '—' : st.landX) +
+  if (st.f1) h += t('触控：','Touch: ') + (st.f1.down ? ('x=' + st.f1.x + ' y=' + st.f1.y) : t('无手指','no finger')) +
+                  (st.f2 && st.f2.down ? t('  （两指）','  (two fingers)') : '') +
+                  t('  上次落点 x=','  last landing x=') + (st.landX === undefined ? '—' : st.landX) +
                   ' → <b>' + halfTxt + '</b>' +
-                  ' <span style="color:var(--sub)">(derived — the pad is one switch, so the half is worked out ' +
-                  'from the landing exactly as the firmware does; it is never in the report)</span><br>';
-  h += 'Report rate: <b>' + (st.rate || '…') + '</b>/s';
+                  ' <span style="color:var(--sub)">' + t('（推导值 — 触控板只有一个开关，所以哪一半是按落点推算的，','(derived — the pad is one switch, so the half is worked out ') +
+                  t('算法与固件完全一致；报告中从不包含它）</span><br>','from the landing exactly as the firmware does; it is never in the report)</span><br>');
+  h += t('报告频率：','Report rate: ') + '<b>' + (st.rate || '…') + '</b>/s';
   h += '</div>';
   return h;
 }
@@ -5374,7 +5449,7 @@ async function readMacroDiag(){
 }
 function macroDiagHTML(d){
   if (d.supLo === null || d.supLo === undefined)
-    return '<span style="color:var(--sub)">Connect to see what the macro engine is doing.</span>';
+    return '<span style="color:var(--sub)">' + t('连接设备后即可看到宏引擎在做什么。','Connect to see what the macro engine is doing.') + '</span>';
   const sup = ((d.supHi << 16) >>> 0) | d.supLo;
   const inj = ((d.injHi << 16) >>> 0) | d.injLo;
   // g_inject is NOT a chord mask. Suppression uses the logical button bits, so
@@ -5388,18 +5463,18 @@ function macroDiagHTML(d){
     for (let b = 0; b < 32; b++) {
       if (!(m & (1 << b))) continue;
       const v = b + 1;
-      out.push(MACRO_OUT_BTNS[v] || ('output ' + v));
+      out.push(bn(MACRO_OUT_BTNS[v]) || (t('输出 ','output ') + v));
     }
     return out.join(' + ');
   };
-  const names = m => macroChordName(m) || 'none';
+  const names = m => macroChordName(m) || t('无','none');
   // A stick macro hides its stick through separate flags, not the button mask,
   // so both have to be reported or a working stick remap reads as "nothing
   // hidden".
   const hid = [];
   if (sup) hid.push(names(sup));
-  if (d.stickSup & 1) hid.push('left stick');
-  if (d.stickSup & 2) hid.push('right stick');
+  if (d.stickSup & 1) hid.push(t('左摇杆','left stick'));
+  if (d.stickSup & 2) hid.push(t('右摇杆','right stick'));
   // Three separate output paths and only one is the inject mask: controller
   // buttons go into the report, keys out on the keyboard interface, mouse
   // actions on the mouse interface.
@@ -5407,51 +5482,51 @@ function macroDiagHTML(d){
   const mBtns = ((d.kbOut || 0) >> 4) & 0x0F;
   const key1  = ((d.kbOut || 0) >> 8) & 0xFF;
   const out = [];
-  if (inj) out.push('buttons: ' + (injNames(inj) || inj));
-  if (nKeys) out.push(nKeys + ' key' + (nKeys > 1 ? 's' : '') + ' held' + (key1 ? ' (first usage 0x' + key1.toString(16) + ')' : ''));
-  if (mBtns) out.push('mouse buttons 0x' + mBtns.toString(16));
-  let h = 'Hiding <b>' + (hid.length ? hid.join(' + ') : 'nothing') + '</b>, sending <b>' +
-          (out.length ? out.join(', ') : 'nothing') + '</b>, report rewrite ' +
-          ((d.stickSup & 4) ? '<b>ON</b>' : 'off');
+  if (inj) out.push(t('按键：','buttons: ') + (injNames(inj) || inj));
+  if (nKeys) out.push(t(nKeys + ' 个按键保持按下','' + nKeys + ' key' + (nKeys > 1 ? 's' : '') + ' held') + (key1 ? t('（首个 usage 0x',' (first usage 0x') + key1.toString(16) + ')' : ''));
+  if (mBtns) out.push(t('鼠标按键 0x','mouse buttons 0x') + mBtns.toString(16));
+  let h = t('正在隐藏 <b>','Hiding <b>') + (hid.length ? hid.join(' + ') : t('无','nothing')) + t('</b>，正在发送 <b>','</b>, sending <b>') +
+          (out.length ? out.join(', ') : t('无','nothing')) + t('</b>，报告改写 ','</b>, report rewrite ') +
+          ((d.stickSup & 4) ? '<b>' + t('开','ON') + '</b>' : t('关','off'));
   if (d.padx !== null && d.padx !== undefined){
-    const half = ['unqualified (centre band, or no finger)','LEFT','RIGHT'][d.padinfo & 3] || '?';
-    h += '<br>Touchpad click: last finger-down x=' + d.padx + '/1919, clicks seen=' +
-         ((d.padinfo >> 2) & 63) + ', last half=<b>' + half + '</b>';
+    const half = [t('未限定（中间带，或无手指）','unqualified (centre band, or no finger)'),t('左半','LEFT'),t('右半','RIGHT')][d.padinfo & 3] || '?';
+    h += '<br>' + t('触控板点击：最后一次落指 x=','Touchpad click: last finger-down x=') + d.padx + t('/1919，已见点击','/1919, clicks seen=') +
+         ((d.padinfo >> 2) & 63) + t('，最后一次半区=<b>',' , last half=<b>') + half + '</b>';
   }
-  h += '<div style="color:var(--sub);font-size:11px;margin-top:5px">Polled once a second. ' +
-       'Hold the input that will not hide: NOT listed above = the rule never fired, so check the row is a hold with the box ticked. ' +
-       'Listed here but still lit in the live test = the rewrite is not reaching the report.</div>';
+  h += '<div style="color:var(--sub);font-size:11px;margin-top:5px">' + t('每秒轮询一次。','Polled once a second. ') +
+       t('按住那个没有被隐藏的输入：如果上面没有列出它 = 该规则从未触发，请检查这一行是否为“按住”且已勾选该框。','Hold the input that will not hide: NOT listed above = the rule never fired, so check the row is a hold with the box ticked. ') +
+       t('这里列出了、但在实时测试中仍然亮起 = 改写没有真正作用到报告上。</div>','Listed here but still lit in the live test = the rewrite is not reaching the report.</div>');
   return h;
 }
 function macroLivePanelHTML(){
   const on = !!window._macroLive;
   let h = '<div style="margin-top:14px;border:1px solid var(--line,#333);border-radius:6px;padding:10px">';
-  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Live test — what the game is receiving ' +
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + t('实时测试 — 游戏实际收到的内容','Live test — what the game is receiving') + ' ' +
        '<span style="font-size:11px;color:var(--sub)">(prototype)</span></div>';
   h += '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
-       'The portal reads the same interface the game does, so this is the report <b>after</b> the firmware has ' +
-       'rewritten it — hidden inputs are already gone and injected ones already present. Use it to prove a remap ' +
-       'end to end, to find which bits an Edge paddle actually sends, and to check a touchpad click resolves to the ' +
-       'half you meant.</div>';
+       t('本门户读取的是游戏所用的同一个接口，所以这是固件<b>改写之后</b>的报告 — ','The portal reads the same interface the game does, so this is the report <b>after</b> the firmware has ') +
+       t('被隐藏的输入已经消失、注入的输入已经出现。可以用它端到端验证一次重映射、','rewritten it — hidden inputs are already gone and injected ones already present. Use it to prove a remap ') +
+       t('查明 Edge 背键实际发送哪些位，以及确认触控板点击被解析成了','end to end, to find which bits an Edge paddle actually sends, and to check a touchpad click resolves to the ') +
+       t('你真正想要的那一半。</div>','half you meant.</div>');
   h += '<button class="btn ' + (on ? '' : 'btn-outline') + '" style="padding:2px 10px;margin-bottom:8px" onclick="macroLiveToggle()"' +
-       (device ? '' : ' disabled') + '>' + (on ? 'Stop live test' : 'Start live test') + '</button>';
+       (device ? '' : ' disabled') + '>' + (on ? t('停止实时测试','Stop live test') : t('开始实时测试','Start live test')) + '</button>';
   h += '<div id="macrolivepad" style="margin-bottom:4px"></div>';
   h += '<div style="font-size:11px;color:var(--sub);margin-bottom:8px">' +
-       '<b style="color:#4caf50">green</b> = held · ' +
-       '<b style="color:#a070d0">purple</b> = Edge Fn / paddle · ' +
-       'a stick\'s outline lights on L3 / R3 · ' +
-       'the dashed ring is the macro stick threshold — inside it a stick row has not engaged, ' +
-       'so <i>hide input from game</i> is not centring the stick yet · ' +
-       'on the touchpad, the dot is the finger and the dashed circle is where the last press <b>landed</b>, ' +
-       'which is what decides the half · the shaded centre strip is the neutral band · ' +
-       'the amber line on a trigger is its two-stage boundary.</div>';
+       t('<b style="color:#4caf50">绿色</b> = 已按下 · ','<b style="color:#4caf50">green</b> = held · ') +
+       t('<b style="color:#a070d0">紫色</b> = Edge 的 Fn / 背键 · ','<b style="color:#a070d0">purple</b> = Edge Fn / paddle · ') +
+       t('摇杆外圈在 L3 / R3 时点亮 · ','a stick\'s outline lights on L3 / R3 · ') +
+       t('虚线圆环是宏摇杆阈值 — 在它以内时，摇杆行还没有触发，','the dashed ring is the macro stick threshold — inside it a stick row has not engaged, ') +
+       t('所以“<i>对游戏隐藏输入</i>”这时还没有把摇杆归中 · ','so <i>hide input from game</i> is not centring the stick yet · ') +
+       t('触控板上圆点是手指，虚线圈是上一次按压的<b>落点</b>，','on the touchpad, the dot is the finger and the dashed circle is where the last press <b>landed</b>, ') +
+       t('它决定了算哪一半 · 中间带阴影的条带是中性区 · ','which is what decides the half · the shaded centre strip is the neutral band · ') +
+       t('扳机上的琥珀色线是它的两段式分界位置。</div>','the amber line on a trigger is its two-stage boundary.</div>');
   h += '<div id="macroliveout" style="font-size:12px">' +
        (on ? '<span style="color:var(--sub)">starting…</span>'
-           : '<span style="color:var(--sub)">Not running.</span>') + '</div>';
+           : `<span style="color:var(--sub)">${t('未运行。','Not running.')}</span>`) + '</div>';
   h += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">';
-  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Macro engine, per tick</div>';
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + t('宏引擎（每个 tick）','Macro engine, per tick') + '</div>';
   h += '<div id="macrodiagout" style="font-size:12px">' +
-       '<span style="color:var(--sub)">Connect to see what the macro engine is doing.</span></div>';
+       '<span style="color:var(--sub)">' + t('连接设备后即可看到宏引擎在做什么。','Connect to see what the macro engine is doing.') + '</span></div>';
   h += '</div></div>';
   return h;
 }
@@ -5459,16 +5534,16 @@ function macroMotionPanelHTML(){
   const rows = window._macroRows || [], mot = window._macroMotion || [];
   const rec = window._macroRec, t = window._macroTest;
   let h = '<div style="margin-top:14px;border:1px solid var(--line,#333);border-radius:6px;padding:10px">';
-  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">Motion gestures — experimental</div>';
+  h += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + (LANG === 'zh' ? '动作手势 — 实验性' : 'Motion gestures — experimental') + '</div>';
   h += '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
-       'Hold a gate button, move the controller, release. A row with a template is written to the ' +
-       'dongle as a motion entry — its gate replaces the row\'s controller input. Use Test to check ' +
-       'a gesture is repeatable, and to see how often normal play trips it, before saving.</div>';
+       (LANG === 'zh' ? '按住一个门槛按键、移动手柄、松开。带模板的行会作为动作条目写入' : 'Hold a gate button, move the controller, release. A row with a template is written to the ') +
+       (LANG === 'zh' ? '适配器 — 它的门槛会替换该行的手柄输入。保存前请用“测试”确认' : 'dongle as a motion entry — its gate replaces the row\'s controller input. Use Test to check ') +
+       (LANG === 'zh' ? '手势是否可重复，并看正常游玩时它有多容易被误触发。</div>' : 'a gesture is repeatable, and to see how often normal play trips it, before saving.</div>');
   h += '<div style="font-size:12px;margin-bottom:8px">Step threshold ' +
        '<input type="number" min="200" max="20000" step="100" value="' + motStep() + '" ' +
        'style="width:80px;padding:2px 4px;font-size:12px" oninput="macroMotionStepSet(this.value)"> ' +
-       '<span style="color:var(--sub)">raw gyro counts per direction code. Lower = more codes per motion. ' +
-       'Aim for 2–4 codes on a comfortable flick; the peak readout while recording tells you the scale.</span></div>';
+       '<span style="color:var(--sub)">' + (LANG === 'zh' ? '每个方向码对应的陀螺仪原始计数。越小 = 一次动作会产生越多方向码。' : 'raw gyro counts per direction code. Lower = more codes per motion. ') +
+       (LANG === 'zh' ? '轻松一甩建议得到 2–4 个方向码；录制时的峰值读数能告诉你合适的量级。</span></div>' : 'Aim for 2–4 codes on a comfortable flick; the peak readout while recording tells you the scale.</span></div>');
   let any = 0;
   h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
   for (let i=0;i<MACRO_COUNT;i++){
@@ -5479,27 +5554,27 @@ function macroMotionPanelHTML(){
     const recM = rec && rec.row === i && rec.which === 2;
     const dis  = (rec && !recM) || t ? ' disabled' : '';
     h += '<tr style="border-top:1px solid var(--line,#333)">';
-    h += '<td style="padding:2px 6px;width:120px">' + escAttr(m.label || ('Row ' + (i+1))) + '</td>';
+    h += '<td style="padding:2px 6px;width:120px">' + escAttr(m.label || (LANG === 'zh' ? '行 ' + (i+1) : 'Row ' + (i+1))) + '</td>';
     h += '<td><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',2)"' + dis + '>' +
-         (recM ? 'Stop' : 'Record motion') + '</button></td>';
+         (recM ? (LANG === 'zh' ? '停止' : 'Stop') : (LANG === 'zh' ? '录制动作' : 'Record motion')) + '</button></td>';
     h += '<td style="padding:2px 8px;color:' + (tpl ? 'inherit' : 'var(--sub)') + '">' +
-         (tpl ? (motPathName(tpl.codes) + '  <span style="color:var(--sub)">gate ' +
-                 (macroChordName(tpl.gate) || 'none') + '</span>') : '—') + '</td>';
+         (tpl ? (motPathName(tpl.codes) + '  <span style="color:var(--sub)">' + (LANG === 'zh' ? '门槛 ' : 'gate ') +
+                 (macroChordName(tpl.gate) || (LANG === 'zh' ? '无' : 'none')) + '</span>') : '—') + '</td>';
     if (clash){
       h += '<td colspan="2" style="padding:2px 8px;color:#e90;font-size:12px">' +
-           'motion replaces this row\'s controller input on save</td>';
+           (LANG === 'zh' ? '保存后，该动作手势会替换本行的手柄输入</td>' : 'motion replaces this row\'s controller input on save</td>');
     }
     h += '<td style="width:30px">' + (tpl ?
          '<button class="btn btn-outline" style="padding:2px 6px" onclick="macroMotionClear(' + i + ')"' + dis + '>−</button>' : '') + '</td>';
     h += '</tr>';
   }
   h += '</table>';
-  if (!any) h += '<div style="padding:6px 2px;color:var(--sub);font-size:12px">Add a macro above first — a motion is a trigger for one.</div>';
+  if (!any) h += '<div style="padding:6px 2px;color:var(--sub);font-size:12px">' + (LANG === 'zh' ? '请先在上面添加一个宏 — 动作手势是它的触发器。' : 'Add a macro above first — a motion is a trigger for one.') + '</div>';
   h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
   h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionTest()"' + (rec ? ' disabled' : '') + '>' +
-       (t ? 'Stop test' : 'Test') + '</button>';
-  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionExport()"' + (rec || t ? ' disabled' : '') + '>Export templates</button>';
-  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionImportPick()"' + (rec || t ? ' disabled' : '') + '>Import templates</button>';
+       (t ? (LANG === 'zh' ? '停止测试' : 'Stop test') : (LANG === 'zh' ? '测试' : 'Test')) + '</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionExport()"' + (rec || t ? ' disabled' : '') + '>' + (LANG === 'zh' ? '导出模板' : 'Export templates') + '</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroMotionImportPick()"' + (rec || t ? ' disabled' : '') + '>' + (LANG === 'zh' ? '导入模板' : 'Import templates') + '</button>';
   h += '</div>';
   if (t){
     h += '<div style="margin-top:8px;font-size:12px">' +
@@ -5633,7 +5708,7 @@ function macroOptionsRowHTML(i, m, isStick, dis){
   let h = '<tr><td></td><td colspan="6" style="padding:0 6px 6px 6px;font-size:12px;color:var(--sub)">';
   h += '<select onchange="macroSetStick(' + i + ', +this.value)"' + dis + ' style="padding:1px 3px;font-size:12px;margin-right:10px">';
   const which = !isStick ? 0 : ((m.gesture & GEST_STICK_RIGHT) ? 2 : 1);
-  [[0,'Input: controller'],[1,'Input: left stick'],[2,'Input: right stick']].forEach(o => {
+  [[0,t('输入：手柄','Input: controller')],[1,t('输入：左摇杆','Input: left stick')],[2,t('输入：右摇杆','Input: right stick')]].forEach(o => {
     h += '<option value="' + o[0] + '"' + (which === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
   });
   h += '</select>';
@@ -5643,28 +5718,28 @@ function macroOptionsRowHTML(i, m, isStick, dis){
     // controller side look like a different kind of setting from the keyboard.
     h += '<select onchange="macroSetOutKind(' + i + ', +this.value)"' + dis + ' style="padding:1px 3px;font-size:12px;margin-right:10px">';
     const outKind2 = macroOutKind(i, m);
-    h += '<option value="0"' + (outKind2 === 0 ? ' selected' : '') + '>Output: keyboard</option>';
-    h += '<option value="1"' + (outKind2 === 1 ? ' selected' : '') + '>Output: controller button</option>';
-    h += '<option value="2"' + (outKind2 === 2 ? ' selected' : '') + '>Output: mouse</option>';
+    h += '<option value="0"' + (outKind2 === 0 ? ' selected' : '') + '>' + t('输出：键盘','Output: keyboard') + '</option>';
+    h += '<option value="1"' + (outKind2 === 1 ? ' selected' : '') + '>' + t('输出：手柄按键','Output: controller button') + '</option>';
+    h += '<option value="2"' + (outKind2 === 2 ? ' selected' : '') + '>' + t('输出：鼠标','Output: mouse') + '</option>';
     h += '</select>';
 
   }
-  h += '<label style="margin-right:10px"' + (canHold ? '' : ' title="Only a button or stick input can be held - a swipe or gesture is an event that completes"') + '>' +
+  h += '<label style="margin-right:10px"' + (canHold ? '' : ' title="' + t('只有按键或摇杆输入才能被“按住” — 滑动或手势都是一次性完成的事件','Only a button or stick input can be held - a swipe or gesture is an event that completes') + '"') + '>' +
        '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_HOLD, this.checked)"' +
-       (hold ? ' checked' : '') + (canHold && !dis ? '' : ' disabled') + '> hold while held</label>';
-  h += '<label' + (hold ? '' : ' title="Only a held row can replace its input"') + '>' +
+       (hold ? ' checked' : '') + (canHold && !dis ? '' : ' disabled') + '>' + t(' 按住期间保持',' hold while held') + '</label>';
+  h += '<label' + (hold ? '' : ' title="' + t('只有“按住”的行才能替换它的输入','Only a held row can replace its input') + '"') + '>' +
        '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_REPLACE, this.checked)"' +
-       ((m.flags & MACRO_FLAG_REPLACE) ? ' checked' : '') + (hold && !dis ? '' : ' disabled') + '> hide input from game</label>';
+       ((m.flags & MACRO_FLAG_REPLACE) ? ' checked' : '') + (hold && !dis ? '' : ' disabled') + '>' + t(' 对游戏隐藏输入',' hide input from game') + '</label>';
   // Double tap. Only meaningful on a button row that fires a burst: a hold row
   // is driven by the held set, and a stick direction is not tapped.
   if (!isStick){
     const dbl = !!(m.flags & MACRO_FLAG_DOUBLE);
     const canDbl = !hold && !(m.flags & MACRO_FLAG_LONG_PRESS);
     h += '<label style="margin-left:10px"' +
-         (canDbl ? ' title="Fire this row on two presses within 250ms. A single-tap row on the SAME trigger then waits for that window before firing - only that trigger is affected. A controller or mouse output is pressed briefly and released."'
-                 : ' title="Not available on a hold row or a long press"') + '>' +
+         (canDbl ? ' title="' + t('在 250 毫秒内按两次触发本行。同一触发键上的单击行此后会等待该时间窗才触发 — 只影响那个触发键。手柄或鼠标输出会被短暂按下再释放。','Fire this row on two presses within 250ms. A single-tap row on the SAME trigger then waits for that window before firing - only that trigger is affected. A controller or mouse output is pressed briefly and released.') + '"'
+                 : ' title="' + t('“按住”行或长按不可用','Not available on a hold row or a long press') + '"') + '>' +
          '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_DOUBLE, this.checked)"' +
-         (dbl ? ' checked' : '') + (canDbl && !dis ? '' : ' disabled') + '> double tap</label>';
+         (dbl ? ' checked' : '') + (canDbl && !dis ? '' : ' disabled') + '>' + t(' 双击',' double tap') + '</label>';
   }
   if (isStick){
     // Stick rows only, and only meaningful alongside "hide input from game".
@@ -5675,10 +5750,10 @@ function macroOptionsRowHTML(i, m, isStick, dis){
     const always = !!(m.flags & MACRO_FLAG_STICK_ALWAYS);
     const canAlways = hold && !!(m.flags & MACRO_FLAG_REPLACE);
     h += '<label style="margin-left:10px"' +
-         (canAlways ? ' title="Centre the stick for the game at all times, not only past the threshold. Turn this on if the game keeps switching its button prompts back to controller glyphs."'
-                    : ' title="Needs hold while held and hide input from game"') + '>' +
+         (canAlways ? ' title="' + t('让游戏始终收到居中的摇杆，而不只是超过阈值之后。如果游戏总把按键提示切回手柄图标，就打开它。','Centre the stick for the game at all times, not only past the threshold. Turn this on if the game keeps switching its button prompts back to controller glyphs.') + '"'
+                    : ' title="' + t('需要同时开启“按住期间保持”和“对游戏隐藏输入”','Needs hold while held and hide input from game') + '"') + '>' +
          '<input type="checkbox" onchange="macroSetFlag(' + i + ', MACRO_FLAG_STICK_ALWAYS, this.checked)"' +
-         (always ? ' checked' : '') + (canAlways && !dis ? '' : ' disabled') + '> centre stick always</label>';
+         (always ? ' checked' : '') + (canAlways && !dis ? '' : ' disabled') + '>' + t(' 摇杆始终居中',' centre stick always') + '</label>';
   }
   if (isStick){
     h += '<div style="margin-top:5px">';
@@ -5690,7 +5765,7 @@ function macroOptionsRowHTML(i, m, isStick, dis){
       }
       h += '</select></span>';
     });
-    h += ' threshold <input type="number" min="10" max="120" placeholder="48" value="' + (m.stick_thresh || '') + '" ' +
+    h += t(' 阈值 ',' threshold ') + '<input type="number" min="10" max="120" placeholder="48" value="' + (m.stick_thresh || '') + '" ' +
          'style="width:56px;padding:1px 3px;font-size:12px" oninput="macroSetStickThresh(' + i + ', this.value)"' + dis + '>';
     h += '</div>';
   }
@@ -5702,14 +5777,14 @@ function macroRender(){
   const box = document.getElementById('macrobox');
   if (!box) return;
   const rows = window._macroRows;
-  if (!rows){ box.textContent = device ? 'Reading macros…' : 'Connect a device to load macros.'; return; }
+  if (!rows){ box.textContent = device ? t('正在读取宏…','Reading macros…') : t('连接设备后加载宏。','Connect a device to load macros.'); return; }
   const rec = window._macroRec;
   const pick = window._macroPick;
   const pickIn = window._macroPickIn;
 
   let h = '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">' +
-          'Definitions are stored on the dongle and shared by every slot. The checkboxes are per-slot: ' +
-          'save a slot to capture which macros are live for that game.</div>';
+          t('宏定义存储在适配器上，所有槽位共用。这些复选框是按槽位记录的：','Definitions are stored on the dongle and shared by every slot. The checkboxes are per-slot: ') +
+          t('保存一个槽位即可记下该游戏启用哪些宏。</div>','save a slot to capture which macros are live for that game.</div>');
 
   // Only meaningful once a real read has established the baseline; before that
   // an absent key would compare as 0 and flag every fresh connect as dirty.
@@ -5717,8 +5792,8 @@ function macroRender(){
                 ((+savedSnapshot.macro_disable>>>0) !== (+config['macro_disable']>>>0));
   if (dirty){
     h += '<div style="border:1px solid #a60;background:#2a1c00;padding:6px 8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
-         'Enable state changed — press <b>Save macros to device</b> to apply it. ' +
-         'Until then the dongle still uses the previous set.</div>';
+         t('启用状态已改变 — 按 <b>保存宏到设备</b> 来应用它。','Enable state changed — press <b>Save macros to device</b> to apply it. ') +
+         t('在那之前适配器仍在使用原来的一套。</div>','Until then the dongle still uses the previous set.</div>');
   }
 
   const warn = macroSubsetWarnings();
@@ -5728,15 +5803,15 @@ function macroRender(){
   }
   if (rec){
     h += '<div id="macrorec" style="border:1px solid #06a;background:#001a2a;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">' +
-         (rec.which === 0 ? 'Recording controller — hold the buttons you want, then press Stop. Hold for ~0.5s or more to record a long press.'
-        : rec.which === 3 ? 'Recording controller OUTPUT — press the button this macro should send, then press Stop.'
-        : rec.which === 4 ? 'Recording mouse OUTPUT — click or scroll anywhere outside the buttons below. It stops on its own once it has one.'
-                          : 'Recording keyboard — press your combo, then press Stop.') + '</div>';
+         (rec.which === 0 ? t('录制手柄输入 — 按住你想要的按键，然后按停止。按住约 0.5 秒以上可录制为长按。','Recording controller — hold the buttons you want, then press Stop. Hold for ~0.5s or more to record a long press.')
+        : rec.which === 3 ? t('录制手柄输出 — 按下这个宏应该发送的按键，然后按停止。','Recording controller OUTPUT — press the button this macro should send, then press Stop.')
+        : rec.which === 4 ? t('录制鼠标输出 — 在下方按钮之外的任意位置点击或滚动。捕获到一个后它会自行停止。','Recording mouse OUTPUT — click or scroll anywhere outside the buttons below. It stops on its own once it has one.')
+                          : t('录制键盘 — 按下你的组合键，然后按停止。','Recording keyboard — press your combo, then press Stop.')) + '</div>';
   }
 
   const anyRow = (rows||[]).some(r => r && r.present);
   h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-  if (anyRow) h += '<tr style="color:var(--sub);font-size:11px"><th style="width:34px"></th><th style="text-align:left">Name</th><th></th><th style="text-align:left">Controller input</th><th></th><th style="text-align:left">Keyboard output</th><th style="width:30px"></th></tr>';
+  if (anyRow) h += '<tr style="color:var(--sub);font-size:11px"><th style="width:34px"></th><th style="text-align:left">' + t('名称','Name') + '</th><th></th><th style="text-align:left">' + t('手柄输入','Controller input') + '</th><th></th><th style="text-align:left">' + t('键盘输出','Keyboard output') + '</th><th style="width:30px"></th></tr>';
 
   let shown = 0;
   for (let i=0;i<MACRO_COUNT;i++){
@@ -5744,7 +5819,7 @@ function macroRender(){
     if (!m || !m.present) continue;   // only rows that exist; + creates one
     shown++;
     const isStick = (m.gesture & GEST_STICK) !== 0;
-    const inLbl  = isStick ? ((m.gesture & GEST_STICK_RIGHT) ? 'Right stick' : 'Left stick')
+    const inLbl  = isStick ? ((m.gesture & GEST_STICK_RIGHT) ? t('右摇杆','Right stick') : t('左摇杆','Left stick'))
                            : (m.gesture ? macroGestureName(m.gesture) : macroChordName(m.chord));
     // The long-press threshold only means something on a BURST row. A hold row -
     // any remap - is driven by hold_task(), which reads neither the flag nor the
@@ -5752,27 +5827,27 @@ function macroRender(){
     // does. Showing a time there claimed the remap waited for it when it engages
     // immediately.
     const showHold = !isStick && (m.flags & MACRO_FLAG_LONG_PRESS) && !macroIsHold(m);
-    const inTxt  = inLbl ? (inLbl + (showHold ? '  (hold ' + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
+    const inTxt  = inLbl ? (inLbl + (showHold ? t('  （按住 ','  (hold ') + ((m.hold_cs||75)/100).toFixed(2) + 's)' : '')) : '—';
     const outTxt = isStick ? (STICK_DIRS.map((d,k) => d + ' ' + (USAGE_NAME[m.keys[k]] || (m.keys[k] ? '0x'+m.keys[k].toString(16) : '—'))).join('  '))
-                 : ((m.out_btn ? MACRO_OUT_BTNS[m.out_btn] : macroComboName(m.keys, m.rel_order)) || '—');
+                 : ((m.out_btn ? bn(MACRO_OUT_BTNS[m.out_btn]) : macroComboName(m.keys, m.rel_order)) || '—');
     const recIn  = rec && rec.row === i && rec.which === 0;
     const recOut = rec && rec.row === i && rec.which === 1;
     const dis    = rec ? ' disabled' : '';
     h += '<tr style="border-top:1px solid var(--line,#333)">';
     h += '<td><input type="checkbox" onchange="macroSetBit(' + i + ', this.checked)"' + (macroBit(i) ? ' checked' : '') + '></td>';
-    h += '<td style="padding:2px 6px"><input type="text" maxlength="15" placeholder="unnamed" ' +
+    h += '<td style="padding:2px 6px"><input type="text" maxlength="15" placeholder="' + t('未命名','unnamed') + '" ' +
          'style="width:104px;padding:2px 4px;font-size:12px" oninput="macroSetLabel(' + i + ', this.value)" ' +
          'value="' + escAttr(m.label || '') + '"></td>';
     const pickInOpen = pickIn && pickIn.row === i;
-    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? 'Stop' : 'Record input') + '</button>';
+    h += '<td style="white-space:nowrap"><button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',0)"' + (rec && !recIn ? ' disabled' : '') + '>' + (recIn ? t('停止','Stop') : t('录制输入','Record input')) + '</button>';
     h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickInOpen(' + i + ')"' +
          (rec || pickInOpen || isStick ? ' disabled' : '') +
-         ' title="Choose the trigger buttons by hand - needed for Fn and paddle chords the controller may not report while recording">Pick</button></td>';
+         ' title="' + t('手动选择触发按键 — 录制时手柄可能不上报的 Fn 与背键组合需要用到它','Choose the trigger buttons by hand - needed for Fn and paddle chords the controller may not report while recording') + '">' + t('选择','Pick') + '</button></td>';
     h += '<td style="padding:2px 8px;color:' + (inLbl ? 'inherit' : 'var(--sub)') + '">' + inTxt + '</td>';
     const pickOpen = pick && pick.row === i;
     h += '<td style="white-space:nowrap">';
     if (isStick){
-      h += '<span style="font-size:12px;color:var(--sub)">set below</span>';
+      h += '<span style="font-size:12px;color:var(--sub)">' + t('见下方设置','set below') + '</span>';
     } else {
       // Record and Pick mean the same thing on both sides now: which one you
       // get depends on the output KIND, not on whether the buttons are greyed
@@ -5782,13 +5857,13 @@ function macroRender(){
       const which   = outKind === 1 ? 3 : outKind === 2 ? 4 : 1;
       const recNow  = rec && rec.row === i && (rec.which === 1 || rec.which === 3 || rec.which === 4);
       h += '<button class="btn btn-outline" style="padding:2px 8px" onclick="macroRecord(' + i + ',' + which + ')"' +
-           (rec && !recNow ? ' disabled' : '') + '>' + (recNow ? 'Stop' : 'Record output') + '</button>';
+           (rec && !recNow ? ' disabled' : '') + '>' + (recNow ? t('停止','Stop') : t('录制输出','Record output')) + '</button>';
       h += ' <button class="btn btn-outline" style="padding:2px 6px" onclick="macroPickOpen(' + i + ')"' +
            (rec || pickOpen ? ' disabled' : '') +
-           ' title="' + (outKind === 1 ? 'Choose the controller button by hand'
-                        : outKind === 2 ? 'Choose the mouse action by hand'
-                        : 'Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture') +
-           '">Pick</button>';
+           ' title="' + (outKind === 1 ? t('手动选择手柄按键','Choose the controller button by hand')
+                        : outKind === 2 ? t('手动选择鼠标动作','Choose the mouse action by hand')
+                        : t('手动设置组合键 — 浏览器无法捕获的 Win 与 Alt+Tab 组合需要用到它','Set the combo by hand - needed for Win and Alt+Tab combos the browser cannot capture')) +
+           '">' + t('选择','Pick') + '</button>';
     }
     h += '</td>';
     h += '<td style="padding:2px 8px;color:' + (outTxt !== '—' ? 'inherit' : 'var(--sub)') + '">' + outTxt + '</td>';
@@ -5799,15 +5874,15 @@ function macroRender(){
       h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickInHTML(i) + '</td></tr>';
     }
     if (pickOpen && macroOutKind(i, m) === 2){
-      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickOutHTML(i, m, Array.from({length: MOUT_LAST - MOUT_FIRST + 1}, (_, n) => MOUT_FIRST + n), 'Which mouse action should this macro send?') + '</td></tr>';
+      h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickOutHTML(i, m, Array.from({length: MOUT_LAST - MOUT_FIRST + 1}, (_, n) => MOUT_FIRST + n), t('这个宏应该发送哪个鼠标动作？','Which mouse action should this macro send?')) + '</td></tr>';
     } else if (pickOpen && macroOutKind(i, m) === 1){
       // Controller output: pick a BUTTON, not a key combo.
       h += '<tr><td colspan="7" style="padding:8px 10px">' + macroPickBtnHTML(i, m) + '</td></tr>';
     } else if (pickOpen){
       h += '<tr><td colspan="7" style="padding:8px 10px;background:#111a22;border-radius:6px">';
       h += '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">' +
-           'Set the combo by hand. Needed for anything the browser cannot capture — ' +
-           'Win combos, Alt+Tab, Ctrl+W / Ctrl+T / F11.</div>';
+           t('手动设置组合键。凡是浏览器无法捕获的都需要这样设置 — ','Set the combo by hand. Needed for anything the browser cannot capture — ') +
+           t('Win 组合键、Alt+Tab、Ctrl+W / Ctrl+T / F11。</div>','Win combos, Alt+Tab, Ctrl+W / Ctrl+T / F11.</div>');
       for (const mp of MOD_PICK){
         const on = pick.mods.indexOf(mp[0]) >= 0;
         h += '<label style="margin-right:12px;font-size:13px"><input type="checkbox" ' +
@@ -5815,25 +5890,25 @@ function macroRender(){
              '> ' + escAttr(mp[1]) + '</label>';
       }
       h += '<select onchange="macroPickKey(+this.value)" style="padding:2px 4px;font-size:13px;margin-right:10px">';
-      h += '<option value="0">— key —</option>';
+      h += '<option value="0">' + t('— 按键 —','— key —') + '</option>';
       for (const ko of macroKeyOptions()){
         h += '<option value="' + ko[0] + '"' + (pick.key === ko[0] ? ' selected' : '') + '>' + escAttr(ko[1]) + '</option>';
       }
       h += '</select>';
-      h += '<button class="btn" style="padding:2px 10px;margin-right:6px" onclick="macroPickApply()">Set</button>';
-      h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroPickCancel()">Cancel</button>';
+      h += '<button class="btn" style="padding:2px 10px;margin-right:6px" onclick="macroPickApply()">' + t('设置','Set') + '</button>';
+      h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroPickCancel()">' + t('取消','Cancel') + '</button>';
       h += '</td></tr>';
     }
   }
   h += '</table>';
   if (!shown){
-    h += '<div style="padding:10px 2px;color:var(--sub);font-size:12px">No macros yet — press + to add one.</div>';
+    h += '<div style="padding:10px 2px;color:var(--sub);font-size:12px">' + t('还没有宏 — 按 + 添加一个。','No macros yet — press + to add one.') + '</div>';
   }
   h += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">';
   h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroAddRow()"' + (rec ? ' disabled' : '') + '>+</button>';
-  h += '<button class="btn" style="padding:2px 10px" onclick="macroSaveTable()"' + (rec ? ' disabled' : '') + '>Save macros to device</button>';
-  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroExportFile()"' + (rec ? ' disabled' : '') + '>Export macros</button>';
-  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroImportPick()"' + (rec ? ' disabled' : '') + '>Import macros</button>';
+  h += '<button class="btn" style="padding:2px 10px" onclick="macroSaveTable()"' + (rec ? ' disabled' : '') + '>' + t('保存宏到设备','Save macros to device') + '</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroExportFile()"' + (rec ? ' disabled' : '') + '>' + t('导出宏','Export macros') + '</button>';
+  h += '<button class="btn btn-outline" style="padding:2px 10px" onclick="macroImportPick()"' + (rec ? ' disabled' : '') + '>' + t('导入宏','Import macros') + '</button>';
   h += '<span id="macrosave" style="font-size:12px;color:var(--sub)"></span>';
   h += '</div>';
   h += macroMotionPanelHTML();
@@ -5858,9 +5933,9 @@ function macroRender(){
 // out of step.
 async function macroExportFile(){
   const el = document.getElementById('macrosave');
-  if (!window._macroRows){ if (el) el.textContent = 'Load macros first.'; return; }
+  if (!window._macroRows){ if (el) el.textContent = t('请先加载宏。','Load macros first.'); return; }
   const list = macroTableToJson(window._macroRows);
-  if (!list.length){ if (el) el.textContent = 'No macros to export.'; return; }
+  if (!list.length){ if (el) el.textContent = t('没有可导出的宏。','No macros to export.'); return; }
   const dump = { format: 'ds5dongle-macros', version: 1,
                  savedAt: new Date().toISOString(), macros: list };
   const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
@@ -5869,7 +5944,7 @@ async function macroExportFile(){
   a.href = URL.createObjectURL(blob); a.download = 'ds5dongle-macros-' + stamp + '.json';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  if (el) el.textContent = 'Exported ' + list.length + ' macro' + (list.length===1?'':'s') + ' \u2713';
+  if (el) el.textContent = t('已导出 ' + list.length + ' 个宏','Exported ' + list.length + ' macro' + (list.length===1?'':'s')) + ' \u2713';
 }
 
 function macroImportPick(){
@@ -5883,25 +5958,25 @@ async function macroImportFile(file){
   const el = document.getElementById('macrosave');
   let dump;
   try { dump = JSON.parse(await file.text()); }
-  catch { if (el) el.textContent = 'Not a valid JSON file.'; return; }
+  catch { if (el) el.textContent = t('不是有效的 JSON 文件。','Not a valid JSON file.'); return; }
   if (!dump || dump.format !== 'ds5dongle-macros' || !Array.isArray(dump.macros)){
-    if (el) el.textContent = 'Not a DS5Dongle macro file.'; return;
+    if (el) el.textContent = t('不是 DS5Dongle 宏文件。','Not a DS5Dongle macro file.'); return;
   }
   // Destructive and GLOBAL: this replaces the definitions every profile refers
   // to, not just the current one. Always confirm, never silently.
-  if (!await askYesNo('Import these macro definitions?',
-        'This file contains ' + dump.macros.length + ' macro definition' +
-        (dump.macros.length===1?'':'s') + '. Importing REPLACES every macro on the ' +
-        'dongle, for all profiles. Which macros each profile enables is not changed.\n\n' +
-        'They load into the editor first \u2014 nothing reaches the device until you ' +
-        'press Save macros to device.',
-        'Import', 'Cancel')){
-    if (el) el.textContent = 'Import cancelled.'; return;
+  if (!await askYesNo(t('导入这些宏定义？','Import these macro definitions?'),
+        t('这个文件包含 ' + dump.macros.length + ' 条宏定义','This file contains ' + dump.macros.length + ' macro definition' +
+        (dump.macros.length===1?'':'s')) + t('。导入会替换适配器上的全部宏，对所有配置档生效。','. Importing REPLACES every macro on the ' +
+        'dongle, for all profiles.') + t('各配置档启用哪些宏不会被改变。\n\n','Which macros each profile enables is not changed.\n\n') +
+        t('它们会先载入编辑器 — 在你按“保存宏到设备”之前不会有任何内容写入设备。','They load into the editor first \u2014 nothing reaches the device until you ' +
+        'press Save macros to device.'),
+        t('导入','Import'), t('取消','Cancel'))){
+    if (el) el.textContent = t('已取消导入。','Import cancelled.'); return;
   }
   window._macroRows = macroTableFromJson(dump.macros);
   macroRender();
-  if (el) el.textContent = 'Imported ' + dump.macros.length +
-    ' \u2014 press "Save macros to device" to write them.';
+  if (el) el.textContent = t('已导入 ' + dump.macros.length + ' 个宏','Imported ' + dump.macros.length) +
+    t(' — 请按“保存宏到设备”写入。',' \u2014 press "Save macros to device" to write them.');
 }
 
 // Any ENABLED row with a mouse output, in the rows as they will be saved.
@@ -5916,8 +5991,8 @@ function macroAnyMouseEnabled(){
 
 async function macroSaveTable(){
   const el = document.getElementById('macrosave');
-  if (!device){ if (el) el.textContent = 'No device.'; return; }
-  if (el) el.textContent = 'Writing macro table…';
+  if (!device){ if (el) el.textContent = t('没有设备。','No device.'); return; }
+  if (el) el.textContent = t('正在写入宏表…','Writing macro table…');
   // Whether the MOUSE interface exists depends on the committed table: a saved,
   // enabled mouse row makes the dongle present a mouse. Editing must not
   // re-enumerate under the user, so the comparison is made across the save -
@@ -5927,12 +6002,12 @@ async function macroSaveTable(){
   try {
     await hidLocked(() => macroWriteAll());
   } catch(e){
-    if (el) el.textContent = 'Table write failed: ' + e;
+    if (el) el.textContent = t('宏表写入失败：','Table write failed: ') + e;
     return;
   }
   window._macroMouseSaved  = mouseAfter;
   window._macroMouseReenum = (mouseBefore !== mouseAfter);
-  if (el) el.textContent = 'Saving enable state…';
+  if (el) el.textContent = t('正在保存启用状态…','Saving enable state…');
   await saveAll();   // writes macro_disable, persists to flash, reconnects if the
                      // keyboard interface has to appear or disappear
 
@@ -5945,7 +6020,7 @@ async function macroSaveTable(){
   // macroRender() rebuilds the box and would otherwise discard it.
   macroRender();
   const el2 = document.getElementById('macrosave');
-  if (el2) el2.textContent = 'Saved. Save a slot to capture this enable state for a game.';
+  if (el2) el2.textContent = t('已保存。保存一个槽位即可为某个游戏记下这个启用状态。','Saved. Save a slot to capture this enable state for a game.');
 }
 
 // ===== Lights tab: lightbar + player indicator + mic indicator =====
@@ -5953,8 +6028,8 @@ async function macroSaveTable(){
 // payload), which the dongle forwards to the controller over Bluetooth.
 const LIGHTS = { r:0, g:66, b:255, bri:0, eff:'static', player:0x04, mic:0, timer:null, hue:0, bt:0 };
 const LIGHTS_PRESETS = [
-  ['#0042ff','PS Blue'], ['#ff3131','Red'], ['#1fc13c','Green'], ['#ffd500','Yellow'],
-  ['#ff7a00','Orange'], ['#00d4ff','Cyan'], ['#9b59f6','Purple'], ['#ffffff','White'],
+  ['#0042ff',t('PS 蓝','PS Blue')], ['#ff3131',t('红','Red')], ['#1fc13c',t('绿','Green')], ['#ffd500',t('黄','Yellow')],
+  ['#ff7a00',t('橙','Orange')], ['#00d4ff',t('青','Cyan')], ['#9b59f6',t('紫','Purple')], ['#ffffff',t('白','White')],
 ];
 function lightsHexRgb(hex){ const v = parseInt(hex.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
 function lightsHsvRgb(h, s, v){
@@ -6496,16 +6571,16 @@ function triggerPairHTML(){
     l2map.delete(lk);
   }
   for(const f of l2map.values()) rows.push([null, f]);   // any L2-only field
-  let h = `<div class="card"><div class="card-title">Adaptive Triggers</div>
+  let h = `<div class="card"><div class="card-title">${t('自适应扳机','Adaptive Triggers')}</div>
     <div class="tpair">
-      <div class="tcolhead">L2 — left trigger</div>
-      <div class="tcolhead">R2 — right trigger</div>`;
+      <div class="tcolhead">${t('L2 — 左扳机','L2 — left trigger')}</div>
+      <div class="tcolhead">${t('R2 — 右扳机','R2 — right trigger')}</div>`;
   // L2 first: the columns mirror the controller, where L2 is the left trigger.
   for(const [a,b] of rows)
     h += `<div class="tcell">${b ? fieldRowHTML(b) : ''}</div><div class="tcell">${a ? fieldRowHTML(a) : ''}</div>`;
   h += `</div>`;
   if(shared.length){
-    h += `<div class="tshared"><div style="font-size:11px;color:var(--sub);margin-bottom:2px">Shared by both triggers</div>`;
+    h += `<div class="tshared"><div style="font-size:11px;color:var(--sub);margin-bottom:2px">${t('两个扳机共用','Shared by both triggers')}</div>`;
     for(const f of shared) h += fieldRowHTML(f);
     h += `</div>`;
   }
@@ -6578,10 +6653,10 @@ function render(){
     if (section.title === 'Battery Notification') html += battStagesPanelHTML();
     if (section.title === 'Tilt Steering (experimental)') {
       html += '<div style="font-size:12px;color:var(--sub);margin-top:6px">' +
-              'Calibrate with <b>Start live test</b> on the Macros tab: roll the pad and watch the ' +
-              '<b>L stick</b> figure. That is the value the game receives, so you can see the offset ' +
-              'appear and size it against the game\'s own steering dead zone \u2014 a setting that looks ' +
-              'active here can still be swallowed before it reaches the car.</div>';
+              t('用“宏”页的 <b>开始实时测试</b> 来校准：转动手柄，观察 ','Calibrate with <b>Start live test</b> on the Macros tab: roll the pad and watch the ') +
+              t('<b>左摇杆</b> 图形。那就是游戏收到的数值，所以你能看到偏移量出现，','<b>L stick</b> figure. That is the value the game receives, so you can see the offset ') +
+              t('并拿它和游戏自带的转向死区比较大小 — 有些设置在这里看着生效，','appear and size it against the game\'s own steering dead zone \u2014 a setting that looks ') +
+              t('却可能在到达车辆之前就被吞掉了。</div>','active here can still be swallowed before it reaches the car.</div>');
     }
     html += `</div>`;
     // BRACES MATTER HERE: the single-statement form let the two lines added
@@ -6608,26 +6683,26 @@ function render(){
   </div>
   ` + (!q && tab==='slots' ? `<div class="card"><div class="card-title">${t('配置槽位','Profile Slots')} <span style="font-size:11px;color:var(--sub)">(${t('存储在适配器上 — 固件 1.1.2+','stored on the dongle — fw 1.1.2+')})</span></div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('将当前设置保存到编号槽位；之后激活槽位是一条即时命令（自动化通过 slot-activate.html 使用）。','Save the current settings into a numbered slot once; activating a slot later is a single instant command (used by the automation via slot-activate.html).')}</div>
-    <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">Browse shared game profiles ↗</a> <span style="color:var(--sub)">— download one, use Import Profile above, then save it into a slot.</span></div>
+    <div style="font-size:12px;margin-bottom:8px">📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/profiles.html" target="_blank" rel="noopener" style="color:var(--accent)">${t('浏览共享的游戏配置档 ↗','Browse shared game profiles ↗')}</a> <span style="color:var(--sub)">${t('— 下载一个，用上面的“导入配置”，然后存进一个槽位。','— download one, use Import Profile above, then save it into a slot.')}</span></div>
     <div id="slotbox" style="font-size:13px">${t('连接后可管理槽位。','Connect to manage slots.')}</div></div>` : '') + `
   ` + (!q && tab==='triggers' ? `<div class="card"><div class="card-title">${t('扳机效果监视器 &amp; 自定义效果','Trigger Effect Monitor &amp; Custom Effects')} <span style="font-size:11px;color:var(--sub)">(${t('捕获真实游戏效果','capture real game effects')})</span></div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.</div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('捕获游戏真实发送的自适应扳机效果（阻力、枪械段落感、振动）。玩游戏、做出动作，然后按“刷新”。勾选构成同一个动作的状态（最多 5 个），然后点 <b>指定</b>。机械类状态（枪械段落感、阻力）沿拉动行程<b>按位置依次</b>重放 — 墙和阻力会落在它们被捕获时的扳机位置；振动对按速率滑块混合。请先在上方该扳机的“自定义效果”字段中设置条件/阈值/速率，然后保存到槽位。<b>注意：</b>只有游戏真实发送的效果才能被捕获 — 固件转换出来的振动（例如 Control）以及 DS4Windows/Xbox 的振动都不行，因为那些并不是游戏发送的扳机效果。', `Captures genuine adaptive-trigger effects a game sends (resistance, weapon-break, vibration). Play the game, do the action, press Refresh. Tick the states that make up one action (up to 5), then <b>Assign</b>. Mechanical states (weapon-breaks, resistances) replay <b>positionally in sequence</b> along the pull — walls and resistances land at their captured trigger positions; vibration pairs blend at the rate slider. Configure the condition/threshold/rate in the trigger's Custom Effect fields above, then Save to a slot. <b>Note:</b> only real game-sent effects capture — firmware-converted rumble (e.g. Control) and DS4Windows/Xbox rumble do not, as those aren't trigger effects the game sent.`)}</div>
     <button class="btn btn-outline" style="padding:2px 10px;margin-bottom:4px" onclick="refreshEffectMonitor()">${t('刷新已捕获效果','Refresh captured effects')}</button>
     <span style="font-size:12px;color:var(--sub)"> · ${t('加载自定义效果文件 →','Load custom effect file →')} </span>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileL2').click()">L2</button>
     <button class="btn btn-outline" style="padding:2px 8px" onclick="document.getElementById('ceFileR2').click()">R2</button>
     <input type="file" id="ceFileR2" accept=".json" style="display:none" onchange="loadCustomFile(event,0)">
     <input type="file" id="ceFileL2" accept=".json" style="display:none" onchange="loadCustomFile(event,1)">
-    <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">browse shared effects ↗</a></span>
+    <span style="font-size:12px;color:var(--sub)"> · 📥 <a href="https://LAUSer121.github.io/DS5Dongle-Gyro-Space/effects.html" target="_blank" rel="noopener" style="color:var(--accent)">${t('浏览共享效果 ↗','browse shared effects ↗')}</a></span>
     <div id="effmon" style="font-size:13px;margin-top:6px">${t('连接后，在游戏中触发一次效果，再按刷新。','Connect and press Refresh after triggering an effect in-game.')}</div>
     <div style="border-top:1px solid var(--line,#333);margin-top:8px;padding-top:6px">
-      <b style="font-size:13px">${t('时间轴录制','Timeline recording')}</b> <span style="font-size:11px;color:var(--sub)">— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.</span><br>
+      <b style="font-size:13px">${t('时间轴录制','Timeline recording')}</b> <span style="font-size:11px;color:var(--sub)">${t('— 捕获效果真实的节奏（每个状态持续的时间），所以重放时不需要再调速率。录制 → 在游戏里做出动作 → 停止 &amp; 获取 → 勾选可循环的核心部分 → 指定。', `— captures the effect's real RHYTHM (each state's held duration), so replay needs no rate dial-in. Record → do the action in-game → Stop &amp; fetch → tick the loopable core → Assign.`)}</span><br>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStart()">${t('● 录制','● Record')}</button>
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="tlRecordStop()">${t('停止 &amp; 获取','Stop &amp; fetch')}</button>
       <div id="tlbox" style="font-size:13px;margin-top:6px;color:var(--sub)">${t('未在录制。','Not recording.')}</div>
     </div></div>
   <div class="card"><div class="card-title">${t('构建自定义效果','Build a Custom Effect')} <span style="font-size:11px;color:var(--sub)">(${t('手动编排阶段 — 无需游戏捕获','author stages by hand — no game capture needed')})</span></div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">Add up to 5 stages. Mechanical stages (weapon breaks, resistances) are played <b>in sequence as you pull</b>, ordered by their start zone — so two walls at different depths give a genuine two-stage pull, which the trigger sliders can't do. A vibration stage can be mixed in and takes over at its own depth (it replaces the wall there — the controller plays one trigger effect at a time). Each stage needs a <b>different start zone</b>, and stages want <b>room between them</b> — a stage squeezed into one or two zones can be skipped by a normal pull. Zones are 0–9 ≈ 0–100% of the pull. Weapon-break limits: wall start 2–7, break point 3–8. Bow limits: draw start 0–7, draw end 1–8. Values outside those are clamped, and the list shows what was actually encoded. A <b>bow</b> builds resistance through the draw and then <b>pushes the trigger back</b> at the end — the one thing resistance and weapon break can't do. Put any vibration on a <b>later</b> stage — a vibration on the first stage buzzes at rest.</div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${t('最多添加 5 个阶段。机械类阶段（枪械段落感、阻力）随你拉动<b>依次播放</b>，按各自的起始区域排序 — 所以位于不同深度的两道墙能形成真正的两段式拉动，这是扳机滑块做不到的。振动阶段可以混入，并在自己所在的深度接管（它会替换掉那里的墙 — 手柄一次只能播放一种扳机效果）。每个阶段都需要<b>不同的起始区域</b>，而且阶段之间要<b>留出空间</b> — 挤在一两个区域里的阶段会被正常的一次拉动直接跳过。区域 0–9 ≈ 拉动行程的 0–100%。枪械段落感限制：墙起点 2–7，断裂点 3–8。弓的限制：拉弦起点 0–7，拉弦终点 1–8。超出范围的值会被夹紧，列表会显示实际编码的结果。<b>弓</b>会在拉弦过程中累积阻力，最后再<b>把扳机推回</b> — 这是阻力和枪械段落感都做不到的。任何振动都请放在<b>靠后</b>的阶段 — 第一段上的振动会在静止时就嗡嗡响。', `Add up to 5 stages. Mechanical stages (weapon breaks, resistances) are played <b>in sequence as you pull</b>, ordered by their start zone — so two walls at different depths give a genuine two-stage pull, which the trigger sliders can't do. A vibration stage can be mixed in and takes over at its own depth (it replaces the wall there — the controller plays one trigger effect at a time). Each stage needs a <b>different start zone</b>, and stages want <b>room between them</b> — a stage squeezed into one or two zones can be skipped by a normal pull. Zones are 0–9 ≈ 0–100% of the pull. Weapon-break limits: wall start 2–7, break point 3–8. Bow limits: draw start 0–7, draw end 1–8. Values outside those are clamped, and the list shows what was actually encoded. A <b>bow</b> builds resistance through the draw and then <b>pushes the trigger back</b> at the end — the one thing resistance and weapon break can't do. Put any vibration on a <b>later</b> stage — a vibration on the first stage buzzes at rest.`)}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px">
       <select id="ceb_type" onchange="cebTypeChanged()">
         <option value="break">${t('武器破坏（挡墙让位）','Weapon break (wall that gives way)')}</option>
@@ -6651,21 +6726,21 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px" onclick="cebClear()">${t('清空列表','Clear list')}</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
-      <span style="font-size:12px;color:var(--sub)">Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(1)">Remove effect from L2</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">Remove effect from R2</button>
+      <span style="font-size:12px;color:var(--sub)">${t('移除扳机上当前的效果 — 会清除它已存储的状态，并把扳机交还给滑块：','Remove the effect currently on a trigger — wipes its stored states and hands the trigger back to the sliders:')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(1)">${t('移除 L2 上的效果','Remove effect from L2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceClearDevice(0)">${t('移除 R2 上的效果','Remove effect from R2')}</button>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
-      <span style="font-size:12px;color:var(--sub)">See what is actually on a trigger right now — decoded, with the position window each stage will get:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">Read L2</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">Read R2</button>
-      <div id="ce_readout" style="font-size:12px;margin-top:6px">Nothing read yet.</div>
+      <span style="font-size:12px;color:var(--sub)">${t('查看扳机上此刻实际存在的效果 — 已解码，并显示每个阶段将获得的位置区间：','See what is actually on a trigger right now — decoded, with the position window each stage will get:')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(1)">${t('读取 L2','Read L2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="ceReadTrigger(0)">${t('读取 R2','Read R2')}</button>
+      <div id="ce_readout" style="font-size:12px;margin-top:6px">${t('尚未读取。','Nothing read yet.')}</div>
       <div id="ce_readviz" style="margin-top:8px"></div>
     </div>
     <div style="margin-top:8px;border-top:1px solid var(--line,#333);padding-top:6px">
-      <span style="font-size:12px;color:var(--sub)">Save the effect currently on a trigger to a file (profile exports don't carry effect data):</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">Export effect from L2</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">Export effect from R2</button>
+      <span style="font-size:12px;color:var(--sub)">${t('把扳机上当前的效果保存到文件（导出配置时不包含效果数据）：','Save the effect currently on a trigger to a file (profile exports don\'t carry effect data):')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(1)">${t('从 L2 导出效果','Export effect from L2')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">${t('从 R2 导出效果','Export effect from R2')}</button>
     </div></div>` : '') + `
   ` + (!q && tab==='device' ? `<div class="card"><div class="card-title">${t('设备状态','Device Status')}</div>
     <div id="statusbox" style="font-size:13px">${t('等待输入报告…','Waiting for input reports…')}</div></div>
@@ -6676,22 +6751,22 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="readWakeDiag()">${t('读取唤醒诊断','Read wake diagnostics')}</button>
       <div id="wakediag" style="font-size:12px;margin-top:6px">${t('尚未读取。','Nothing read yet.')}</div>
     </div></div>` : '') + `
-  ` + (!q && tab==='gyro' ? `<div class="card"><div class="card-title">Gyro calibration</div>
-    <div style="font-size:12px;color:var(--sub)">Both checks measure rather than guess: the first confirms the sensor scale, the second finds the number this game needs. Do them in that order.</div>
+  ` + (!q && tab==='gyro' ? `<div class="card"><div class="card-title">${t('陀螺仪校准','Gyro calibration')}</div>
+    <div style="font-size:12px;color:var(--sub)">${t('两项检查都是实测而非猜测：第一项确认传感器刻度，第二项找出本游戏需要的数值。请按这个顺序做。','Both checks measure rather than guess: the first confirms the sensor scale, the second finds the number this game needs. Do them in that order.')}</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
-      <span style="font-size:12px;color:var(--sub)">Gyro angle check \u2014 confirms that Natural sensitivity really is 1:1 on your hardware:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="gyroAngleStart()">Measure (8s)</button>
-      <div id="gyroangle" style="font-size:12px;margin-top:6px">Press Measure, then make one full turn (360\u00b0) to the right during the countdown, ending where you started, and hold still.</div>
+      <span style="font-size:12px;color:var(--sub)">${t('陀螺仪角度检查 — 确认在你的硬件上“自然”灵敏度确实是 1:1：','Gyro angle check \u2014 confirms that Natural sensitivity really is 1:1 on your hardware:')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="gyroAngleStart()">${t('开始测量（8 秒）','Measure (8s)')}</button>
+      <div id="gyroangle" style="font-size:12px;margin-top:6px">${t('点“开始测量”，然后在倒计时内向右完整转一圈（360°），结束时回到起点，并保持静止。','Press Measure, then make one full turn (360\u00b0) to the right during the countdown, ending where you started, and hold still.')}</div>
     </div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,#333)">
-      <span style="font-size:12px;color:var(--sub)">Counts per 360\u00b0 \u2014 measure it instead of guessing. Needs gyro output set to Mouse, the game in the foreground, and in-game mouse acceleration and smoothing OFF:</span><br>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSend()">1. Send 6500</button>
-      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSendHalf()">Send 3250 (check)</button>
-      <span style="font-size:12px">2. how far did the view turn?
+      <span style="font-size:12px;color:var(--sub)">${t('每 360° 计数 — 靠实测而不是猜。需要把陀螺仪输出设为“鼠标”，游戏在前台，并关闭游戏内的鼠标加速与平滑：','Counts per 360\u00b0 \u2014 measure it instead of guessing. Needs gyro output set to Mouse, the game in the foreground, and in-game mouse acceleration and smoothing OFF:')}</span><br>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSend()">${t('1. 发送 6500','1. Send 6500')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="calSendHalf()">${t('发送 3250（校验）','Send 3250 (check)')}</button>
+      <span style="font-size:12px">${t('2. 视角转了多少度？','2. how far did the view turn?')}
         <input id="calobs" type="number" min="1" max="3600" step="1" value="180" style="width:70px"> \u00b0
       </span>
-      <button class="btn btn-outline" style="padding:2px 10px" onclick="calCompute()">3. Work it out</button>
-      <div id="calbox" style="font-size:12px;margin-top:6px">Switch to the game first \u2014 the counts go wherever the mouse pointer would.</div>
+      <button class="btn btn-outline" style="padding:2px 10px" onclick="calCompute()">${t('3. 计算出来','3. Work it out')}</button>
+      <div id="calbox" style="font-size:12px;margin-top:6px">${t('请先切到游戏 — 这些计数会发到鼠标指针所在的位置。','Switch to the game first \u2014 the counts go wherever the mouse pointer would.')}</div>
     </div>` : '') + `
   `;
   app.innerHTML=html;
