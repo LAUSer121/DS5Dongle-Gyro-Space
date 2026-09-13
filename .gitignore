@@ -3,3 +3,6 @@ build
 .vscode
 .idea
 example
+
+# stray Windows cache dir created by a tool that failed to expand %SystemDrive%
+%SystemDrive%/
