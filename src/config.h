@@ -533,6 +533,11 @@ struct __attribute__((packed)) Config {
 void config_default();
 void config_load();
 bool config_save();
+// Must be called before any flash_safe_execute() write: if core1 (the flash-safe
+// victim) has exited or wedged, it hands the registration back so the write can
+// proceed single-core instead of failing after a full lockout timeout. Idempotent
+// and cheap. Implemented in config.cpp.
+void flash_write_preflight();
 
 // --- Profile slots -----------------------------------------------------------
 // Named copies of Config_body stored in their own flash sector (the sector

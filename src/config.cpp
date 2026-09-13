@@ -5,6 +5,7 @@
 #include "config.h"
 #include "flash_map.h"
 #include "macro.h"
+#include "audio.h"    // core1 / flash-safe victim health (g_core1_state, heartbeat)
 
 #include <cmath>
 #include <cstring>
@@ -458,7 +459,49 @@ volatile uint32_t g_cfg_save_attempts = 0;          // lockout attempts, retries
 volatile uint8_t  g_cfg_flash_crc_ok  = 0;          // flash currently holds what RAM holds
 volatile uint32_t g_cfg_reset_count   = 0;          // factory resets performed since boot
 
+// --- flash write preflight ---------------------------------------------------
+// core1 registers itself as the flash-safe victim (audio.cpp) so core0 can park
+// it while the QSPI is written. Two failure modes leave that registration
+// answering nothing - and then EVERY write below waits out the full lockout
+// timeout and fails: config, profile slots, macros and the learned battery
+// calibration anchors all stay in RAM and are gone at the next power cycle, with
+// nothing reporting it (the save callers only saw a boolean).
+//   1. core1 exited because the Opus encoder could not be created (state 2)
+//   2. core1 wedged: its heartbeat stopped advancing
+// Both are detected here and the registration is handed back, after which
+// flash_safe_execute() runs single-core - which is exactly right, because there
+// is no other core touching flash.
+void flash_write_preflight() {
+    static bool healed = false;
+    if (healed) return;
+
+    if (g_core1_state == 2) {
+        printf("[Config] core1 exited (opus err %d) - dropping its flash-safe registration\n",
+               (int)g_core1_init_error);
+        flash_safe_execute_core_deinit();
+        healed = true;
+        return;
+    }
+
+    static uint32_t seen_hb = 0;
+    static uint64_t seen_ms = 0;
+    const uint64_t now = to_ms_since_boot(get_absolute_time());
+    const uint32_t hb  = g_core1_heartbeat;
+    if (seen_ms == 0) { seen_ms = now; seen_hb = hb; return; }
+    if (now - seen_ms >= 2000) {
+        if (hb == seen_hb && g_core1_state == 1) {
+            printf("[Config] core1 heartbeat frozen at %u - dropping its flash-safe registration\n",
+                   (unsigned)hb);
+            flash_safe_execute_core_deinit();
+            healed = true;
+            return;
+        }
+        seen_ms = now; seen_hb = hb;
+    }
+}
+
 bool config_save() {
+    flash_write_preflight();
     config.crc32 = calc_config_crc(config);
     alignas(4) uint8_t page[CONFIG_WRITE_LEN];
     memset(page, 0xff, sizeof(page));
@@ -703,6 +746,7 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     memset(slot_sector_image + local * SLOT_STRIDE, 0xff, SLOT_STRIDE);
     memcpy(slot_sector_image + local * SLOT_STRIDE, &rec, sizeof(rec));
     slot_op_offset = sec_off;
+    flash_write_preflight();
     int rc = flash_safe_execute(slots_flash_op, nullptr, 500);
     if (rc != PICO_OK) {
         printf("[Config] slot_save flash_safe_execute failed: %d\n", rc);
@@ -727,6 +771,7 @@ bool slot_delete(uint8_t idx) {
     memcpy(slot_sector_image, reinterpret_cast<const void *>(XIP_BASE + sec_off), FLASH_SECTOR_SIZE);
     memset(slot_sector_image + local * SLOT_STRIDE, 0xff, SLOT_STRIDE);
     slot_op_offset = sec_off;
+    flash_write_preflight();
     int rc = PICO_ERROR_TIMEOUT;
     for (int attempt = 0; attempt < 3; attempt++) {
         rc = flash_safe_execute(slots_flash_op, nullptr, 500);

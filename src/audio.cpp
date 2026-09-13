@@ -781,6 +781,17 @@ static void __not_in_flash_func(mic_proc)() {
     queue_try_add(&mic_decode_fifo, &decode_element);
 }
 
+// core1 (the audio/DSP core) doubles as the flash-safe victim: core0's
+// flash_safe_execute() parks it while config/slot/macro writes touch the QSPI.
+// If that core ever stops answering while still registered, EVERY flash write
+// waits out its full timeout and fails - settings then live only in RAM and are
+// lost at the next power cycle, with nothing reporting it. These make that state
+// visible (portal diagnostics, cmd fields 0xF6..0xF8) and recoverable: config.cpp
+// hands the registration back before it writes.
+volatile uint8_t  g_core1_state      = 0;  // 0 = not started, 1 = running, 2 = exited
+volatile int32_t  g_core1_init_error = 0;  // Opus error code when state == 2
+volatile uint32_t g_core1_heartbeat  = 0;  // bumped per loop; a frozen counter = wedged
+
 void __not_in_flash_func(core1_entry)() {
     // Register core1 as a flash-safe victim so core0's flash_safe_execute() really
     // parks this core while flash is accessed, instead of letting it fault on XIP.
@@ -788,11 +799,21 @@ void __not_in_flash_func(core1_entry)() {
     // floats QSPI CSn) - the latter makes polling BOOTSEL safe while audio streams on
     // core1. Requires PICO_FLASH_ASSUME_CORE1_SAFE=0.
     flash_safe_execute_core_init();
+    g_core1_state = 1;
     int error = 0;
     encoder = opus_encoder_create(48000, 2,OPUS_APPLICATION_AUDIO, &error);
     if (error != 0) {
         printf("[Audio] OpusEncoder create failed\n");
-        return;
+        // The registration above is still live and this core would never answer
+        // another lockout. Hand it back and park - do NOT return, a returned core1
+        // runs off the end of its entry point. Without this, every later flash
+        // write on core0 fails after a full 1 s timeout each: config, profile
+        // slots, macros and the learned battery calibration anchors all stay in
+        // RAM and vanish on the next power cycle.
+        g_core1_init_error = error;
+        g_core1_state = 2;
+        flash_safe_execute_core_deinit();
+        while (true) { tight_loop_contents(); }
     }
     opus_encoder_ctl(encoder,OPUS_SET_EXPERT_FRAME_DURATION(OPUS_FRAMESIZE_10_MS));
     opus_encoder_ctl(encoder,OPUS_SET_BITRATE(200 * 8 * 100));
@@ -808,6 +829,7 @@ void __not_in_flash_func(core1_entry)() {
     }
 
     while (true) {
+        g_core1_heartbeat++;
         speaker_proc();
         mic_proc();
     }

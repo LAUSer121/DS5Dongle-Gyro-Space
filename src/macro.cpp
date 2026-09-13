@@ -294,9 +294,15 @@ bool macro_commit() {
     memset(image, 0xff, sizeof(image));
     memcpy(image, &g_table, sizeof(MacroTable));
 
-    const int rc = flash_safe_execute(macro_flash_op, image, 1000);
+    flash_write_preflight();   // core1 gone/wedged -> drop its lockout registration first
+    int rc = PICO_ERROR_TIMEOUT;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        rc = flash_safe_execute(macro_flash_op, image, 1000);
+        if (rc == PICO_OK) break;
+        printf("[Macro] commit flash_safe_execute failed: %d (attempt %d/3)\n", rc, attempt + 1);
+        sleep_ms(10);
+    }
     if (rc != PICO_OK) {
-        printf("[Macro] commit flash_safe_execute failed: %d\n", rc);
         return false;
     }
     const auto *v = reinterpret_cast<const MacroTable *>(XIP_BASE + MACRO_FLASH_OFFSET);

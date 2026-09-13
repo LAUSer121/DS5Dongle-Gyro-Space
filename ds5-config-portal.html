@@ -6302,6 +6302,40 @@ function refreshStatus(){
   const el = document.getElementById('statusbox');
   if (el) el.innerHTML = statusHTML();
   inputRate = 0;
+  refreshPersistDiag();   // flash persistence + core1 health, read asynchronously
+}
+// Flash persistence and core1 (flash-safe victim) health. A save that never
+// reached flash used to look exactly like a successful one until the next power
+// cycle discarded the settings; and core1 exiting without handing back its
+// lockout registration is what made every write fail in the first place. Both are
+// visible here now, in plain language, on the Device tab.
+let _diagBusy = false;
+async function refreshPersistDiag(){
+  const el = document.getElementById('persistbox');
+  if (!el || _diagBusy || !device || !device.opened) return;
+  _diagBusy = true;
+  try {
+    const d = await readPersistDiag();
+    let core1 = null, err = 0;
+    try { core1 = await hidLocked(() => readField(0xf6, 'u8')); } catch(_){}
+    try { err   = await hidLocked(() => readField(0xf7, 'i16')); } catch(_){}
+    if (d == null && core1 == null) { el.innerHTML = ''; return; }   // pre-1.40.0 firmware
+    const rows = [];
+    if (d){
+      rows.push(d.lastOk ? `<span style="color:#63c76a">${t('已写入 flash','written to flash')}</span>`
+                         : `<span style="color:#e08080">${t('未写入 flash（只在内存中）','NOT written to flash (RAM only)')}</span>`);
+      rows.push(t(`成功 ${d.ok} 次 / 失败 ${d.fail} 次`, `${d.ok} ok / ${d.fail} failed`));
+      if (!d.crcOk) rows.push(`<span style="color:#e08080">${t('flash 内容与当前设置不一致','flash differs from RAM')}</span>`);
+    }
+    if (core1 === 2)      rows.push(`<span style="color:#e0a030">${t(`音频核心已停止（错误 ${err}）— 固件已接管 flash 写入`, `audio core exited (err ${err}) \u2014 firmware took over flash writes`)}</span>`);
+    else if (core1 === 1) rows.push(t('音频核心运行中','audio core running'));
+    else if (core1 === 0) rows.push(t('音频核心未启动','audio core not started'));
+    el.innerHTML = `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)">
+        <div style="color:var(--sub);font-size:12px;margin-bottom:3px">${t('持久化状态','Persistence')}</div>
+        ${rows.map(r => `<div style="font-size:12.5px;line-height:1.6">${r}</div>`).join('')}
+      </div>`;
+  } catch(_) { /* pre-1.40 firmware, or a stall during the flash write */ }
+  finally { _diagBusy = false; }
 }
 
 const TABS = [
@@ -6872,6 +6906,7 @@ function render(){
       <button class="btn btn-outline" style="padding:2px 10px;margin-top:4px" onclick="exportEffectFile(0)">${t('从 R2 导出效果','Export effect from R2')}</button>
     </div></div>` : '') + `
   ` + (!q && tab==='device' ? `<div class="card"><div class="card-title">${t('设备状态','Device Status')}</div>
+    <div id="persistbox" style="font-size:12.5px"></div>
     <div id="statusbox" style="font-size:13px">${t('等待输入报告…','Waiting for input reports…')}</div></div>
   <div class="card"><div class="card-title">${t('诊断','Diagnostic')}</div>
     <div id="diagbox" style="font-size:12px;color:var(--sub)">${t('正在读取实时流…','Reading live stream…')}</div>

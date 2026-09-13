@@ -723,6 +723,13 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xf3: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_save_attempts & 0xFFFF));
         case 0xf4: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_reset_count & 0xFFFF));
         case 0xf5: return write_config_value(buffer, bufsize, (int16_t)g_cfg_save_last_rc);
+        // core1 (audio/DSP) health. It doubles as the flash-safe victim, so a core1
+        // that exited or wedged is the reason flash writes fail: state 2 = exited
+        // (Opus encoder could not be created), and a heartbeat that stops advancing
+        // = wedged. The firmware drops the registration itself in either case.
+        case 0xf6: { extern volatile uint8_t g_core1_state; return write_config_value(buffer, bufsize, (uint8_t)g_core1_state); }
+        case 0xf7: { extern volatile int32_t g_core1_init_error; return write_config_value(buffer, bufsize, (int16_t)g_core1_init_error); }
+        case 0xf8: { extern volatile uint32_t g_core1_heartbeat; return write_config_value(buffer, bufsize, (uint16_t)(g_core1_heartbeat & 0xFFFF)); }
         case 0x20: { extern volatile uint16_t g_diag_bytes_read; return write_config_value(buffer, bufsize, (uint16_t)g_diag_bytes_read); }
         case 0x21: { extern volatile uint8_t g_diag_actual_ch; return write_config_value(buffer, bufsize, (uint8_t)g_diag_actual_ch); }
         case 0x22: { int8_t rssi = 0; bt_get_signal_strength(&rssi); return write_config_value(buffer, bufsize, (uint8_t)rssi); }
