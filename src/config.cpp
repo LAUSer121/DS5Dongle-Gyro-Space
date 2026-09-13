@@ -385,8 +385,25 @@ static void migrate_legacy_storage() {
     migrate_legacy_slots();
 }
 
+// Boot-time diagnosis of what the stored config actually looked like. The save
+// counters above are RAM and reset on every boot, so "did the last save reach
+// flash?" cannot be answered by them - it has to be answered from flash itself.
+// These record what config_load() found and why it accepted or rejected it, and
+// survive the reboot that used to be the only symptom.
+//   0 loaded  1 bad magic  2 bad size  3 version mismatch  4 CRC mismatch
+//   5 migrated from the legacy sector  6 never written (blank)
+volatile uint8_t  g_cfg_boot_result          = 0xFF;
+volatile uint16_t g_cfg_boot_stored_version  = 0;
+volatile uint16_t g_cfg_boot_stored_size     = 0;
+volatile uint8_t  g_cfg_boot_stored_valid    = 0;   // stored CRC self-consistent
+
 void config_load() {
     memcpy(&config, flash_config(), sizeof(Config));
+
+    g_cfg_boot_stored_version = config.body.config_version;
+    g_cfg_boot_stored_size    = config.size;
+    g_cfg_boot_stored_valid   = (config.magic == CONFIG_MAGIC &&
+                                 config.crc32 == calc_config_crc(config)) ? 1 : 0;
 
     // Reject anything that cannot be trusted, BEFORE migration and clamping. A
     // stored config whose magic, size, version and CRC do not all line up is not
@@ -394,29 +411,40 @@ void config_load() {
     // wrong fields (the v1.40 merge reordered Config_body, so a v23 blob is
     // byte-shifted). The CRC covers the body only, which also catches the torn or
     // partial write a failed flash write leaves behind.
-    auto stored_ok = [&]() {
-        return config.magic == CONFIG_MAGIC &&
-               config.size  == sizeof(Config_body) &&
-               config.body.config_version == CONFIG_VERSION &&
-               config.crc32 == calc_config_crc(config);
+    auto classify = [&]() -> uint8_t {
+        if (config.magic == 0xFFFFFFFFu) return 6;               // never written
+        if (config.magic != CONFIG_MAGIC) return 1;
+        if (config.size != sizeof(Config_body)) return 2;
+        if (config.body.config_version != CONFIG_VERSION) return 3;
+        if (config.crc32 != calc_config_crc(config)) return 4;
+        return 0;
     };
+    uint8_t why = classify();
+    g_cfg_boot_result = why;
 
-    if (!stored_ok()) {
-        printf("[Config] stored config unusable (magic/size/version/crc) - trying migration\n");
+    if (why != 0) {
+        printf("[Config] stored config unusable (reason %u) - trying migration\n", (unsigned)why);
         migrate_legacy_storage();
         // migration may have replaced `config`; reload from the (new) authoritative sector
         memcpy(&config, flash_config(), sizeof(Config));
+        const uint8_t after = classify();
+        if (after == 0) {
+            g_cfg_boot_result = 5;                               // adopted the legacy copy
+        } else {
+            g_cfg_boot_result = why;                             // report the original reason
+            // Land on exactly the fresh-flash state. Deliberately NOT written back
+            // here: a blank sector stays blank until the user (or the portal's
+            // auto-save) actually saves, so booting never erases something a later
+            // migration might still be able to recover.
+            printf("[Config] no usable stored config - loading defaults\n");
+            config.magic = CONFIG_MAGIC;
+            config.size  = sizeof(Config_body);
+            memset(&config.body, 0xff, sizeof(Config_body));
+        }
     }
-    if (!stored_ok()) {
-        // Land on exactly the fresh-flash state. Deliberately NOT written back
-        // here: a blank sector stays blank until the user (or the portal's
-        // auto-save) actually saves, so booting never erases something that a
-        // later migration might still be able to recover.
-        printf("[Config] no usable stored config - loading defaults\n");
-        config.magic = CONFIG_MAGIC;
-        config.size  = sizeof(Config_body);
-        memset(&config.body, 0xff, sizeof(Config_body));
-    }
+
+    // Flash matches RAM whenever a valid config was loaded (or migrated) above.
+    g_cfg_flash_crc_ok = (g_cfg_boot_result == 0 || g_cfg_boot_result == 5) ? 1 : 0;
 
     config_valid();
 }

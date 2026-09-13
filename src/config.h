@@ -586,6 +586,15 @@ extern volatile uint32_t g_cfg_save_fail;
 extern volatile uint32_t g_cfg_save_attempts;
 extern volatile uint8_t  g_cfg_flash_crc_ok;
 extern volatile uint32_t g_cfg_reset_count;
+// What config_load() found in flash at boot. RAM save counters reset on every
+// boot, so this is the only evidence that survives a power cycle: it says whether
+// a stored config existed, whether it validated, and why it was rejected.
+// 0 loaded, 1 bad magic, 2 bad size, 3 version mismatch, 4 CRC mismatch,
+// 5 migrated from the legacy sector, 6 never written (blank), 0xFF not evaluated.
+extern volatile uint8_t  g_cfg_boot_result;
+extern volatile uint16_t g_cfg_boot_stored_version;
+extern volatile uint16_t g_cfg_boot_stored_size;
+extern volatile uint8_t  g_cfg_boot_stored_valid;
 // Currently-loaded profile (RAM only): slot_out=0xFF + returns false when nothing
 // is tracked; otherwise fills the source slot name and sets edited when the live
 // config has diverged from the slot as loaded.

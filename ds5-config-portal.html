@@ -6315,17 +6315,47 @@ async function refreshPersistDiag(){
   if (!el || _diagBusy || !device || !device.opened) return;
   _diagBusy = true;
   try {
+    const rd = async (id, ty) => { try { return await hidLocked(() => readField(id, ty)); } catch(_) { return null; } };
     const d = await readPersistDiag();
-    let core1 = null, err = 0;
-    try { core1 = await hidLocked(() => readField(0xf6, 'u8')); } catch(_){}
-    try { err   = await hidLocked(() => readField(0xf7, 'i16')); } catch(_){}
-    if (d == null && core1 == null) { el.innerHTML = ''; return; }   // pre-1.40.0 firmware
+    const bootRes = await rd(0xf9, 'u8');
+    if (d == null && bootRes == null) { el.innerHTML = ''; return; }   // pre-1.40.0 firmware
+    const storedVer = await rd(0xfa, 'u16');
+    const saveCmds  = await rd(0xfc, 'u16');
+    const totalCmds = await rd(0xfd, 'u16');
+    const core1 = await rd(0xf6, 'u8');
+    const err   = await rd(0xf7, 'i16');
+
     const rows = [];
+    // 1) What the DEVICE actually holds. The save counters are RAM and reset on
+    //    every boot, so this is the only line that answers "did my save survive
+    //    the power cycle?" - it is read from flash at boot and reported as-is.
+    const BOOT = {
+      0:   [t(`有效（已加载 v${storedVer}）`, `valid (loaded v${storedVer})`), '#63c76a'],
+      5:   [t('有效（已从旧位置迁移）', 'valid (migrated from legacy location)'), '#63c76a'],
+      6:   [t('空白 —— 从未成功保存过', 'blank \u2014 nothing has ever been saved'), '#e08080'],
+      1:   [t('无效：magic 不符', 'invalid: bad magic'), '#e08080'],
+      2:   [t('无效：结构长度不符', 'invalid: bad size'), '#e08080'],
+      3:   [t(`无效：版本不符（设备里是 v${storedVer}，固件期望 v24）`, `invalid: version mismatch (device has v${storedVer}, firmware wants v24)`), '#e08080'],
+      4:   [t('无效：校验和不符（上次写入不完整）', 'invalid: CRC mismatch (last write was incomplete)'), '#e08080'],
+      255: [t('未评估', 'not evaluated'), 'var(--sub)'],
+    };
+    const b = BOOT[bootRes] || [t('未知', 'unknown'), 'var(--sub)'];
+    rows.push(`${t('设备中的配置','Stored config')}: <span style="color:${b[1]}">${b[0]}</span>`);
+
+    // 2) Did the save command even arrive this session?
+    if (saveCmds != null){
+      const n = saveCmds | 0;
+      rows.push(n > 0
+        ? t(`本次开机收到的保存命令：${n} 次（共 ${totalCmds || 0} 条命令）`, `Save commands received this session: ${n} (of ${totalCmds || 0} commands)`)
+        : `<span style="color:#e0a030">${t('本次开机没有收到任何保存命令 —— 「保存到设备」没有发出去', 'No save command received this session \u2014 "Save to Device" never reached the device')}</span>`);
+    }
+    // 3) Outcome of the saves that did run.
     if (d){
-      rows.push(d.lastOk ? `<span style="color:#63c76a">${t('已写入 flash','written to flash')}</span>`
-                         : `<span style="color:#e08080">${t('未写入 flash（只在内存中）','NOT written to flash (RAM only)')}</span>`);
-      rows.push(t(`成功 ${d.ok} 次 / 失败 ${d.fail} 次`, `${d.ok} ok / ${d.fail} failed`));
-      if (!d.crcOk) rows.push(`<span style="color:#e08080">${t('flash 内容与当前设置不一致','flash differs from RAM')}</span>`);
+      rows.push(d.lastOk
+        ? `<span style="color:#63c76a">${t(`最近一次保存已写入 flash（成功 ${d.ok} / 失败 ${d.fail}）`, `Last save written to flash (${d.ok} ok / ${d.fail} failed)`)}</span>`
+        : (d.ok === 0 && d.fail === 0
+            ? t('本次开机还没有保存过', 'Nothing saved yet this session')
+            : `<span style="color:#e08080">${t(`最近一次保存未写入 flash（成功 ${d.ok} / 失败 ${d.fail}，错误码 ${d.rc}）`, `Last save did NOT reach flash (${d.ok} ok / ${d.fail} failed, rc ${d.rc})`)}</span>`));
     }
     if (core1 === 2)      rows.push(`<span style="color:#e0a030">${t(`音频核心已停止（错误 ${err}）— 固件已接管 flash 写入`, `audio core exited (err ${err}) \u2014 firmware took over flash writes`)}</span>`);
     else if (core1 === 1) rows.push(t('音频核心运行中','audio core running'));

@@ -50,6 +50,14 @@ constexpr uint8_t FW_VER_PATCH = 0;
 // any future field of any width is correct on arrival.
 static uint8_t g_last_field_len = 1;
 
+// Command reception diagnostics (read-only fields 0xFC..0xFE). "Saving does
+// nothing" splits into two very different failures - the command never arrived,
+// or it arrived and the flash write failed - and the save counters cannot tell
+// them apart on their own.
+volatile uint32_t g_cmd_seen_total = 0;   // every pico_cmd_set() entry
+volatile uint32_t g_cmd_seen_save  = 0;   // 0x02 "write config to flash" arrivals
+volatile uint8_t  g_cmd_last_id    = 0;   // last command id seen
+
 template<typename T>
 static bool write_config_value(uint8_t *buffer, uint16_t bufsize, T value) {
     if (bufsize < sizeof(T)) {
@@ -730,6 +738,18 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xf6: { extern volatile uint8_t g_core1_state; return write_config_value(buffer, bufsize, (uint8_t)g_core1_state); }
         case 0xf7: { extern volatile int32_t g_core1_init_error; return write_config_value(buffer, bufsize, (int16_t)g_core1_init_error); }
         case 0xf8: { extern volatile uint32_t g_core1_heartbeat; return write_config_value(buffer, bufsize, (uint16_t)(g_core1_heartbeat & 0xFFFF)); }
+        //   0xF9..0xFB what config_load() found in flash at boot (the only evidence
+        //   that survives a power cycle; the save counters above reset on boot)
+        //   0xFC..0xFE command reception: how many 0x02 "save to flash" commands
+        //   actually arrived, total commands seen, and the last command id. This
+        //   separates "the portal never sent it" from "it arrived but did not run",
+        //   which the counters alone cannot do.
+        case 0xf9: return write_config_value(buffer, bufsize, (uint8_t)g_cfg_boot_result);
+        case 0xfa: return write_config_value(buffer, bufsize, (uint16_t)g_cfg_boot_stored_version);
+        case 0xfb: return write_config_value(buffer, bufsize, (uint16_t)g_cfg_boot_stored_size);
+        case 0xfc: return write_config_value(buffer, bufsize, (uint16_t)(g_cmd_seen_save & 0xFFFF));
+        case 0xfd: return write_config_value(buffer, bufsize, (uint16_t)(g_cmd_seen_total & 0xFFFF));
+        case 0xfe: return write_config_value(buffer, bufsize, (uint8_t)g_cmd_last_id);
         case 0x20: { extern volatile uint16_t g_diag_bytes_read; return write_config_value(buffer, bufsize, (uint16_t)g_diag_bytes_read); }
         case 0x21: { extern volatile uint8_t g_diag_actual_ch; return write_config_value(buffer, bufsize, (uint8_t)g_diag_actual_ch); }
         case 0x22: { int8_t rssi = 0; bt_get_signal_strength(&rssi); return write_config_value(buffer, bufsize, (uint8_t)rssi); }
@@ -748,6 +768,10 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
     // 0x02 write config to flash
     // 0x03 reconnect tinyusb device;
     // 0x04 query config field: field_id (0x00 = config_version)
+
+    g_cmd_seen_total++;
+    g_cmd_last_id = cmd_id;
+    if (cmd_id == 0x02) g_cmd_seen_save++;
 
     switch (cmd_id) {
         case 0x01: {
