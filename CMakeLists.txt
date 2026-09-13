@@ -312,7 +312,10 @@ target_compile_definitions(ds5-bridge PRIVATE
         # because BT writes on connect/disconnect it read as "shutting the PC down
         # resets everything". Pin the bank BELOW every region this firmware owns -
         # config -3, profile slots -4..-19, macro table -20 - so it sits at -22/-21.
-        PICO_FLASH_BANK_STORAGE_OFFSET=(PICO_FLASH_SIZE_BYTES - 22 * 4096)
+        # No parentheses and no spaces in this value on purpose: it is pasted into
+        # the compile command line, where a shell parses "(" as a syntax error
+        # ("/bin/sh: Syntax error: \")\" unexpected").
+        PICO_FLASH_BANK_STORAGE_OFFSET=PICO_FLASH_SIZE_BYTES-22*4096
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
