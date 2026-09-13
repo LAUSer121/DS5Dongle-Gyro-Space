@@ -996,7 +996,8 @@ async function readCmdReply(cmdId, expectIdx, tries=30){
   // 0x0d) reply on SLOT_REPORT so neither this portal's 1-second 0x81
   // diagnostic poll nor bulk config ops can consume their replies. Bulk config
   // get/set (0x0b/0x0c) are PORTAL commands and stay on 0x81.
-  const rid = (cmdId === 0x08 || cmdId === 0x09 || cmdId === 0x0a || cmdId === 0x0d) ? SLOT_REPORT : GET_REPORT;
+  const rid = (cmdId === 0x08 || cmdId === 0x09 || cmdId === 0x0a || cmdId === 0x0d ||
+               cmdId === 0x1b || cmdId === 0x1c) ? SLOT_REPORT : GET_REPORT;
   return readCmdReplyOn(rid, cmdId, expectIdx, tries);
 }
 async function slotInfo(idx){
@@ -1055,6 +1056,38 @@ async function slotActivate(idx){
   }
   return null;
 }
+// Delete a saved slot (cmd 0x1b, fw 1.40.0+). The firmware erases the whole
+// sector and rewrites it without the target record, so the other seven slots in
+// that sector survive.
+async function slotDelete(idx){
+  await sendCmd(0x1b, [idx]);
+  const r = await readCmdReply(0x1b, idx);
+  return !!(r && r[2] === 0x00);
+}
+// Factory reset (cmd 0x1c, fw 1.40.0+). Reply is
+// 0x66 0x1c persisted defaults_live resets_lo resets_hi flash_crc_ok.
+// persisted=0 means the defaults are live in RAM but the flash write failed -
+// which is precisely the state that used to be invisible and cost the settings
+// at the next power cycle.
+async function factoryReset(){
+  await sendCmd(0x1c, [1]);
+  const r = await readCmdReplyOn(SLOT_REPORT, 0x1c, undefined, 30);
+  if (!r) return null;
+  return { persisted: r[2] === 0x00, flashCrcOk: r[6] === 1 };
+}
+// Persistence diagnostics (read-only fields 0xEF..0xF5, fw 1.40.0+). Lets the
+// portal say whether a save actually reached flash instead of assuming it did.
+async function readPersistDiag(){
+  try{
+    const lastOk = await hidLocked(() => readField(0xef, 'u8'));
+    const okCnt  = await hidLocked(() => readField(0xf0, 'u16'));
+    const failCnt= await hidLocked(() => readField(0xf1, 'u16'));
+    const crcOk  = await hidLocked(() => readField(0xf2, 'u8'));
+    const rc     = await hidLocked(() => readField(0xf5, 'i16'));
+    if (lastOk == null) return null;   // pre-1.40.0 firmware
+    return { lastOk: lastOk === 1, ok: okCnt || 0, fail: failCnt || 0, crcOk: crcOk === 1, rc: rc == null ? 0 : rc };
+  } catch(_){ return null; }
+}
 // Must match the firmware's SLOT_COUNT. A mismatch degrades gracefully both ways:
 // an older dongle simply reports the extra indices as empty, and an older portal
 // just shows fewer slots than exist.
@@ -1095,6 +1128,7 @@ async function _refreshSlotsOnce(){
       <span style="flex:1">${label}</span>
       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotSave(${i})">${t('保存当前','Save current')}</button>
       <button class="btn btn-outline" style="padding:2px 10px" ${info && info.valid ? '' : 'disabled'} onclick="uiSlotActivate(${i})">${t('激活','Activate')}</button>
+      <button class="btn btn-outline" style="padding:2px 10px" ${info && info.valid ? '' : 'disabled'} onclick="uiSlotDelete(${i})">${t('删除','Delete')}</button>
     </div>`;
   }
   const boxNow = document.getElementById('slotbox'); // render() may have replaced the node mid-run
@@ -1104,6 +1138,8 @@ async function _refreshSlotsOnce(){
        <button class="btn btn-outline" style="padding:2px 10px" onclick="document.getElementById('restoreFile').click()">${t('从文件恢复','Restore from file')}</button>
        <input id="restoreFile" type="file" accept="application/json,.json" style="display:none"
               onchange="if(this.files[0]){restoreAllSlots(this.files[0]); this.value='';}">
+       <button class="btn btn-outline" style="padding:2px 10px" onclick="uiSlotDeleteAll()">${t('删除全部槽位','Delete all slots')}</button>
+       <button class="btn btn-outline" style="padding:2px 10px;border-color:#8a4a4a;color:#e08080" onclick="uiFactoryReset()">${t('恢复出厂设置','Factory reset')}</button>
        <span id="backupStatus" style="flex:1;color:var(--sub);font-size:12px"></span>
      </div>`;
   _slotHealTries = 0; // full list rendered - reset the self-heal budget
@@ -1117,6 +1153,61 @@ async function refreshSlots(){
   try {
     do { slotsRerun = false; await _refreshSlotsOnce(); } while (slotsRerun);
   } finally { slotsBusy = false; }
+}
+async function uiSlotDelete(i){
+  try{
+    if (!(await ensureDevice())){ toast(t('没有设备 — 请点击“连接”','No device \u2014 click Connect'), true); return; }
+    if (!confirm(t(`删除槽位 ${i+1}？\n\n该槽位里保存的配置会被清除，当前正在使用的设置不受影响。`, `Delete slot ${i+1}?\n\nThe profile saved in this slot is erased. Your live settings are not touched.`))) return;
+    saving = true;
+    const ok = await hidLocked(() => slotDelete(i));
+    toast(ok ? t(`槽位 ${i+1} 已删除`, `Slot ${i+1} deleted`)
+             : t('槽位删除失败（可能该槽位本来就是空的）','Slot delete failed (the slot may already be empty)'), !ok);
+    await refreshSlots();
+  } catch(e){ toast(t('槽位删除失败：','Slot delete failed: ') + e.message, true); }
+  finally { saving = false; }
+}
+// Wipe every saved slot. Each delete is a sector read-modify-write, so this is
+// one erase per occupied sector, not per slot.
+async function uiSlotDeleteAll(){
+  try{
+    if (!(await ensureDevice())){ toast(t('没有设备 — 请点击“连接”','No device \u2014 click Connect'), true); return; }
+    if (!confirm(t('删除全部已保存的槽位？\n\n当前正在使用的设置不受影响。', 'Delete EVERY saved slot?\n\nYour live settings are not touched.'))) return;
+    saving = true;
+    let done = 0, failed = 0;
+    for (let i = 0; i < UI_SLOT_COUNT; i++){
+      const info = await hidLocked(() => slotInfo(i));
+      if (!info || !info.valid) continue;
+      if (await hidLocked(() => slotDelete(i))) done++; else failed++;
+    }
+    toast(failed ? t(`已删除 ${done} 个槽位，${failed} 个失败`, `Deleted ${done} slot(s), ${failed} failed`)
+                 : t(`已删除 ${done} 个槽位`, `Deleted ${done} slot(s)`), failed > 0);
+    await refreshSlots();
+  } catch(e){ toast(t('删除槽位失败：','Deleting slots failed: ') + e.message, true); }
+  finally { saving = false; }
+}
+// Factory reset (firmware cmd 0x1c). Confirmed twice because it discards every
+// tuned value, including the learned battery calibration anchors.
+async function uiFactoryReset(){
+  try{
+    if (!(await ensureDevice())){ toast(t('没有设备 — 请点击“连接”','No device \u2014 click Connect'), true); return; }
+    if (!confirm(t('恢复出厂设置？\n\n所有设置都会回到默认值，自动校准学到的电压→电量采样点也会被清除，然后写入设备。\n\n已保存的槽位不受影响。', 'Factory reset?\n\nEvery setting returns to its default, the learned voltage→percent calibration anchors are cleared, and the result is written to the device.\n\nSaved profile slots are not touched.'))) return;
+    if (!confirm(t('再确认一次：这会覆盖你当前的设置。继续？', 'Confirm once more: this overwrites your current settings. Continue?'))) return;
+    saving = true;
+    const res = await hidLocked(() => factoryReset());
+    if (!res){ toast(t('恢复出厂：设备没有回复（需要固件 1.40.0 以上）','Factory reset: no reply (needs firmware 1.40.0+)'), true); return; }
+    toast(res.persisted
+      ? t('已恢复出厂设置，并已写入设备', 'Factory reset applied and written to flash')
+      : t('设置已重置，但写入 flash 失败 — 断电后会丢失，请再试一次', 'Defaults applied, but the flash write failed \u2014 they will not survive a power cycle. Try again.'),
+      !res.persisted);
+    // Descriptor-relevant fields may have changed (battery_mode, wake, macros):
+    // reconnect and re-read so no panel keeps showing state from the old handle.
+    try { await sendCmd(0x03); } catch(_){}
+    window._macroRows = null;
+    await sleep(2500);
+    await reacquire();
+    try { await refreshSlots(); } catch(_){}
+  } catch(e){ toast(t('恢复出厂失败：','Factory reset failed: ') + e.message, true); }
+  finally { saving = false; }
 }
 async function uiSlotSave(i){
   try{
@@ -2700,6 +2791,31 @@ async function ensureDevice(){
 }
 
 // Write a field; if the handle is stale (write throws), re-acquire once and retry.
+// Debounced auto-save. A field write applies live, but only cmd 0x02 puts it in
+// flash - so changing a setting and then pulling the power (or never finding the
+// Save button) lost everything on the next boot. Every field edit now schedules
+// the flash write; the explicit "Save to Device" button still exists and simply
+// does it immediately.
+let _autoSaveTimer = null;
+let _autoSaveBusy  = false;
+function scheduleAutoSave(){
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(async () => {
+    _autoSaveTimer = null;
+    if (_autoSaveBusy || (typeof saving !== 'undefined' && saving)) { scheduleAutoSave(); return; }
+    if (!device || !device.opened) return;          // no handle yet: nothing to write to
+    _autoSaveBusy = true;
+    try {
+      await sendCmd(0x02);
+      const diag = await readPersistDiag();
+      if (diag && !diag.lastOk){
+        toast(t(`自动保存没能写入 flash（错误码 ${diag.rc}）— 设置目前只在内存里，请点“保存到设备”重试。`,
+                `Auto-save did not reach flash (rc ${diag.rc}) \u2014 settings are in RAM only. Press "Save to Device" to retry.`), true);
+      }
+    } catch(_){ /* handle mid-flash stall: the next edit or an explicit save retries */ }
+    finally { _autoSaveBusy = false; }
+  }, 1500);
+}
 async function writeFieldSafe(fid, type, value){
   try {
     await writeField(fid, type, value);
@@ -2710,6 +2826,7 @@ async function writeFieldSafe(fid, type, value){
       throw e;
     }
   }
+  scheduleAutoSave();   // live already; this is what makes it survive a power cycle
 }
 
 // --- Profile export/import ---
@@ -2932,6 +3049,18 @@ async function saveAll(){
     if (failedFields.length) toast('Some fields failed to write: ' + failedFields.join(', '), true);
     try { await sendCmd(0x02); }
     catch(e){ try { if (await reacquire()) await sendCmd(0x02); } catch(_){ /* the first attempt often landed despite the host-side throw (USB stalls during the flash write) */ } }
+    // Verify the flash write instead of assuming it. Before the diagnostic fields
+    // existed there was no way to tell a real save from one that only reached RAM
+    // until the next power cycle threw the settings away - which is exactly the
+    // "my settings never survive a reboot" report this answers.
+    const persistDiag = await readPersistDiag();
+    if (persistDiag && !persistDiag.lastOk){
+      toast(t(`保存未写入 flash（错误码 ${persistDiag.rc}）— 设置现在只在内存中，断电会丢失，请再点一次“保存到设备”。`,
+              `The save did not reach flash (rc ${persistDiag.rc}) \u2014 settings are in RAM only and will be lost on power-off. Press "Save to Device" again.`), true);
+    } else if (persistDiag && !persistDiag.crcOk){
+      toast(t('写入后校验不一致 — flash 内容与当前设置不同，请重试保存。',
+              'Post-write verification differs \u2014 flash does not hold the current settings. Save again.'), true);
+    }
 
     // Only a few fields require a USB re-enumeration to take effect (polling rate,
     // audio buffer length, mic/speaker enable). Everything else (auto-haptics,

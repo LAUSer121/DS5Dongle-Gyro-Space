@@ -707,6 +707,22 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0x7d: return write_config_value(buffer, bufsize, FW_VER_MAJOR);
         case 0x7e: return write_config_value(buffer, bufsize, FW_VER_MINOR);
         case 0x7f: return write_config_value(buffer, bufsize, FW_VER_PATCH);
+        // --- Persistence diagnostics (read-only) --------------------------------
+        // A save that never reached flash used to look identical to a successful
+        // one until the next power cycle discarded the settings. The portal reads
+        // these back after every save and reports the real outcome.
+        //   0xEF last save succeeded (1) or failed (0)
+        //   0xF0 saves verified against flash, 0xF1 saves that failed
+        //   0xF2 flash currently holds what RAM holds
+        //   0xF3 write attempts (retries included), 0xF4 factory resets
+        //   0xF5 last flash_safe_execute result (negative = failure)
+        case 0xef: return write_config_value(buffer, bufsize, (uint8_t)(g_cfg_save_last_rc == 0 ? 1 : 0));
+        case 0xf0: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_save_ok & 0xFFFF));
+        case 0xf1: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_save_fail & 0xFFFF));
+        case 0xf2: return write_config_value(buffer, bufsize, (uint8_t)(g_cfg_flash_crc_ok ? 1 : 0));
+        case 0xf3: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_save_attempts & 0xFFFF));
+        case 0xf4: return write_config_value(buffer, bufsize, (uint16_t)(g_cfg_reset_count & 0xFFFF));
+        case 0xf5: return write_config_value(buffer, bufsize, (int16_t)g_cfg_save_last_rc);
         case 0x20: { extern volatile uint16_t g_diag_bytes_read; return write_config_value(buffer, bufsize, (uint16_t)g_diag_bytes_read); }
         case 0x21: { extern volatile uint8_t g_diag_actual_ch; return write_config_value(buffer, bufsize, (uint8_t)g_diag_actual_ch); }
         case 0x22: { int8_t rssi = 0; bt_get_signal_strength(&rssi); return write_config_value(buffer, bufsize, (uint8_t)rssi); }
@@ -825,6 +841,48 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] Reboot to BOOTSEL (USB bootloader)\n");
             sleep_ms(50);
             reset_usb_boot(0, 0); // noreturn
+            break;
+        }
+        case 0x1b: {
+            // Delete profile slot. Payload: [slot_idx]
+            // Reply (report 0x84): 0x66 0x1b status idx
+            // status: 0 = deleted, 1 = failed (out of range, already empty, or
+            // the erase did not stick). Slot replies stay on 0x84 for the same
+            // reason 0x09 does - the portal's 1 s diagnostic poll owns 0x81.
+            printf("[CMD] delete profile slot\n");
+            { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x1b; pend[2]=0xFE;
+              if (bufsize >= 1) pend[3] = buffer[0];
+              feature_data[0x84].assign(pend, pend + sizeof(pend)); }
+            uint8_t buf[63]{};
+            buf[0] = 0x66; buf[1] = 0x1b; buf[2] = 0x01; // default: fail
+            if (bufsize >= 1 && buffer[0] < SLOT_COUNT) {
+                if (slot_delete(buffer[0])) buf[2] = 0x00;
+                buf[3] = buffer[0];
+            }
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            break;
+        }
+        case 0x1c: {
+            // Factory reset. Payload: [] or [clear_calibration] (default = 1).
+            // Reply (report 0x84): 0x66 0x1c persisted defaults_live resets_lo
+            //                        resets_hi flash_crc_ok
+            // Every field returns to its fresh-flash default and the learned
+            // battery calibration anchors are dropped, then the result is written
+            // to flash. The caller should follow with cmd 0x03 (reconnect): fields
+            // that move USB descriptors may have changed.
+            printf("[CMD] factory reset config\n");
+            { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x1c; pend[2]=0xFE;
+              feature_data[0x84].assign(pend, pend + sizeof(pend)); }
+            const bool clear_calib = (bufsize < 1) || (buffer[0] != 0);
+            const bool persisted = config_factory_reset(clear_calib);
+            uint8_t buf[63]{};
+            buf[0] = 0x66; buf[1] = 0x1c;
+            buf[2] = persisted ? 0x00 : 0x01;   // 1 = defaults live, flash write failed
+            buf[3] = 0x01;                      // defaults are live in RAM either way
+            buf[4] = (uint8_t)(g_cfg_reset_count & 0xFF);
+            buf[5] = (uint8_t)((g_cfg_reset_count >> 8) & 0xFF);
+            buf[6] = g_cfg_flash_crc_ok;
+            feature_data[0x84].assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x08: {

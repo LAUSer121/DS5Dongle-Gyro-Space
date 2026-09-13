@@ -561,6 +561,26 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current c
 uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage);
 bool slot_info(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], uint8_t &valid, uint8_t &cfg_version);
 bool slot_load_body(uint8_t idx, Config_body &out);
+// Blank a saved profile slot (the sector's other seven slots survive). Returns
+// false when the index is out of range, the slot was already empty, or the erase
+// did not stick.
+bool slot_delete(uint8_t idx);
+// Factory reset: every field back to its fresh-flash default, the learned battery
+// calibration anchors cleared (they are user data), and the result written to
+// flash. Profile slots are left alone - they have their own delete action.
+bool config_factory_reset(bool clear_calibration);
+// Persistence diagnostics (defined in config.cpp). The portal reads these back so
+// a save can report what actually happened instead of failing silently - a save
+// that only reached RAM looks exactly like "everything reverted" after a power
+// cycle. last_rc is the flash_safe_execute result of the most recent save (>= 0
+// = PICO_OK success); flash_crc_ok says whether the flash currently holds what
+// RAM holds.
+extern volatile int32_t  g_cfg_save_last_rc;
+extern volatile uint32_t g_cfg_save_ok;
+extern volatile uint32_t g_cfg_save_fail;
+extern volatile uint32_t g_cfg_save_attempts;
+extern volatile uint8_t  g_cfg_flash_crc_ok;
+extern volatile uint32_t g_cfg_reset_count;
 // Currently-loaded profile (RAM only): slot_out=0xFF + returns false when nothing
 // is tracked; otherwise fills the source slot name and sets edited when the live
 // config has diverged from the slot as loaded.

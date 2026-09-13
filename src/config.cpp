@@ -15,9 +15,15 @@
 #include "hardware/sync.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
+#include "pico/time.h"   // sleep_ms between flash_safe_execute retries
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 23;
+// v24: the upstream v1.40 merge reordered Config_body (stick_mouse / touch_mouse
+// / tilt_steer / batt_stage_* landed between existing fields, and this fork's
+// battery block moved to the tail), so a blob written by v23 firmware is
+// byte-shifted rather than merely out of date. The bump is what makes
+// config_load() reject it instead of loading scrambled values.
+constexpr uint16_t CONFIG_VERSION = 24;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
@@ -380,9 +386,36 @@ static void migrate_legacy_storage() {
 
 void config_load() {
     memcpy(&config, flash_config(), sizeof(Config));
-    migrate_legacy_storage();
-    // migration may have replaced `config`; reload from the (new) authoritative sector
-    memcpy(&config, flash_config(), sizeof(Config));
+
+    // Reject anything that cannot be trusted, BEFORE migration and clamping. A
+    // stored config whose magic, size, version and CRC do not all line up is not
+    // "slightly old", it is unknown bytes: loading it scatters values across the
+    // wrong fields (the v1.40 merge reordered Config_body, so a v23 blob is
+    // byte-shifted). The CRC covers the body only, which also catches the torn or
+    // partial write a failed flash write leaves behind.
+    auto stored_ok = [&]() {
+        return config.magic == CONFIG_MAGIC &&
+               config.size  == sizeof(Config_body) &&
+               config.body.config_version == CONFIG_VERSION &&
+               config.crc32 == calc_config_crc(config);
+    };
+
+    if (!stored_ok()) {
+        printf("[Config] stored config unusable (magic/size/version/crc) - trying migration\n");
+        migrate_legacy_storage();
+        // migration may have replaced `config`; reload from the (new) authoritative sector
+        memcpy(&config, flash_config(), sizeof(Config));
+    }
+    if (!stored_ok()) {
+        // Land on exactly the fresh-flash state. Deliberately NOT written back
+        // here: a blank sector stays blank until the user (or the portal's
+        // auto-save) actually saves, so booting never erases something that a
+        // later migration might still be able to recover.
+        printf("[Config] no usable stored config - loading defaults\n");
+        config.magic = CONFIG_MAGIC;
+        config.size  = sizeof(Config_body);
+        memset(&config.body, 0xff, sizeof(Config_body));
+    }
 
     config_valid();
 }
@@ -413,15 +446,41 @@ static void config_save_flash_op(void *param) {
     restore_interrupts(interrupts);
 }
 
+// Persistence diagnostics. A failed save used to be invisible: the settings
+// stayed live in RAM, the portal reported nothing, and the loss only appeared as
+// "everything reverted" after a power cycle - which reads as anything except a
+// flash problem. These are read back by the portal (field ids 0xEF..0xF3 in
+// cmd.cpp) so a save can report what actually happened.
+volatile int32_t  g_cfg_save_last_rc  = 0x7FFFFFFF; // last flash_safe_execute rc, <0 = failed
+volatile uint32_t g_cfg_save_ok       = 0;          // saves that verified against flash
+volatile uint32_t g_cfg_save_fail     = 0;          // saves that did not
+volatile uint32_t g_cfg_save_attempts = 0;          // lockout attempts, retries included
+volatile uint8_t  g_cfg_flash_crc_ok  = 0;          // flash currently holds what RAM holds
+volatile uint32_t g_cfg_reset_count   = 0;          // factory resets performed since boot
+
 bool config_save() {
     config.crc32 = calc_config_crc(config);
     alignas(4) uint8_t page[CONFIG_WRITE_LEN];
     memset(page, 0xff, sizeof(page));
     memcpy(page, &config, sizeof(Config));
 
-    const int rc = flash_safe_execute(config_save_flash_op, page, 1000);
+    // Retry the core1 lockout. flash_safe_execute parks the audio core with a 1 s
+    // timeout, and that park can time out while core1 is deep in the BT/audio
+    // path. slot_activate() already retried for exactly this reason; the config
+    // write is the one whose failure silently discards every user setting on the
+    // next power cycle, so it gets the same (and a little more) patience.
+    int rc = PICO_ERROR_TIMEOUT;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        g_cfg_save_attempts++;
+        rc = flash_safe_execute(config_save_flash_op, page, 1000);
+        if (rc == PICO_OK) break;
+        printf("[Config] config_save flash_safe_execute failed: %d (attempt %d/3)\n", rc, attempt + 1);
+        sleep_ms(10);
+    }
+    g_cfg_save_last_rc = (int32_t)rc;
     if (rc != PICO_OK) {
-        printf("[Config] config_save flash_safe_execute failed: %d\n", rc);
+        g_cfg_save_fail++;
+        g_cfg_flash_crc_ok = 0;
         return false;
     }
 
@@ -429,9 +488,13 @@ bool config_save() {
     memcpy(&verify, flash_config(), sizeof(verify));
     const auto verify_crc32 = calc_config_crc(verify);
     if (verify_crc32 == config.crc32) {
+        g_cfg_save_ok++;
+        g_cfg_flash_crc_ok = 1;
         printf("[Config] Config write flash verify success\n");
         return true;
     }
+    g_cfg_save_fail++;
+    g_cfg_flash_crc_ok = 0;
     printf("[Config] Config write flash verify failed\n");
     return false;
 }
@@ -649,6 +712,64 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     if (!slot_read(idx, nm, bd)) return false;
     active_profile_set(idx);   // the live config now IS this slot
     return true;
+}
+
+// Delete = blank the record in place. A sector holds eight records and flash
+// erases whole sectors, so this is a read-modify-write with the target stride
+// 0xFF-filled: the other seven slots in the same sector survive untouched.
+bool slot_delete(uint8_t idx) {
+    if (idx >= SLOT_COUNT) return false;
+    uint8_t nm[SLOT_NAME_LEN];
+    static Config_body bd;                        // static: off the USB task stack
+    if (!slot_read(idx, nm, bd)) return false;    // already empty - nothing to erase
+    const uint32_t sec_off = slot_sector_offset(idx / SLOTS_PER_SECTOR);
+    const uint8_t  local   = idx % SLOTS_PER_SECTOR;
+    memcpy(slot_sector_image, reinterpret_cast<const void *>(XIP_BASE + sec_off), FLASH_SECTOR_SIZE);
+    memset(slot_sector_image + local * SLOT_STRIDE, 0xff, SLOT_STRIDE);
+    slot_op_offset = sec_off;
+    int rc = PICO_ERROR_TIMEOUT;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        rc = flash_safe_execute(slots_flash_op, nullptr, 500);
+        if (rc == PICO_OK) break;
+        sleep_ms(10);
+    }
+    if (rc != PICO_OK) {
+        printf("[Config] slot_delete flash_safe_execute failed: %d\n", rc);
+        return false;
+    }
+    if (slot_read(idx, nm, bd)) return false;     // still readable -> the erase did not land
+    if (g_active_slot == (int16_t)idx) {          // the live config came from this slot
+        g_active_slot = -1;
+        g_active_snapshot_valid = false;
+    }
+    return true;
+}
+
+// Factory reset. It lands on exactly what a blank flash boots into, so there is
+// one definition of "default" rather than a second table that can drift away
+// from the clamps in config_valid() - config_default() is only declared in this
+// tree and never defined, and the 0xFF + config_valid() path IS the default
+// table (every field's fresh-flash clamp is its reset value).
+//
+// The learned voltage -> percent anchors are user data, not firmware constants,
+// so a reset clears them too; that is what makes the battery readout relearn
+// from scratch. Profile slots are deliberately NOT touched: those are separate
+// saved profiles with their own delete action.
+bool config_factory_reset(bool clear_calibration) {
+    config.magic = CONFIG_MAGIC;
+    config.size  = sizeof(Config_body);
+    memset(&config.body, 0xff, sizeof(Config_body));
+    if (clear_calibration) {
+        for (size_t i = 0; i < 11; i++) {
+            config.body.battery_calib_volt[i]   = 0;
+            config.body.battery_calib_volt_n[i] = 0;
+        }
+    }
+    config_valid();             // 0xFF -> the same defaults a fresh flash gets
+    g_active_slot = -1;         // no longer "the profile loaded from slot N"
+    g_active_snapshot_valid = false;
+    g_cfg_reset_count++;
+    return config_save();
 }
 
 uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
