@@ -7,11 +7,22 @@
 // layout somewhere else. Everything that claims a sector declares it here, and
 // the static_asserts below are the enforcement.
 //
-//   -1   legacy config location / btstack TLV bank
-//   -2   legacy slots location  / btstack TLV bank
+//   -1   legacy config location (superseded; left blank)
+//   -2   legacy slots location (superseded; left blank)
 //   -3   ACTIVE CONFIG
 //   -4 .. -19   SLOT RESERVATION (SLOT_SECTORS_RESERVED)
 //   -20  MACRO TABLE, growing downward if it ever needs a second sector
+//   -22/-21  btstack TLV BANK (pinned in CMakeLists - see the trap below)
+//
+// THE BTSTACK BANK TRAP. The SDK default for PICO_FLASH_BANK_STORAGE_OFFSET is
+// PICO_FLASH_SIZE_BYTES - PICO_FLASH_BANK_TOTAL_SIZE on RP2040, but
+// PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE - PICO_FLASH_BANK_TOTAL_SIZE on
+// RP2350 - one sector lower, which lands the bank (two sectors) exactly on the
+// ACTIVE CONFIG sector above. btstack erases a whole bank sector per TLV write,
+// so on a Pico 2 W every controller connect / disconnect / re-pair wiped the
+// saved settings, while the save itself verified perfectly against flash. That is
+// why the bank is pinned explicitly in CMakeLists.txt below every region here,
+// and why the assert at the bottom of this file holds it there.
 //
 
 #ifndef DS5_BRIDGE_FLASH_MAP_H
@@ -54,5 +65,16 @@ constexpr uint32_t MACRO_FLASH_OFFSET =
 static_assert(MACRO_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 static_assert(MACRO_FLASH_OFFSET < slot_sector_offset_at(SLOT_SECTORS_RESERVED - 1),
               "macro sector must sit strictly below every reserved slot sector");
+
+// --- btstack TLV bank --------------------------------------------------------
+// Pinned in CMakeLists.txt (PICO_FLASH_BANK_STORAGE_OFFSET) instead of taking the
+// SDK default, which collides with the active-config sector on RP2350. Declared
+// here so the whole map is in one place and the collision cannot come back.
+constexpr uint32_t BT_BANK_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - 22 * FLASH_SECTOR_SIZE;
+constexpr uint32_t BT_BANK_SIZE         = 2 * FLASH_SECTOR_SIZE;  // two banks, one sector each
+static_assert(BT_BANK_FLASH_OFFSET + BT_BANK_SIZE <= MACRO_FLASH_OFFSET,
+              "btstack's TLV bank must sit strictly below the macro table");
+static_assert(BT_BANK_FLASH_OFFSET != PICO_FLASH_SIZE_BYTES - 3 * FLASH_SECTOR_SIZE,
+              "btstack's TLV bank must never share the active-config sector");
 
 #endif // DS5_BRIDGE_FLASH_MAP_H

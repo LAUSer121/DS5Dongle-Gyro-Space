@@ -26,13 +26,12 @@ constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
 // config_load() reject it instead of loading scrambled values.
 constexpr uint16_t CONFIG_VERSION = 24;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
-// occupies the LAST TWO flash sectors by pico-sdk default
-// (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
-// those exact sectors. Every TLV write (link-key churn on controller
-// sleep/wake/re-pair) could clobber them; the first visible casualty was profile
-// slot 0 reading "empty" after a sleep/wake cycle (the bank header lands at its
-// sector start). Config and slots now live in the two sectors BELOW the bank,
-// with one-shot boot migration from the legacy locations.
+// must never share a sector with anything defined here: one TLV write erases a
+// whole bank sector. The SDK default put the bank two sectors from the top on
+// RP2040 but one sector lower on RP2350 - landing it on this very config sector -
+// which is what made every save vanish across a controller connect/disconnect
+// while the save itself verified fine. The bank is now pinned explicitly in
+// CMakeLists.txt (PICO_FLASH_BANK_STORAGE_OFFSET) and asserted in flash_map.h.
 constexpr uint32_t CONFIG_FLASH_OFFSET        = PICO_FLASH_SIZE_BYTES - 3 * FLASH_SECTOR_SIZE;
 constexpr uint32_t LEGACY_CONFIG_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
 static Config config{};

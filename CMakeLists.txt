@@ -304,6 +304,15 @@ target_compile_definitions(ds5-bridge PRIVATE
         # accessed - both config_save() and the BOOTSEL CSn float poll. core1_entry
         # registers via flash_safe_execute_core_init().
         PICO_FLASH_ASSUME_CORE1_SAFE=0
+        # btstack's non-volatile (TLV) flash bank. On RP2350 the SDK default is
+        # PICO_FLASH_SIZE_BYTES - SECTOR - 2*SECTOR, i.e. the -3 sector - which is
+        # exactly where this firmware keeps its ACTIVE CONFIG (flash_map.h). Every
+        # BT link-key / pairing-blacklist write therefore erased the saved settings:
+        # a save verified fine and then vanished across the next power cycle, and
+        # because BT writes on connect/disconnect it read as "shutting the PC down
+        # resets everything". Pin the bank BELOW every region this firmware owns -
+        # config -3, profile slots -4..-19, macro table -20 - so it sits at -22/-21.
+        PICO_FLASH_BANK_STORAGE_OFFSET=(PICO_FLASH_SIZE_BYTES - 22 * 4096)
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
